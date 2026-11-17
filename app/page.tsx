@@ -328,10 +328,10 @@ export default function HomePage() {
                                 <button
                                     type="button"
                                     onClick={() => setEscolher(true)}
-                                    className="flex min-h-[124px] flex-col items-center justify-center gap-3 rounded-[20px] border border-dashed border-[#C9D1DE] px-3 py-4 text-center text-[14.5px] font-extrabold text-[#5B6478] transition hover:border-[#313C55] hover:text-[#313C55] dark:border-white/[0.2] dark:text-[#AEB9CF] dark:hover:text-white lg:min-h-[140px] lg:text-[15px]"
+                                    className="flex min-h-[68px] items-center gap-3 rounded-2xl border border-dashed border-[#C9D1DE] px-3 py-2.5 text-left text-[15px] font-extrabold text-[#5B6478] transition hover:border-[#313C55] hover:text-[#313C55] dark:border-white/[0.2] dark:text-[#AEB9CF] dark:hover:text-white"
                                 >
-                                    <span className="grid size-14 place-items-center rounded-[18px] bg-[#EEF2F7] dark:bg-white/[0.08]">
-                                        <IconPlus size={28} stroke={1.8} />
+                                    <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-[#EEF2F7] dark:bg-white/[0.08]">
+                                        <IconPlus size={22} stroke={1.8} />
                                     </span>
                                     {usaFavoritos ? "Escolher favoritos" : "Adicionar favorito"}
                                 </button>

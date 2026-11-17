@@ -63,7 +63,8 @@ CARTOES.estoque = [...CARTOES.requisicoes, ...CARTOES.estoque];
 /* ---------- peças do padrão das páginas (06/11/2026), usadas também pelo Início e pela Requisição de Material ---------- */
 
 export const GRADE_CARTOES = "grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-3.5";
-export const GRADE_BLOCOS = "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(172px,1fr))] lg:gap-3.5";
+/* 17/11/2026: telas em faixa compacta (ícone ao lado do nome), para caberem na tela */
+export const GRADE_BLOCOS = "grid grid-cols-1 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(230px,1fr))] lg:gap-3";
 export const ROTULO_SECAO = "text-xs font-extrabold uppercase tracking-[0.12em] text-[#5B6478] dark:text-[#AEB9CF]";
 export const BOTAO_PAGINA =
     "inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl border px-[18px] text-[14px] font-extrabold transition";
@@ -105,27 +106,28 @@ export function CartaoInfo({ rotulo, valor, sub, href, estilo }: { rotulo: strin
     );
 }
 
-/** Bloco de tela: ícone na cor do módulo, nome embaixo e o número pendente no canto. */
+/** Bloco de tela (17/11/2026: faixa compacta): ícone na cor do módulo à esquerda, nome e descrição ao lado, número pendente à direita. */
 export function BlocoTela({ titulo, href, Icone, tom = "azul", selo, dica, caminho }: { titulo: string; href: string; Icone: React.ElementType<any>; tom?: Tom; selo?: number | null; dica?: string; caminho?: string }) {
     return (
         <Link
             href={href}
             title={dica}
-            className="relative flex min-h-[124px] flex-col items-center justify-center gap-3 rounded-[20px] border border-[#E3E8F0] bg-white px-3 py-4 text-center text-[14.5px] font-extrabold leading-tight shadow-sm transition hover:border-[#313C55] hover:shadow-[0_8px_22px_rgba(49,60,85,.10)] dark:border-white/[0.12] dark:bg-[#232B3F] dark:hover:border-white/50 lg:min-h-[140px] lg:text-[15px]"
+            className="flex min-h-[68px] items-center gap-3 rounded-2xl border border-[#E3E8F0] bg-white px-3 py-2.5 text-left shadow-sm transition hover:border-[#313C55] hover:shadow-[0_6px_18px_rgba(49,60,85,.10)] dark:border-white/[0.12] dark:bg-[#232B3F] dark:hover:border-white/50"
         >
+            <span className={`grid size-11 shrink-0 place-items-center rounded-[14px] text-[#313C55] dark:text-white ${FUNDO_ICONE[tom]}`}>
+                <Icone size={22} stroke={1.8} />
+            </span>
+            <span className="min-w-0 flex-1 leading-tight">
+                {/* caminho (módulo › seção) em cima do nome, no Acesso rápido; nas páginas de módulo, a descrição embaixo */}
+                {caminho ? <span className="block truncate text-[11.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{caminho}</span> : null}
+                <span className="block break-words text-[15px] font-extrabold">{titulo}</span>
+                {!caminho && dica ? <span className="mt-0.5 line-clamp-1 text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{dica}</span> : null}
+            </span>
             {selo && selo > 0 ? (
-                <span className="absolute right-2.5 top-2.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#F2CB3F] px-1.5 text-[11px] font-extrabold tabular-nums text-[#313C55]">
+                <span className="inline-flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-[#F2CB3F] px-1.5 text-[12px] font-extrabold tabular-nums text-[#313C55]">
                     {formatarSelo(selo)}
                 </span>
             ) : null}
-            <span className={`grid size-14 place-items-center rounded-[18px] text-[#313C55] dark:text-white ${FUNDO_ICONE[tom]}`}>
-                <Icone size={28} stroke={1.8} />
-            </span>
-            <span className="break-words">
-                {/* 17/11/2026: caminho (módulo › seção) em cima do nome, no Acesso rápido */}
-                {caminho ? <span className="mb-0.5 block text-[11.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{caminho}</span> : null}
-                {titulo}
-            </span>
         </Link>
     );
 }
