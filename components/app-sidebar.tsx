@@ -365,7 +365,10 @@ export function AppSidebar(
   if (!isMobile) {
     const atual = acharModuloPorRota(pathname || "/", menu.modulos, menu.fixos).modulo?.id ?? null;
     const BOTAO =
-      "relative flex min-h-[54px] w-[84px] shrink-0 flex-col items-center justify-center gap-1 rounded-[14px] px-0.5 py-1.5 text-[12px] font-bold leading-tight text-[#D6DCE8] hover:bg-white/[0.08] hover:text-white";
+      "relative flex min-h-[54px] w-[84px] shrink-0 flex-col items-center justify-center gap-1 rounded-[14px] px-0.5 py-1.5 text-[12px] font-bold leading-tight text-[#D6DCE8] hover:bg-white/[0.08] hover:text-white" +
+      /* 17/11/2026: com 11 módulos, em tela mais baixa os botões encolhem para caber sem rolagem */
+      " [@media(max-height:900px)]:min-h-[46px] [@media(max-height:900px)]:gap-0.5 [@media(max-height:900px)]:py-1 [@media(max-height:900px)]:text-[11.5px]" +
+      " [@media(max-height:760px)]:min-h-[40px] [@media(max-height:760px)]:py-0.5 [@media(max-height:760px)]:text-[11px]";
     const BOTAO_ATIVO = "bg-white/[0.16] font-extrabold text-white shadow-[inset_4px_0_0_#F2CB3F] hover:bg-white/[0.16]";
     const modulosRail = carregando
       ? []
@@ -387,17 +390,17 @@ export function AppSidebar(
             onClick={(event) => handleNavigate("/", event)}
             aria-label="PAI Conecta — Início"
             data-pai-logo-capsula
-            className="mb-2 flex shrink-0 flex-col items-center gap-1"
+            className="mb-2 flex shrink-0 flex-col items-center gap-1 [@media(max-height:900px)]:mb-1"
           >
             {/* 06/11/2026: logomarca vertical (símbolo + PAI) sem cápsula; no tema escuro o contorno é um pouco mais fino */}
-            <LogoVertical className="h-auto w-[56px] dark:hidden" />
-            <LogoVertical fino className="hidden h-auto w-[56px] dark:block" />
+            <LogoVertical className="h-auto w-[56px] dark:hidden [@media(max-height:900px)]:w-[44px] [@media(max-height:760px)]:w-[36px]" />
+            <LogoVertical fino className="hidden h-auto w-[56px] dark:block [@media(max-height:900px)]:w-[44px] [@media(max-height:760px)]:w-[36px]" />
             <span className="text-[13px] font-extrabold leading-none tracking-[0.04em] text-[#F2CB3F]">Conecta</span>
           </Link>
 
           <div className="pai-menu-rolagem min-h-0 w-full flex-1 overflow-y-auto">
             {/* 06/11/2026: sem o botão do usuário, os módulos se espalham pela altura da barra (e rolam só se não couberem) */}
-            <div className="flex min-h-full flex-col items-center justify-evenly gap-1 py-1">
+            <div className="flex min-h-full flex-col items-center justify-evenly gap-1 py-1 [@media(max-height:900px)]:gap-0">
             <Link
               href="/"
               title="Início"
@@ -405,7 +408,7 @@ export function AppSidebar(
               onClick={(event) => handleNavigate("/", event)}
               className={[BOTAO, pathname === "/" ? BOTAO_ATIVO : ""].join(" ")}
             >
-              <IconHome className="size-6" stroke={1.7} />
+              <IconHome className="size-6 [@media(max-height:900px)]:size-5 [@media(max-height:760px)]:size-[18px]" stroke={1.7} />
               <span>Início</span>
             </Link>
             {carregando ? <span className="py-3 text-[12px] text-[#AEB9CF]">…</span> : null}
@@ -420,8 +423,8 @@ export function AppSidebar(
                   onClick={(event) => handleNavigate(m.href, event)}
                   className={[BOTAO, ativo ? BOTAO_ATIVO : ""].join(" ")}
                 >
-                  <m.Icon className="size-6" stroke={1.7} />
-                  <span className="max-w-[76px] truncate">{m.curto}</span>
+                  <m.Icon className="size-6 [@media(max-height:900px)]:size-5 [@media(max-height:760px)]:size-[18px]" stroke={1.7} />
+                  <span className="line-clamp-2 max-w-[76px] break-words text-center">{m.curto}</span>{/* 17/11/2026: até 2 linhas (Req. e Estoque) */}
                   {m.pendente ? <span className="absolute right-4 top-2 size-2.5 rounded-full bg-[#F2CB3F]" aria-label="há pendências" /> : null}
                 </Link>
               );
