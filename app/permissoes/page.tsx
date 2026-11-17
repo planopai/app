@@ -946,7 +946,7 @@ export default function PermissoesPage() {
     const lateral = (
         <aside className={`${CARTAO} flex flex-col gap-0.5 p-2 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto`}>
             <div className={`px-2 pb-1 pt-2 ${ROTULO}`}>Cargos</div>
-            <div className="max-h-[38dvh] overflow-y-auto lg:max-h-none">
+            <div className="max-h-[38dvh] shrink-0 overflow-y-auto lg:max-h-none lg:overflow-visible">
                 {[...ativos, ...grupos.filter((g) => !g.ativo)].map((g) => {
                     const on = grupoSel?.id === g.id;
                     const n = g.paginas.filter((k) => validas.has(k)).length;
@@ -964,11 +964,11 @@ export default function PermissoesPage() {
                 })}
             </div>
             <div className={`mt-3 px-2 pb-1 ${ROTULO}`}>Pessoas</div>
-            <div className="relative px-1 pb-1">
+            <div className="relative shrink-0 px-1 pb-1">
                 <IconSearch size={17} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#7A8396]" />
                 <input type="search" className={`${CAMPO} h-11 pl-10`} placeholder="Procurar pessoa" value={buscaPessoa} onChange={(e) => setBuscaPessoa(e.target.value)} aria-label="Procurar pessoa" />
             </div>
-            <div className="max-h-[38dvh] overflow-y-auto lg:max-h-none">
+            <div className="max-h-[38dvh] shrink-0 overflow-y-auto lg:max-h-none lg:overflow-visible">
                 {pessoasFiltradas.map((p) => {
                     const on = pessoaSel?.id === p.id;
                     const ne = Object.keys(excecoesGravadas(p)).length;

@@ -247,7 +247,7 @@ export const MODULOS: Modulo[] = [
             { id: "painel-estoque", titulo: "Painel do estoque", desc: "Consumo, cobertura e reposição", href: "/painel-estoque", slugs: ["painel-estoque"], icone: IconReportAnalytics, secao: "Indicadores" },
             { id: "telemetria", titulo: "Telemetria", desc: "Veículos e rotas", href: "/telemetria", slugs: ["telemetria"], icone: IconCar, secao: "Indicadores" },
             // 06/11/2026: veio da Comunicação.
-            { id: "messenger-funil-gestao", titulo: "Gestão do funil", desc: "Origem dos leads, conversão e desempenho", href: "/messenger-funil-gestao", slugs: ["messenger-historico"], icone: IconChartFunnel, secao: "Indicadores" },
+            { id: "messenger-funil-gestao", titulo: "Gestão do funil", desc: "Origem dos leads, conversão e desempenho", href: "/messenger-funil-gestao", slugs: ["funil-resultados"], icone: IconChartFunnel, secao: "Indicadores" },
             { id: "historico-clientes", titulo: "Histórico de clientes", desc: "Atendimentos do WhatsApp encerrados", href: "/messenger-historico", slugs: ["messenger-historico"], icone: IconMessages, secao: "Históricos" },
             { id: "conhecimento", titulo: "Conhecimento IA", desc: "Base de conhecimento da Aurora", href: "/conhecimento", slugs: ["conhecimento"], icone: IconBrain, secao: "Aurora" },
             // 06/11/2026: configurações e monitoramento da Aurora/Messenger vieram da Comunicação.
