@@ -137,8 +137,9 @@ export function montarMenu(config: ConfigMenu | null | undefined): { modulos: Mo
         for (const it of m.itens) {
             if (usados.has(it.id)) continue;
             usados.add(it.id);
-            const destino = res.find((r) => r.id === m.id) || res[res.length - 1];
-            if (destino) destino.itens.push({ ...it, titulo: nomeDe(it.id, it.titulo) });
+            const pedido = it.destino ? res.find((r) => r.id === it.destino!.modulo) : undefined; // 17/11/2026: tela nova com módulo de destino
+            const destino = pedido || res.find((r) => r.id === m.id) || res[res.length - 1];
+            if (destino) destino.itens.push({ ...it, titulo: nomeDe(it.id, it.titulo), ...(pedido ? { secao: it.destino!.secao } : {}) });
         }
     }
     for (const r of res) r.itens = agruparPorSecao(r.itens);

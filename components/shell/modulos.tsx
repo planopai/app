@@ -88,6 +88,8 @@ export type ItemModulo = {
     selo?: "aguardando" | "coroas" | "estoque" | "avisos" | "messenger";
     /** Seção dentro do módulo (ex.: "Pessoas e acesso"). Telas da mesma seção ficam juntas. */
     secao?: string;
+    /** 17/11/2026: módulo (e seção) onde a tela nova entra quando a organização salva ainda não a conhece. */
+    destino?: { modulo: string; secao?: string };
 };
 
 export type Modulo = {
@@ -247,6 +249,7 @@ export const MODULOS: Modulo[] = [
             { id: "painel-estoque", titulo: "Painel do estoque", desc: "Consumo, cobertura e reposição", href: "/painel-estoque", slugs: ["painel-estoque"], icone: IconReportAnalytics, secao: "Indicadores" },
             { id: "telemetria", titulo: "Telemetria", desc: "Veículos e rotas", href: "/telemetria", slugs: ["telemetria"], icone: IconCar, secao: "Indicadores" },
             // 06/11/2026: veio da Comunicação.
+            { id: "indicadores-financeiro", titulo: "Financeiro", desc: "Receita, resultado, saldo e alertas", href: "/indicadores-financeiro", slugs: ["indicadores-financeiro"], icone: IconChartBar, secao: "Indicadores", destino: { modulo: "indicadores" } }, // 17/11/2026
             { id: "messenger-funil-gestao", titulo: "Gestão do funil", desc: "Origem dos leads, conversão e desempenho", href: "/messenger-funil-gestao", slugs: ["funil-resultados"], icone: IconChartFunnel, secao: "Indicadores" },
             { id: "historico-clientes", titulo: "Histórico de clientes", desc: "Atendimentos do WhatsApp encerrados", href: "/messenger-historico", slugs: ["messenger-historico"], icone: IconMessages, secao: "Históricos" },
             { id: "conhecimento", titulo: "Conhecimento IA", desc: "Base de conhecimento da Aurora", href: "/conhecimento", slugs: ["conhecimento"], icone: IconBrain, secao: "Aurora" },

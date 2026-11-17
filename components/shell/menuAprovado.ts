@@ -54,7 +54,7 @@ export const MENU_APROVADO: ConfigMenu = {
             ["messenger-ocorrencias", "WhatsApp"], ["historico-clientes", "WhatsApp"], ["messenger-monitor", "WhatsApp"],
         ]),
         m("indicadores", "Indicadores", "Painéis para acompanhar a empresa", "chart-bar", [
-            ["desempenho"], ["painel-estoque", "Estoque"], ["balanco", "Outros"], ["telemetria", "Outros"],
+            ["desempenho"], ["indicadores-financeiro"], ["painel-estoque", "Estoque"], ["balanco", "Outros"], ["telemetria", "Outros"],
         ]),
         m("aurora", "Aurora", "Como a assistente aprende e atende", "sparkles", [
             ["conhecimento"], ["messenger-config"], ["messenger-habilidades"], ["messenger-testes"], ["messenger-aprendizado"],
