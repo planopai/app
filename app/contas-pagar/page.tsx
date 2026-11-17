@@ -72,6 +72,8 @@ import {
     type Cadastros,
     type LinhaEdicao,
 } from './components/fin';
+import { ModalVale } from './components/vale'; // 17/11/2026: vale e empréstimo nascem no financeiro
+import { IconCash } from '@tabler/icons-react';
 import { BarraMassa, baixarCsv, ChipsFiltro, JanelaColunas, Paginacao, Planilha, TrocaModo, useColunas, type ColunaPlan } from './components/planilha';
 
 const URL_ACOES = 'https://api.planoassistencialintegrado.com.br/fin_pagar_acoes.php';
@@ -156,6 +158,7 @@ export default function ContasPagarPage() {
     const [busca, setBusca] = useState('');
     const [area, setArea] = useState<number | ''>('');
     const [novo, setNovo] = useState<{ editar?: Titulo } | null>(null);
+    const [vale, setVale] = useState(false);
     const [pagar, setPagar] = useState<Titulo | null>(null);
     const [confirmar, setConfirmar] = useState<Titulo | null>(null);
     const [detalhe, setDetalhe] = useState<number | null>(null);
@@ -407,6 +410,9 @@ export default function ContasPagarPage() {
                             <Link href="/financeiro-config" className={BTN_SEC}>
                                 <IconAdjustmentsDollar size={18} /> Configurações
                             </Link>
+                            <button type="button" className={BTN_SEC} onClick={() => setVale(true)}>
+                                <IconCash size={18} /> Vale ou empréstimo
+                            </button>
                             <button type="button" className={BTN_PRI} disabled={!cad} onClick={() => setNovo({})}>
                                 <IconPlus size={18} /> Novo título
                             </button>
@@ -694,6 +700,15 @@ export default function ContasPagarPage() {
                 <div className={SUB}>Lançamento em paralelo com a Unymos até a virada. Sem etapa de autorização: quem tem acesso registra o pagamento. Nada é apagado: cancelamentos e estornos ficam no histórico.</div>
             </div>
 
+            {vale ? (
+                <ModalVale
+                    onFechar={() => setVale(false)}
+                    feito={(m) => {
+                        avisar(m);
+                        void carregar();
+                    }}
+                />
+            ) : null}
             {novo && cad ? (
                 <NovoTitulo
                     cad={cad}

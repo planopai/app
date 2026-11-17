@@ -27,6 +27,7 @@ import {
 } from '@tabler/icons-react';
 import { GRADE_CARTOES, TopoPagina } from '@/components/shell/ModuloHub';
 import { AbaIss } from '../resultados/components/resultados'; // 17/11/2026: ISS retido veio dos Resultados
+import { ModalVale } from '../contas-pagar/components/vale'; // 17/11/2026: vale e empréstimo pelo caixa
 import {
     api,
     BotaoArquivo,
@@ -576,7 +577,7 @@ function ModalConta({ contaId, painel, cad, onFechar, feito }: { contaId: number
     const [filtro, setFiltro] = useState<'todas' | 'ent' | 'sai'>('todas');
     const [forma, setForma] = useState('');
     const [busca, setBusca] = useState('');
-    const [sub, setSub] = useState<null | 'fechar' | 'despesa' | 'entregar' | 'sangria' | 'config' | { pedir: Linha } | { recusar: Transf }>(null);
+    const [sub, setSub] = useState<null | 'fechar' | 'despesa' | 'vale' | 'entregar' | 'sangria' | 'config' | { pedir: Linha } | { recusar: Transf }>(null);
     const [ocupado, setOcupado] = useState(false);
 
     const carregar = useCallback(async () => {
@@ -667,6 +668,9 @@ function ModalConta({ contaId, painel, cad, onFechar, feito }: { contaId: number
                 <>
                     <button type="button" className={BTN_SEC} onClick={() => setSub('despesa')}>
                         Despesa
+                    </button>
+                    <button type="button" className={BTN_SEC} onClick={() => setSub('vale')}>
+                        Vale
                     </button>
                     <button type="button" className={BTN_SEC} onClick={() => setSub('entregar')}>
                         Entregar a outro caixa
@@ -816,6 +820,7 @@ function ModalConta({ contaId, painel, cad, onFechar, feito }: { contaId: number
             {ehCaixa && x ? <div className={NOTA}>Pix e cartão no período: {brl(x.resumo.pix_cartao)}. Aparecem aqui para conferência, mas não mudam o saldo do caixa.</div> : null}
 
             {sub === 'fechar' ? <ModalFechar conta={x?.conta.nome || ''} contaId={contaId} jaContado={!!sess?.contado} continuo={modo === 'CONTINUO'} onFechar={() => setSub(null)} feito={async (m) => { await carregar(); feito(m); }} /> : null}
+            {sub === 'vale' ? <ModalVale contaId={contaId} onFechar={() => setSub(null)} feito={async (m) => { await carregar(); feito(m); }} /> : null}
             {sub === 'despesa' && cad ? <ModalDespesa contaId={contaId} cad={cad} onFechar={() => setSub(null)} enviar={(c) => acao('despesa', c)} /> : null}
             {sub === 'entregar' || sub === 'sangria' ? (
                 <ModalEntregar

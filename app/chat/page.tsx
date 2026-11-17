@@ -2196,23 +2196,6 @@ function EmptyState({ onPrompt }: { onPrompt: (prompt: string) => void }) {
             <p className="mt-2 max-w-xl text-sm leading-6 text-[#5B6478] dark:text-[#AEB9CF] sm:text-base">
                 Assistente Administrativo do PAI. Consulta dados, gera arquivos e prepara ações administrativas que só são executadas após sua confirmação.
             </p>
-            <div className="mt-7 grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                {QUICK_PROMPTS.map((prompt, index) => (
-                    <button
-                        key={prompt}
-                        type="button"
-                        onClick={() => onPrompt(prompt)}
-                        className={[
-                            "rounded-2xl border px-4 py-3 text-left text-sm font-medium shadow-sm transition active:scale-[0.99]",
-                            index === 0
-                                ? "border-[#8FD6F4] dark:border-[#00AEEC]/50 bg-[#E6F7FE] dark:bg-[#00AEEC]/15 text-[#313C55] dark:text-[#E8ECF4] ring-1 ring-inset ring-[#00AEEC]/20 dark:ring-[#00AEEC]/30 hover:bg-[#D3EFFC] dark:hover:bg-[#00AEEC]/25"
-                                : "border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#D6DCE8] hover:border-[#C9D1DE] dark:hover:border-white/40 hover:bg-[#EEF2F7] dark:hover:bg-white/10",
-                        ].join(" ")}
-                    >
-                        {prompt}
-                    </button>
-                ))}
-            </div>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
                 <div className="flex items-center gap-2 rounded-full bg-[#EEF5D6] dark:bg-[#B3CE52]/15 px-3 py-1.5 text-xs font-medium text-[#5C7A12] dark:text-[#B3CE52] ring-1 ring-inset ring-[#B3CE52]/60 dark:ring-[#B3CE52]/40">
                     <IconShield /> Consultas controladas
@@ -3326,7 +3309,6 @@ export default function AuroraPage() {
                                     Base de conhecimento
                                 </span>
                             </div>
-                            <p className="truncate text-xs text-[#5B6478] dark:text-[#AEB9CF]">Assistente Administrativo • dados operacionais + Base de Conhecimento</p>
                         </div>
                     </div>
 
@@ -3363,14 +3345,14 @@ export default function AuroraPage() {
                                             className={[
                                                 "break-words px-4 py-3 text-sm leading-6 sm:text-[15px]",
                                                 isUser
-                                                    ? "rounded-2xl rounded-br-md bg-[#313C55] dark:bg-[#3D6A99] dark:text-white text-white shadow-sm"
+                                                    ? "rounded-2xl rounded-br-md bg-[#313C55] dark:bg-[#F2CB3F] dark:text-[#313C55] text-white shadow-sm"
                                                     : "rounded-2xl rounded-tl-md border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] text-[#313C55] dark:text-[#E8ECF4] shadow-sm",
                                             ].join(" ")}
                                         >
                                             {isUser ? (
                                                 <div>
                                                     {message.attachment ? (
-                                                        <div className="mb-2 overflow-hidden rounded-xl border border-white/15 bg-white/10 text-left">
+                                                        <div className="mb-2 overflow-hidden rounded-xl border border-white/15 bg-white/10 dark:border-[#313C55]/15 dark:bg-[#313C55]/10 text-left">
                                                             {message.attachment.kind === "image" && message.attachment.preview_url ? (
                                                                 <img
                                                                     src={message.attachment.preview_url}
@@ -3379,7 +3361,7 @@ export default function AuroraPage() {
                                                                     loading="lazy"
                                                                 />
                                                             ) : null}
-                                                            <div className="flex items-center gap-2 px-3 py-2 text-xs text-white/85">
+                                                            <div className="flex items-center gap-2 px-3 py-2 text-xs text-white/85 dark:text-[#313C55]/80">
                                                                 <IconPaperclip className="h-4 w-4 shrink-0" />
                                                                 <span className="truncate">{message.attachment.name}</span>
                                                             </div>
@@ -3415,9 +3397,8 @@ export default function AuroraPage() {
                                                         disabled={loading}
                                                         onChoose={(name) => void sendMessage(name)}
                                                     />
-                                                    <KnowledgeSources sources={message.knowledgeSources} />
                                                 </>
-                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length || message.pendingActions?.length || message.operationalFlows?.length || message.editForms?.length || message.knowledgeSources?.length) ? (
+                                            ) : (message.productCards?.length || message.productSuggestions?.length || message.exportCards?.length || message.pendingActions?.length || message.operationalFlows?.length || message.editForms?.length) ? (
                                                 <>
                                                     <ProductCards products={message.productCards} />
                                                     <ExportCards cards={message.exportCards} />
@@ -3444,7 +3425,6 @@ export default function AuroraPage() {
                                                         disabled={loading}
                                                         onChoose={(name) => void sendMessage(name)}
                                                     />
-                                                    <KnowledgeSources sources={message.knowledgeSources} />
                                                 </>
                                             ) : (
                                                 <div className="flex items-center gap-1.5 py-1">
@@ -3455,15 +3435,6 @@ export default function AuroraPage() {
                                             )}
                                         </div>
 
-                                        {!isUser && message.toolsUsed?.length ? (
-                                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                                {message.toolsUsed.map((tool) => (
-                                                    <span key={`${message.id}-${tool}`} className="rounded-full bg-[#EEF2F7] dark:bg-[#1C2334] px-2 py-1 text-[10px] font-medium text-[#5B6478] dark:text-[#AEB9CF]">
-                                                        {toolLabel(tool)}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        ) : null}
                                     </div>
                                 </div>
                             );
@@ -3491,21 +3462,6 @@ export default function AuroraPage() {
                 style={{ bottom: keyboardOpen ? `${keyboardInset}px` : "0px" }}
             >
                 <div className="mx-auto w-full max-w-3xl px-3 py-3 sm:px-0 sm:py-4">
-                    {messages.length > 0 && !loading && !keyboardOpen ? (
-                        <div className="mb-2 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                            {QUICK_PROMPTS.slice(0, 4).map((prompt) => (
-                                <button
-                                    key={prompt}
-                                    type="button"
-                                    onClick={() => void sendMessage(prompt)}
-                                    className="shrink-0 rounded-full border border-[#E3E8F0] dark:border-white/[0.12] bg-white dark:bg-[#232B3F] px-3 py-1.5 text-xs font-medium text-[#5B6478] dark:text-[#AEB9CF] shadow-sm transition hover:bg-[#EEF2F7] dark:hover:bg-white/10"
-                                >
-                                    {prompt}
-                                </button>
-                            ))}
-                        </div>
-                    ) : null}
-
                     <form
                         onSubmit={handleSubmit}
                         className="rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-lg shadow-black/5 dark:shadow-black/30 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20"

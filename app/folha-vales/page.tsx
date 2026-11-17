@@ -9,10 +9,13 @@
  * - Corte = data do pagamento da folha: vale com data a partir do dia em que a folha foi paga cai na folha seguinte.
  * - Empréstimos parcelados: parcelas mensais até quitar (a última leva o resto); adiar empurra esta e as seguintes.
  * Back-end: rh_vales.php (novo). Só a Gestão acessa (o PHP confere).
+ * 17/11/2026: o vale e o empréstimo nascem no financeiro (Tesouraria › caixa › Vale ou Contas a Pagar › Vale ou empréstimo,
+ * fin_vales.php). A importação da Unymos e os botões de lançar aqui saíram; a lista mostra onde cada vale nasceu.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Link from 'next/link';
 import { IconAlertTriangle, IconFileSpreadsheet, IconPlus, IconRefresh, IconSearch, IconUpload, IconWallet, IconX } from '@tabler/icons-react';
 
 /* ============================== tipos ============================== */
@@ -29,6 +32,8 @@ type Vale = {
     origem: 'MANUAL' | 'UNYMOS' | 'CONTAS_A_PAGAR';
     folha_id: number | null;
     folha_competencia: string | null;
+    fin_titulo_id?: number | null; // 17/11/2026: pago pelo financeiro
+    titulo_situacao?: string | null;
 };
 type Parcela = { id: number; numero: number; competencia: string; valor: number; situacao: 'PREVISTA' | 'DESCONTADA' | 'ADIADA' | 'QUITADA'; folha_id: number | null; data_pagamento: string | null };
 type Emprestimo = {
@@ -280,7 +285,7 @@ function CampoValor({ rotulo, valor, onChange, disabled, ajuda }: { rotulo: stri
     );
 }
 
-const SeloOrigem = ({ o }: { o: Vale['origem'] }) => <span className={`${SELO} ${o === 'MANUAL' ? S_MUDO : S_AB}`}>{o === 'MANUAL' ? 'Lançado aqui' : 'Unymos'}</span>;
+const SeloOrigem = ({ o }: { o: Vale['origem'] }) => <span className={`${SELO} ${o === 'MANUAL' ? S_MUDO : S_AB}`}>{o === 'MANUAL' ? 'Lançado aqui' : o === 'CONTAS_A_PAGAR' ? 'Financeiro' : 'Unymos'}</span>;
 const SeloSituacaoVale = ({ v }: { v: Vale }) =>
     v.situacao === 'ABERTO' ? (
         <span className={`${SELO} ${S_AVISO}`}>Em aberto</span>
@@ -348,7 +353,7 @@ export default function ValesEmprestimosPage() {
                 const v = ver === 'todos' || ver === 'cancelados' ? ver : 'abertos';
                 const j = await api('painel', undefined, `&ver=${v}`);
                 const d = j.dados || {};
-                setVales(Array.isArray(d.vales) ? d.vales : []);
+                setVales(Array.isArray(d.vales) ? d.vales.map((x: Vale) => (x.fin_titulo_id ? { ...x, origem: 'CONTAS_A_PAGAR' as const } : x)) : []); // 17/11/2026
                 setEmps(Array.isArray(d.emprestimos) ? d.emprestimos : []);
                 setColabs(Array.isArray(d.colaboradores) ? d.colaboradores : []);
                 setUltimaPaga(d.ultima_folha_paga || null);
@@ -587,15 +592,9 @@ export default function ValesEmprestimosPage() {
                         <button type="button" onClick={() => void carregar(aba)} className={BTN_SEC} aria-label="Atualizar">
                             <IconRefresh size={18} />
                         </button>
-                        <button type="button" onClick={abrirImport} className={BTN_SEC}>
-                            <IconUpload size={18} /> Importar da Unymos
-                        </button>
-                        <button type="button" onClick={novoVale} className={BTN_SEC}>
-                            <IconPlus size={18} /> Novo vale
-                        </button>
-                        <button type="button" onClick={novoEmp} className={BTN_PRI}>
-                            <IconPlus size={18} /> Novo empréstimo
-                        </button>
+                        <Link href="/contas-pagar" className={BTN_PRI}>
+                            <IconPlus size={18} /> Vale ou empréstimo
+                        </Link>
                     </div>
                 </header>
 
@@ -605,7 +604,8 @@ export default function ValesEmprestimosPage() {
                         {ultimaPaga
                             ? `a folha de ${mesBR(ultimaPaga.competencia).toLowerCase()} foi paga em ${dataBR(ultimaPaga.data_pagamento)}. Vale com data a partir desse dia entra na folha seguinte.`
                             : 'vale com data a partir do dia em que a folha foi paga entra na folha seguinte.'}{' '}
-                        O vale fica em aberto até a folha abatê-lo, no salário ou na comissão; se passar do que a pessoa tem a receber, o saldo negativo vai para o mês seguinte.
+                        O vale fica em aberto até a folha abatê-lo, no salário ou na comissão; se passar do que a pessoa tem a receber, o saldo negativo vai para o mês seguinte.{' '}
+                        <b>Desde 17/11/2026</b> o vale e o empréstimo nascem no financeiro, já pagos: no caixa (Tesouraria › Vale) ou no Contas a Pagar (Vale ou empréstimo). Para cancelar, cancele o pagamento lá: o vale cancela sozinho.
                     </span>
                 </div>
 
@@ -770,7 +770,7 @@ export default function ValesEmprestimosPage() {
                 ) : /* ============================== Vales ============================== */
                 porPessoa.length === 0 ? (
                     <div className={`${CARTAO} p-6 text-center text-[14px] text-[#5B6478] dark:text-[#AEB9CF]`}>
-                        {aba === 'abertos' ? 'Nenhum vale em aberto. Importe o relatório 92 da Unymos para trazer os vales do mês.' : 'Nenhum vale.'}
+                        {aba === 'abertos' ? 'Nenhum vale em aberto.' : 'Nenhum vale.'}
                     </div>
                 ) : (
                     <div className="flex flex-col gap-3">
@@ -797,6 +797,7 @@ export default function ValesEmprestimosPage() {
                                                     <SeloOrigem o={v.origem} />
                                                     <span className={`${SELO} ${S_MUDO}`}>abate {v.abater_em === 'COMISSAO' ? 'na comissão' : 'no salário'}</span>
                                                     {aba !== 'abertos' ? <SeloSituacaoVale v={v} /> : null}
+                                                    {v.titulo_situacao === 'CANCELADO' && v.situacao === 'ABERTO' ? <span className={`${SELO} ${S_AVISO}`}>pagamento cancelado no financeiro · tire da folha</span> : null}
                                                 </span>
                                                 {v.descricao ? <span className="mt-0.5 block break-words text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{v.descricao}</span> : null}
                                             </span>
@@ -815,7 +816,7 @@ export default function ValesEmprestimosPage() {
             {fv ? (
                 <Janela
                     titulo={fv.id ? 'Vale' : 'Novo vale'}
-                    sub={fv.origem === 'MANUAL' ? 'Lançado aqui no sistema' : 'Importado da Unymos: data, valor e pessoa vêm de lá'}
+                    sub={fv.origem === 'MANUAL' ? 'Lançado aqui no sistema' : fv.origem === 'CONTAS_A_PAGAR' ? 'Pago pelo financeiro: data, valor e pessoa vêm de lá' : 'Importado da Unymos: data, valor e pessoa vêm de lá'}
                     onFechar={fecharVale}
                     largura="max-w-lg"
                     rodape={
@@ -823,7 +824,7 @@ export default function ValesEmprestimosPage() {
                             <button type="button" className={BTN_SEC} onClick={fecharVale}>
                                 Voltar
                             </button>
-                            {fv.id ? (
+                            {fv.id && fv.origem !== 'CONTAS_A_PAGAR' ? (
                                 <button
                                     type="button"
                                     className={BTN_PERIGO}

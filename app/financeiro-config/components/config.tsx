@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { IconTargetArrow } from '@tabler/icons-react'; // 17/11/2026: Provisão
+import { GradeProvisao, OrcadoRealizado } from '../../fin-orcamento/components/provisaoAno'; // 17/11/2026: grade do ano e orçado × realizado
 import { IconAdjustmentsDollar, IconChevronDown, IconChevronRight, IconLock, IconLockOpen, IconPencil, IconPlus, IconReceipt, IconSearch } from '@tabler/icons-react';
 import { TopoPagina } from '@/components/shell/ModuloHub';
 import {
@@ -105,13 +106,36 @@ function useSalvar(avisar: (m: string) => void, recarregar: () => Promise<unknow
 export function TelaProvisao() {
     const { cad, erroCad } = useCadastros();
     const { avisar, aviso } = useAviso();
+    const [abaProv, setAbaProv] = useState<'ano' | 'mes' | 'real'>('ano'); // 17/11/2026
     return (
         <div className="min-h-[100dvh] bg-[#F6F8FB] pb-[calc(6rem+env(safe-area-inset-bottom))] text-[#313C55] [contain:inline-size] dark:bg-[#161C2A] dark:text-white lg:pb-12">
             <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-5 sm:px-6 lg:px-10 lg:py-8">
                 <TopoPagina Icone={IconTargetArrow} titulo="Provisão" />
-                {erroCad ? <div className={ERRO}>{erroCad}</div> : null}
-                {!cad && !erroCad ? <div className="py-8 text-center text-[#5B6478]">Carregando…</div> : null}
-                {cad ? <AbaOrcamento cad={cad} avisar={avisar} /> : null}
+                <div className="-mx-4 flex gap-1 overflow-x-auto border-b border-[#E3E8F0] px-4 dark:border-white/[0.1] lg:mx-0 lg:px-0" role="tablist">
+                    {(
+                        [
+                            ['ano', 'Grade do ano'],
+                            ['mes', 'Mês'],
+                            ['real', 'Orçado × realizado'],
+                        ] as const
+                    ).map(([k, r]) => (
+                        <button
+                            key={k}
+                            type="button"
+                            role="tab"
+                            aria-selected={abaProv === k}
+                            onClick={() => setAbaProv(k)}
+                            className={`h-11 shrink-0 whitespace-nowrap px-3 text-[14.5px] ${abaProv === k ? 'font-extrabold shadow-[inset_0_-3px_0_#F2CB3F]' : 'font-bold text-[#5B6478] dark:text-[#AEB9CF]'}`}
+                        >
+                            {r}
+                        </button>
+                    ))}
+                </div>
+                {abaProv === 'ano' ? <GradeProvisao avisar={avisar} /> : null}
+                {abaProv === 'real' ? <OrcadoRealizado /> : null}
+                {abaProv === 'mes' && erroCad ? <div className={ERRO}>{erroCad}</div> : null}
+                {abaProv === 'mes' && !cad && !erroCad ? <div className="py-8 text-center text-[#5B6478]">Carregando…</div> : null}
+                {abaProv === 'mes' && cad ? <AbaOrcamento cad={cad} avisar={avisar} /> : null}
             </div>
             {aviso}
         </div>
