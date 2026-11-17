@@ -15,6 +15,9 @@ import {
     IconMicrophone,
     IconPlayerPlay,
     IconSparkles,
+    IconChevronLeft,
+    IconChecks,
+    IconDeviceTv,
 } from "@tabler/icons-react";
 
 type AttendanceFilter = "todos" | "sala01" | "sala02" | "sala03" | "externo";
@@ -600,7 +603,13 @@ function Janela({
     );
 }
 
-/** Chip de filtro (Ativos, Sala 01...). Mostra o nº de pendentes quando conhecido. */
+/* =========================================================
+   17/11/2026: layout "caixa de entrada"
+   Lista de velórios à esquerda (selo da sala, horário e nº de pendentes),
+   mensagens do velório escolhido à direita, com Aprovar e Recusar na própria linha.
+   ========================================================= */
+
+/** Chip de filtro (Em andamento, Sala 01...). Mostra o nº de pendentes quando conhecido. */
 function FilterChip({
     label,
     active,
@@ -618,17 +627,17 @@ function FilterChip({
             aria-pressed={active}
             onClick={onClick}
             className={[
-                "inline-flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border-[1.5px] px-4 text-sm font-bold transition",
+                "inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border-[1.5px] px-3.5 text-[13px] font-bold transition",
                 active
                     ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
-                    : "border-[#C9D1DE] bg-white text-[#313C55] hover:bg-[#EEF2F7] dark:border-white/[0.26] dark:bg-[#232B3F] dark:text-white dark:hover:bg-white/[0.08]",
+                    : "border-[#DCE2EC] bg-white text-[#5B6478] hover:bg-[#EEF2F7] dark:border-white/[0.2] dark:bg-[#232B3F] dark:text-[#D6DCE8] dark:hover:bg-white/[0.08]",
             ].join(" ")}
         >
             {label}
             {pendentes ? (
                 <span
-                    className="grid h-6 min-w-6 place-items-center rounded-full bg-[#F2CB3F] px-1.5 text-[12px] font-extrabold text-[#313C55]"
-                    title={`${pendentes} pendente(s)`}
+                    className="grid h-5 min-w-5 place-items-center rounded-full bg-[#F2CB3F] px-1.5 text-[11.5px] font-extrabold text-[#313C55]"
+                    title={`${pendentes} para aprovar`}
                 >
                     {pendentes}
                 </span>
@@ -637,24 +646,91 @@ function FilterChip({
     );
 }
 
-/** Número pequeno do cartão do atendimento (pendentes em amarelo quando > 0). */
-function Contador({ valor, rotulo, alerta = false }: { valor: number; rotulo: string; alerta?: boolean }) {
-    const ativo = alerta && valor > 0;
+function mesmoDia(a: Date, b: Date): boolean {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/** Data relativa curta: "hoje", "amanhã", "ontem" ou "17/11". */
+function diaCurto(d: Date): string {
+    const hoje = new Date();
+    const amanha = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + 1);
+    const ontem = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+    if (mesmoDia(d, hoje)) return "hoje";
+    if (mesmoDia(d, amanha)) return "amanhã";
+    if (mesmoDia(d, ontem)) return "ontem";
+    return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`;
+}
+
+function horaCurta(d: Date): string {
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** "até 16:30" ou "até amanhã 09:00" (fim do velório). */
+function fimCurto(a: AtendimentoItem): string {
+    const p = getStrictPeriodRange(a);
+    if (!p) return "sem horário";
+    const dia = diaCurto(p.fim);
+    return dia === "hoje" ? `até ${horaCurta(p.fim)}` : `até ${dia} ${horaCurta(p.fim)}`;
+}
+
+/** "hoje 08:00 → 16:30" ou "hoje 10:00 → amanhã 09:00". */
+function periodoCurto(a: AtendimentoItem): string {
+    const p = getStrictPeriodRange(a);
+    if (!p) return "";
+    const di = diaCurto(p.inicio);
+    const df = diaCurto(p.fim);
+    return `${di} ${horaCurta(p.inicio)} → ${df === di ? "" : df + " "}${horaCurta(p.fim)}`;
+}
+
+/** Hora do envio: "10:42" se foi hoje; senão "16/11 às 22:10". */
+function horaEnvio(v?: string | null): string {
+    const d = parseDateTimeStrict(v);
+    if (!d) return v ? String(v) : "";
+    return mesmoDia(d, new Date()) ? horaCurta(d) : fmtEnviadoEm(v);
+}
+
+/** Endereço da TV de mensagens da sala (tema do site). Externo não tem TV. */
+function linkTvSala(sala?: string | null): string {
+    const s = normalizeSala(sala);
+    if (s === "Sala 01") return `${PUBLIC_BASE_URL}/mensagens-tv/`;
+    if (s === "Sala 02") return `${PUBLIC_BASE_URL}/mensagens-tv-sala-02/`;
+    if (s === "Sala 03") return `${PUBLIC_BASE_URL}/mensagens-tv-sala-03/`;
+    return "";
+}
+
+/** Nome com a primeira letra de cada palavra maiúscula (alguns vêm todo em maiúsculas). */
+function nomeBonito(nome: string): string {
+    const minusculas = new Set(["da", "de", "do", "das", "dos", "e"]);
+    return String(nome || "")
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((p, i) => (i > 0 && minusculas.has(p) ? p : p.charAt(0).toUpperCase() + p.slice(1)))
+        .join(" ");
+}
+
+/** Selo da sala: "SALA 02" em azul-escuro; externo em azul-claro. */
+function SeloSala({ sala, grande = false }: { sala?: string | null; grande?: boolean }) {
+    const s = normalizeSala(sala);
+    const num = s.startsWith("Sala ") ? s.slice(5) : "";
+    const tam = grande ? "size-14 rounded-2xl" : "size-12 rounded-[14px]";
+    if (!num) {
+        return (
+            <span className={`grid ${tam} shrink-0 place-items-center bg-[#E6ECF5] text-[12px] font-extrabold text-[#3D6A99] dark:bg-[#3D6A99]/25 dark:text-[#AFC8E6]`}>
+                EXT
+            </span>
+        );
+    }
     return (
-        <span
-            className={[
-                "inline-flex h-7 items-center gap-1 rounded-full border-[1.5px] px-2.5 text-[12.5px] font-bold",
-                ativo
-                    ? "border-[#F2CB3F] bg-[#F2CB3F] text-[#313C55]"
-                    : "border-[#E3E8F0] bg-[#F6F8FB] text-[#5B6478] dark:border-white/[0.12] dark:bg-[#1C2334] dark:text-[#AEB9CF]",
-            ].join(" ")}
-        >
-            <b className={ativo ? "" : "text-[#313C55] dark:text-white"}>{valor}</b> {rotulo}
+        <span className={`grid ${tam} shrink-0 place-items-center bg-[#313C55] text-center text-[11px] font-extrabold leading-[1.05] text-[#F2CB3F] dark:bg-[#3D6A99]`}>
+            SALA
+            <br />
+            {num}
         </span>
     );
 }
 
-function AtendimentoCard({
+function AtendimentoLinha({
     item,
     active,
     onClick,
@@ -663,17 +739,9 @@ function AtendimentoCard({
     active: boolean;
     onClick: () => void;
 }) {
-    const status = derivePeriodStatusStrict(item);
-    const periodo =
-        item.inicio || item.fim
-            ? `${String(item.inicio || "").replace("T", " ")} ${item.fim ? "até " + String(item.fim).replace("T", " ") : ""}`
-            : [
-                formatDateBR(item.data_inicio_velorio),
-                formatHourBR(item.hora_inicio_velorio),
-                item.data_fim_velorio || item.hora_fim_velorio ? "até" : "",
-                formatDateBR(item.data_fim_velorio),
-                formatHourBR(item.hora_fim_velorio),
-            ].filter(Boolean).join(" ");
+    const pend = item.pendentes || 0;
+    const aprov = item.aprovadas || 0;
+    const resumo = aprov ? `${aprov} aprovada${aprov === 1 ? "" : "s"}` : pend ? "" : "nenhuma mensagem";
 
     return (
         <button
@@ -681,31 +749,29 @@ function AtendimentoCard({
             onClick={onClick}
             aria-pressed={active}
             className={[
-                "w-full rounded-2xl border-[1.5px] px-4 py-3 text-left transition",
+                "flex w-full items-center gap-3 border-l-[3px] px-4 py-3 text-left transition lg:px-5",
                 active
-                    ? "border-[#313C55] bg-[#E9EFF6] dark:border-[#3D6A99] dark:bg-[#3D6A99]/20"
-                    : "border-[#E3E8F0] bg-white hover:bg-[#F6F8FB] dark:border-white/[0.12] dark:bg-[#232B3F] dark:hover:bg-white/[0.06]",
+                    ? "border-l-[#3D6A99] bg-[#F1F5FA] dark:bg-[#3D6A99]/20"
+                    : "border-l-transparent hover:bg-[#F6F8FB] dark:hover:bg-white/[0.05]",
             ].join(" ")}
         >
-            <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                    <div className="truncate text-[15px] font-extrabold text-[#313C55] dark:text-white">{item.falecido}</div>
-                    <div className={`mt-0.5 text-[12.5px] ${TXT_SEC}`}>
-                        {normalizeSala(item.sala)} · nº {item.atendimento_id}
-                    </div>
-                </div>
-
-                <span className={`shrink-0 rounded-full border-[1.5px] px-2.5 py-0.5 text-[11.5px] font-extrabold ${periodClass(status)}`}>
-                    {periodLabel(status)}
+            <SeloSala sala={item.sala} />
+            <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] font-extrabold text-[#313C55] dark:text-white">{nomeBonito(item.falecido)}</span>
+                <span className={`mt-0.5 block truncate text-[12.5px] font-semibold ${TXT_SEC}`}>
+                    {[fimCurto(item), resumo].filter(Boolean).join(" · ")}
                 </span>
-            </div>
-
-            {periodo ? <div className={`mt-1 text-[12.5px] ${TXT_SEC}`}>{periodo}</div> : null}
-
-            <div className="mt-2.5 flex flex-wrap gap-1.5">
-                <Contador valor={item.pendentes || 0} rotulo="pendentes" alerta />
-                <Contador valor={item.aprovadas || 0} rotulo="aprovadas" />
-            </div>
+            </span>
+            {pend > 0 ? (
+                <span
+                    className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full bg-[#F2CB3F] px-2 text-[13px] font-extrabold text-[#313C55]"
+                    title={`${pend} para aprovar`}
+                >
+                    {pend}
+                </span>
+            ) : aprov > 0 ? (
+                <span className="shrink-0 text-[12px] font-extrabold text-[#24704A] dark:text-[#9FD8B5]">✓ em dia</span>
+            ) : null}
         </button>
     );
 }
@@ -714,12 +780,12 @@ function AtendimentoCard({
 function MidiaHomenagem({ item }: { item: MessageItem }) {
     const [falhou, setFalhou] = useState(false);
     const mime = String(item.arquivo_mime || "");
-    const caixa = "grid size-14 shrink-0 place-items-center rounded-xl sm:size-16";
+    const caixa = "grid size-16 shrink-0 place-items-center rounded-2xl sm:size-20";
 
     if (mime.startsWith("audio/")) {
         return (
             <div className={`${caixa} bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/25 dark:text-white`} title="Áudio">
-                <IconMicrophone size={24} stroke={1.8} />
+                <IconMicrophone size={26} stroke={1.8} />
             </div>
         );
     }
@@ -727,14 +793,14 @@ function MidiaHomenagem({ item }: { item: MessageItem }) {
     if (mime.startsWith("video/")) {
         return (
             <div className={`${caixa} bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/25 dark:text-white`} title="Vídeo">
-                <IconPlayerPlay size={24} stroke={1.8} />
+                <IconPlayerPlay size={26} stroke={1.8} />
             </div>
         );
     }
 
     if (!item.image || falhou) {
         return (
-            <div className={`${caixa} text-lg font-extrabold ${corAvatar(item.name)}`} aria-hidden="true">
+            <div className={`${caixa} text-xl font-extrabold ${corAvatar(item.name)}`} aria-hidden="true">
                 {iniciais(item.name)}
             </div>
         );
@@ -744,7 +810,7 @@ function MidiaHomenagem({ item }: { item: MessageItem }) {
         <img
             src={resolveImageSrc(item.image)}
             alt={item.name}
-            className="size-14 shrink-0 rounded-xl border border-[#E3E8F0] object-cover dark:border-white/[0.12] sm:size-16"
+            className="size-16 shrink-0 rounded-2xl border border-[#E3E8F0] object-cover dark:border-white/[0.12] sm:size-20"
             loading="lazy"
             onError={() => setFalhou(true)}
         />
@@ -770,72 +836,95 @@ function MessageCard({
     const confianca = item.moderacao_confianca != null ? Math.round(item.moderacao_confianca * 100) : null;
 
     return (
-        <article className={`flex min-w-0 flex-col ${CARD} p-3.5 sm:p-4`}>
-            <div className="flex items-start gap-3">
-                <MidiaHomenagem item={item} />
+        <article className="flex min-w-0 gap-3 rounded-[18px] border border-[#E6EAF1] bg-white p-3 dark:border-white/[0.12] dark:bg-[#232B3F] sm:gap-4 sm:p-3.5">
+            <MidiaHomenagem item={item} />
 
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="min-w-0 truncate text-[15px] font-extrabold">{item.name}</span>
-                        {item.tipo ? (
-                            <span className="rounded-full border border-[#C9D1DE] bg-[#EEF2F7] px-2 py-0.5 text-[11px] font-bold uppercase text-[#5B6478] dark:border-white/25 dark:bg-white/10 dark:text-[#AEB9CF]">
-                                {item.tipo}
-                            </span>
-                        ) : null}
-                        {aurora ? (
-                            <span
-                                className="inline-flex items-center gap-1 rounded-full border border-[#7BA11A]/50 bg-[#EEF5D6] px-2 py-0.5 text-[11px] font-extrabold text-[#4A6310] dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#CFE38A]"
-                                title={[
-                                    "Aprovado automaticamente pela Aurora",
-                                    item.moderacao_categoria ? `Categoria: ${item.moderacao_categoria}` : "",
-                                    confianca != null ? `Confiança: ${confianca}%` : "",
-                                    item.moderacao_motivo ? `Motivo: ${item.moderacao_motivo}` : "",
-                                ].filter(Boolean).join(" • ")}
-                            >
-                                <IconSparkles size={12} stroke={2} />
-                                Aurora{confianca != null ? ` · ${confianca}%` : ""}
-                            </span>
-                        ) : null}
-                    </div>
+            <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="min-w-0 truncate text-[15.5px] font-extrabold">{item.name || "Visitante"}</span>
+                    {item.criado_em ? <span className={`text-[12.5px] font-bold ${TXT_SEC}`}>{horaEnvio(item.criado_em)}</span> : null}
+                    {aurora ? (
+                        <span
+                            className="inline-flex items-center gap-1 self-center rounded-full border border-[#7BA11A]/50 bg-[#EEF5D6] px-2 py-0.5 text-[11px] font-extrabold text-[#4A6310] dark:border-[#B3CE52]/40 dark:bg-[#B3CE52]/15 dark:text-[#CFE38A]"
+                            title={[
+                                "Aprovado automaticamente pela Aurora",
+                                item.moderacao_categoria ? `Categoria: ${item.moderacao_categoria}` : "",
+                                confianca != null ? `Confiança: ${confianca}%` : "",
+                                item.moderacao_motivo ? `Motivo: ${item.moderacao_motivo}` : "",
+                            ].filter(Boolean).join(" • ")}
+                        >
+                            <IconSparkles size={12} stroke={2} />
+                            Aurora{confianca != null ? ` · ${confianca}%` : ""}
+                        </span>
+                    ) : null}
+                </div>
 
-                    {item.criado_em ? <div className={`mt-0.5 text-[12.5px] ${TXT_SEC}`}>{fmtEnviadoEm(item.criado_em)}</div> : null}
+                {item.text ? (
+                    <p className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-6 text-[#3A4560] dark:text-[#D6DCE8]">{item.text}</p>
+                ) : (
+                    <p className={`mt-1 text-sm italic ${TXT_SEC}`}>Homenagem enviada sem texto.</p>
+                )}
+
+                {item.tipo ? <div className="mt-1.5 text-[12px] font-extrabold capitalize text-[#3D6A99] dark:text-[#8FB4DA]">{item.tipo}</div> : null}
+
+                {isAudio && item.image ? <audio className="mt-2 w-full" controls src={resolveImageSrc(item.image)} /> : null}
+                {isVideo && item.image ? (
+                    <video className="mt-2 max-h-72 w-full rounded-xl border bg-black" controls src={resolveImageSrc(item.image)} />
+                ) : null}
+
+                {/* Celular: botões embaixo do texto */}
+                <div className="mt-3 flex items-center gap-2 sm:hidden">
+                    {pendente && onAprovar ? (
+                        <button type="button" onClick={onAprovar} disabled={ocupado} className={`${BTN_APROVAR} flex-1`}>
+                            <IconCheck size={18} stroke={2.2} />
+                            {ocupado ? "Aguarde..." : "Aprovar"}
+                        </button>
+                    ) : null}
+                    <button
+                        type="button"
+                        onClick={onExcluir}
+                        disabled={ocupado}
+                        className={`min-h-11 rounded-xl px-3 text-sm font-bold ${TXT_SEC} hover:bg-[#FDECEA] hover:text-[#B42318] disabled:opacity-45`}
+                    >
+                        {pendente ? "Recusar" : "Excluir"}
+                    </button>
                 </div>
             </div>
 
-            {item.text ? (
-                <p className="mt-3 whitespace-pre-wrap break-words text-[14.5px] leading-6 text-[#313C55] dark:text-[#D6DCE8]">{item.text}</p>
-            ) : (
-                <p className={`mt-3 text-sm italic ${TXT_SEC}`}>Homenagem enviada sem texto.</p>
-            )}
-
-            {isAudio && item.image ? <audio className="mt-3 w-full" controls src={resolveImageSrc(item.image)} /> : null}
-
-            {isVideo && item.image ? (
-                <video className="mt-3 max-h-72 w-full rounded-xl border bg-black" controls src={resolveImageSrc(item.image)} />
-            ) : null}
-
-            <div className="mt-auto flex items-center gap-2 pt-3">
+            {/* Computador: botões à direita */}
+            <div className="hidden w-[132px] shrink-0 flex-col items-stretch gap-1.5 sm:flex">
                 {pendente && onAprovar ? (
-                    <button type="button" onClick={onAprovar} disabled={ocupado} className={`${BTN_APROVAR} flex-1 sm:flex-none sm:min-w-[140px]`}>
+                    <button type="button" onClick={onAprovar} disabled={ocupado} className={BTN_APROVAR}>
                         <IconCheck size={18} stroke={2.2} />
                         {ocupado ? "Aguarde..." : "Aprovar"}
                     </button>
                 ) : null}
-
                 <button
                     type="button"
                     onClick={onExcluir}
                     disabled={ocupado}
-                    className="ml-auto inline-grid size-11 shrink-0 place-items-center rounded-xl text-[#B42318] hover:bg-[#FDECEA] disabled:opacity-45 dark:text-[#FF9C92] dark:hover:bg-[#FF9C92]/15"
-                    title="Excluir homenagem"
-                    aria-label="Excluir homenagem"
+                    className={`min-h-10 rounded-xl px-3 text-[13.5px] font-bold ${TXT_SEC} hover:bg-[#FDECEA] hover:text-[#B42318] disabled:opacity-45 dark:hover:bg-[#FF9C92]/15 dark:hover:text-[#FF9C92]`}
                 >
-                    <IconTrash size={20} stroke={1.8} />
+                    {pendente ? "Recusar" : "Excluir"}
                 </button>
             </div>
         </article>
     );
 }
+
+/** Quem tem mensagem para aprovar primeiro (mais pendentes antes); depois pelo fim do velório. */
+function ordenarAtendimentos(lista: AtendimentoItem[]): AtendimentoItem[] {
+    return [...lista].sort((a, b) => {
+        const pa = a.pendentes || 0;
+        const pb = b.pendentes || 0;
+        if ((pa > 0) !== (pb > 0)) return pb > 0 ? 1 : -1;
+        if (pa !== pb) return pb - pa;
+        const fa = getStrictPeriodRange(a)?.fim.getTime() ?? Infinity;
+        const fb = getStrictPeriodRange(b)?.fim.getTime() ?? Infinity;
+        return fa - fb;
+    });
+}
+
 export default function MensagensPage() {
     const [filter, setFilter] = useState<AttendanceFilter>("todos");
     const [query, setQuery] = useState("");
@@ -851,6 +940,9 @@ export default function MensagensPage() {
     // Visual: aviso na tela (no lugar do alert), aba Pendentes/Aprovadas, pendentes por filtro e erro do livro.
     const [aviso, setAviso] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
     const [aba, setAba] = useState<"pendentes" | "aprovadas">("pendentes");
+    // Celular: lista de velórios ou mensagens de um velório (uma tela por vez).
+    const [detalheCel, setDetalheCel] = useState(false);
+    const [aprovandoTodas, setAprovandoTodas] = useState(false);
     const [pendPorFiltro, setPendPorFiltro] = useState<Partial<Record<AttendanceFilter, number>>>({});
     const [livroErro, setLivroErro] = useState("");
     const avisoTimer = useRef<number | null>(null);
@@ -1054,12 +1146,18 @@ export default function MensagensPage() {
                 return;
             }
 
-            if (selected) {
-                const stillExists = atuais.find((a) => a.atendimento_id === selected.atendimento_id);
-                if (stillExists) {
-                    setSelected(stillExists);
+            // Sem velório escolhido (ou o escolhido acabou): abre o primeiro com mensagem para aprovar.
+            const stillExists = selected ? atuais.find((a) => a.atendimento_id === selected.atendimento_id) : undefined;
+            if (stillExists) {
+                setSelected(stillExists);
+            } else {
+                const primeiro = ordenarAtendimentos(atuais)[0] ?? null;
+                setSelected(primeiro);
+                if (primeiro) {
+                    setFalecido(primeiro.falecido || "");
+                    setNascimento(normalizeDate(primeiro.data_nascimento));
+                    setFalecimento(normalizeDate(primeiro.data_falecimento));
                 } else {
-                    setSelected(null);
                     setReceived([]);
                     setApproved([]);
                 }
@@ -1157,6 +1255,7 @@ export default function MensagensPage() {
 
     const onPickAtendimento = async (item: AtendimentoItem) => {
         setAba("pendentes");
+        setDetalheCel(true);
         setSelected(item);
         setFalecido(item.falecido || "");
         setNascimento(normalizeDate(item.data_nascimento));
@@ -1491,8 +1590,6 @@ export default function MensagensPage() {
         }
     };
 
-    const showAtendimentoList = shouldShowAtendimentoList(filter);
-
     const totals = useMemo(() => {
         return atendimentos.reduce(
             (acc, item) => {
@@ -1506,7 +1603,7 @@ export default function MensagensPage() {
     }, [atendimentos]);
 
     const FILTROS: { id: AttendanceFilter; label: string }[] = [
-        { id: "todos", label: "Ativos" },
+        { id: "todos", label: "Em andamento" },
         { id: "sala01", label: "Sala 01" },
         { id: "sala02", label: "Sala 02" },
         { id: "sala03", label: "Sala 03" },
@@ -1515,55 +1612,127 @@ export default function MensagensPage() {
 
     const escolherFiltro = (f: AttendanceFilter) => {
         if (isSalaFilter(f)) setQuery("");
+        setDetalheCel(false);
         setFilter(f);
     };
 
+    // Quem tem mensagem para aprovar vem primeiro.
+    const atendimentosOrdenados = useMemo(() => ordenarAtendimentos(atendimentos), [atendimentos]);
+
     const listaAtual = aba === "pendentes" ? received : approved;
+    const tvSala = selected ? linkTvSala(selected.sala) : "";
+    const salaSelecionada = selected ? normalizeSala(selected.sala) : "";
+
+    const aprovarTodas = async () => {
+        if (!selectedAtendimentoId || !received.length) return;
+        const ids = received.map((m) => m.id);
+        let ok = 0;
+        setAprovandoTodas(true);
+        try {
+            for (const id of ids) {
+                setActionLoadingId(id);
+                try {
+                    await apiPost({
+                        acao: ADMIN_ACTIONS.aprovar,
+                        atendimento_id: selectedAtendimentoId,
+                        homenagem_id: selected?.homenagem_id,
+                        codigo: selected?.codigo_homenagem || selected?.slug || "",
+                        envio_id: id,
+                    });
+                    ok++;
+                } catch {
+                    // Segue com as outras; o resumo abaixo avisa.
+                }
+            }
+        } finally {
+            setActionLoadingId(null);
+            setAprovandoTodas(false);
+        }
+        await loadMessages(selected);
+        await loadAtendimentos();
+        if (ok === ids.length) mostrarAviso("ok", ok === 1 ? "Homenagem aprovada." : `${ok} homenagens aprovadas.`);
+        else mostrarAviso("erro", `${ok} de ${ids.length} aprovadas. Tente de novo as que ficaram.`);
+    };
+
+    const ocupadoGeral = aprovandoTodas || actionLoadingId !== null;
 
     return (
         <div className="min-h-[calc(100dvh-1px)] bg-[#F6F8FB] text-[#313C55] dark:bg-[#161C2A] dark:text-white">
-            <div className="mx-auto w-full max-w-7xl px-4 pb-8 pt-4 lg:px-10 lg:pb-12 lg:pt-8">
-                {/* TOPO */}
-                <header className="mb-4 flex items-start justify-between gap-3 lg:mb-6">
-                    <div className="min-w-0">
-                        <h1 className="text-2xl font-extrabold leading-tight lg:text-[28px]">Homenagens Ativas</h1>
-                        <p className={`mt-1 text-sm ${TXT_SEC}`}>
-                            <b className={totals.pendentes > 0 ? "text-[#313C55] dark:text-[#F2CB3F]" : ""}>{totals.pendentes}</b> pendentes ·{" "}
-                            <b>{totals.aprovadas}</b> aprovadas
-                            <span className="hidden sm:inline"> · {totals.total} no total</span>
-                        </p>
+            <div className="mx-auto w-full max-w-7xl px-0 pb-6 pt-0 sm:px-4 sm:pt-4 lg:px-8 lg:pb-10 lg:pt-6">
+                {/* AVISOS */}
+                {aviso || error ? (
+                    <div className="px-4 pt-3 sm:px-0 sm:pt-0">
+                        {aviso ? (
+                            <div
+                                role={aviso.tipo === "erro" ? "alert" : "status"}
+                                className={[
+                                    "mb-3 flex items-start gap-2 rounded-[14px] border px-4 py-3 text-sm font-bold",
+                                    aviso.tipo === "erro"
+                                        ? "border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]"
+                                        : "border-[#B3CE52] bg-[#EEF5D6] text-[#313C55] dark:bg-[#B3CE52]/[0.18] dark:text-white",
+                                ].join(" ")}
+                            >
+                                <span className="min-w-0 flex-1">{aviso.texto}</span>
+                                <button type="button" onClick={() => setAviso(null)} className="-my-1 grid size-8 shrink-0 place-items-center rounded-lg hover:bg-black/5" aria-label="Fechar aviso">
+                                    <IconX size={16} stroke={2} />
+                                </button>
+                            </div>
+                        ) : null}
+                        {error ? (
+                            <div role="alert" className="mb-3 rounded-[14px] border border-[#B42318] bg-[#FDECEA] px-4 py-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
+                                {error}
+                            </div>
+                        ) : null}
                     </div>
+                ) : null}
 
-                    <button
-                        type="button"
-                        onClick={refreshAll}
-                        disabled={loadingAtendimentos || loadingMessages}
-                        className={BTN_ICONE}
-                        title="Atualizar"
-                        aria-label="Atualizar"
-                    >
-                        <IconRefresh size={20} stroke={1.8} className={loadingAtendimentos || loadingMessages ? "animate-spin" : ""} />
-                    </button>
-                </header>
+                <div className="grid min-h-[calc(100dvh-140px)] overflow-hidden bg-white dark:bg-[#232B3F] sm:rounded-[22px] sm:border sm:border-[#E3E8F0] sm:dark:border-white/[0.12] lg:h-[calc(100dvh-150px)] lg:min-h-[560px] lg:grid-cols-[340px_minmax(0,1fr)]">
+                    {/* ===== LISTA DE VELÓRIOS ===== */}
+                    <aside className={`${detalheCel ? "hidden lg:flex" : "flex"} min-h-0 flex-col border-[#EEF1F6] dark:border-white/[0.1] lg:border-r`}>
+                        <div className="px-4 pb-3 pt-4 lg:px-5 lg:pt-5">
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                    <h1 className="text-[22px] font-extrabold leading-tight">Mensagens</h1>
+                                    <p className={`mt-0.5 text-[13.5px] font-semibold ${TXT_SEC}`}>Homenagens enviadas para os velórios</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={refreshAll}
+                                    disabled={loadingAtendimentos || loadingMessages}
+                                    className={BTN_ICONE}
+                                    title="Atualizar"
+                                    aria-label="Atualizar"
+                                >
+                                    <IconRefresh size={20} stroke={1.8} className={loadingAtendimentos || loadingMessages ? "animate-spin" : ""} />
+                                </button>
+                            </div>
+                            {totals.pendentes > 0 ? (
+                                <span className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[#FFF1C2] px-3 py-1 text-[12.5px] font-extrabold text-[#7A5B00] dark:bg-[#F2CB3F]/20 dark:text-[#F2CB3F]">
+                                    <span className="size-2 rounded-full bg-[#C99A00]" aria-hidden="true" />
+                                    {totals.pendentes} aguardando aprovação
+                                </span>
+                            ) : (
+                                <span className="mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[#E3F4EA] px-3 py-1 text-[12.5px] font-extrabold text-[#24704A] dark:bg-[#2E8B57]/20 dark:text-[#9FD8B5]">
+                                    ✓ Nada aguardando aprovação
+                                </span>
+                            )}
+                        </div>
 
-                {/* FILTROS */}
-                <div className={`mb-4 ${CARD} p-3 lg:mb-5 lg:p-4`}>
-                    <div className="-mx-3 flex gap-2 overflow-x-auto px-3 [scrollbar-width:none] lg:mx-0 lg:flex-wrap lg:px-0" role="group" aria-label="Local">
-                        {FILTROS.map((f) => (
-                            <FilterChip
-                                key={f.id}
-                                label={f.label}
-                                active={filter === f.id}
-                                pendentes={pendPorFiltro[f.id]}
-                                onClick={() => escolherFiltro(f.id)}
-                            />
-                        ))}
-                    </div>
+                        <div className="flex flex-wrap gap-1.5 px-4 pb-3 lg:px-5" role="group" aria-label="Local">
+                            {FILTROS.map((f) => (
+                                <FilterChip
+                                    key={f.id}
+                                    label={f.label}
+                                    active={filter === f.id}
+                                    pendentes={pendPorFiltro[f.id]}
+                                    onClick={() => escolherFiltro(f.id)}
+                                />
+                            ))}
+                        </div>
 
-                    {showAtendimentoList ? (
-                        <div className="mt-3 flex gap-2">
-                            <span className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-transparent bg-[#F1F4F8] px-3 text-[#5B6478] focus-within:border-[#3D6A99] focus-within:ring-2 focus-within:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
-                                <IconSearch size={20} stroke={1.8} className="shrink-0" />
+                        <div className="px-4 pb-2 lg:px-5">
+                            <span className="flex h-11 items-center gap-2 rounded-xl border border-transparent bg-[#F1F4F8] px-3 text-[#5B6478] focus-within:border-[#3D6A99] focus-within:ring-2 focus-within:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                                <IconSearch size={18} stroke={1.8} className="shrink-0" />
                                 <input
                                     type="search"
                                     value={query}
@@ -1571,129 +1740,75 @@ export default function MensagensPage() {
                                     onKeyDown={(e) => {
                                         if (e.key === "Enter") onSearch();
                                     }}
-                                    placeholder="Nome, nº do atendimento ou código"
+                                    placeholder="Buscar por nome ou nº"
                                     aria-label="Buscar atendimento"
-                                    className="min-w-0 flex-1 border-0 bg-transparent text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] dark:text-white dark:placeholder:text-[#8893AA]"
+                                    className="min-w-0 flex-1 border-0 bg-transparent text-[16px] text-[#313C55] outline-none placeholder:text-[#7A8396] dark:text-white dark:placeholder:text-[#8893AA] lg:text-[14.5px]"
                                 />
                             </span>
-
-                            <button type="button" onClick={onSearch} className={`${BTN_SEC} shrink-0`}>
-                                Buscar
-                            </button>
                         </div>
-                    ) : null}
-                </div>
 
-                {/* AVISOS */}
-                {aviso ? (
-                    <div
-                        role={aviso.tipo === "erro" ? "alert" : "status"}
-                        className={[
-                            "mb-4 flex items-start gap-2 rounded-[14px] border px-4 py-3 text-sm font-bold",
-                            aviso.tipo === "erro"
-                                ? "border-[#B42318] bg-[#FDECEA] text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]"
-                                : "border-[#B3CE52] bg-[#EEF5D6] text-[#313C55] dark:bg-[#B3CE52]/[0.18] dark:text-white",
-                        ].join(" ")}
-                    >
-                        <span className="min-w-0 flex-1">{aviso.texto}</span>
-                        <button type="button" onClick={() => setAviso(null)} className="-my-1 grid size-8 shrink-0 place-items-center rounded-lg hover:bg-black/5" aria-label="Fechar aviso">
-                            <IconX size={16} stroke={2} />
-                        </button>
-                    </div>
-                ) : null}
-
-                {error ? (
-                    <div role="alert" className="mb-4 rounded-[14px] border border-[#B42318] bg-[#FDECEA] px-4 py-3 text-sm font-bold text-[#B42318] dark:border-[#FF9C92] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
-                        {error}
-                    </div>
-                ) : null}
-
-                <div className={showAtendimentoList ? "grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-6" : "grid gap-4"}>
-                    {showAtendimentoList ? (
-                        <aside className="min-w-0">
-                            <div className="mb-2.5 flex items-center justify-between gap-2">
-                                <h2 className={`text-xs font-extrabold uppercase tracking-[.12em] ${TXT_SEC}`}>Atendimentos ativos</h2>
-                                {loadingAtendimentos ? <span className={`text-xs font-bold ${TXT_SEC}`}>Carregando…</span> : null}
-                            </div>
-
-                            {atendimentos.length === 0 ? (
-                                <div className={`${CARD} p-4 text-sm ${TXT_SEC}`}>Nenhum atendimento em andamento encontrado.</div>
-                            ) : (
-                                <div className="grid max-h-[40dvh] gap-2 overflow-auto pr-1 lg:max-h-[70vh]">
-                                    {atendimentos.map((item) => (
-                                        <AtendimentoCard
-                                            key={`${item.atendimento_id}-${item.homenagem_id || "h"}`}
-                                            item={item}
-                                            active={selected?.atendimento_id === item.atendimento_id}
-                                            onClick={() => onPickAtendimento(item)}
-                                        />
-                                    ))}
-                                </div>
-                            )}
-                        </aside>
-                    ) : null}
-
-                    <section className="min-w-0">
-                        {!selected ? (
-                            <div className={`${CARD} px-6 py-10 text-center`}>
-                                <span className="mx-auto mb-3 grid size-14 place-items-center rounded-2xl bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/20 dark:text-white">
-                                    <IconMessageCircle2 size={28} stroke={1.8} />
-                                </span>
-                                <h2 className="text-lg font-extrabold">
-                                    {isSalaFilter(filter) ? "Nenhum atendimento ativo nesta sala" : "Selecione um atendimento"}
-                                </h2>
-                                <p className={`mx-auto mt-1.5 max-w-md text-sm ${TXT_SEC}`}>
-                                    {isSalaFilter(filter)
-                                        ? "Quando houver atendimento em andamento dentro do horário do velório, ele será aberto automaticamente aqui."
-                                        : "As homenagens pendentes e aprovadas aparecem aqui ao escolher um atendimento."}
+                        <div className="min-h-0 flex-1 overflow-y-auto pb-3">
+                            {loadingAtendimentos && !atendimentos.length ? (
+                                <p className={`px-5 py-6 text-sm font-bold ${TXT_SEC}`}>Carregando…</p>
+                            ) : atendimentos.length === 0 ? (
+                                <p className={`px-5 py-6 text-sm ${TXT_SEC}`}>
+                                    {isSalaFilter(filter) ? "Nenhum velório acontecendo nesta sala agora." : "Nenhum velório acontecendo agora."}
                                 </p>
+                            ) : (
+                                atendimentosOrdenados.map((item) => (
+                                    <AtendimentoLinha
+                                        key={`${item.atendimento_id}-${item.homenagem_id || "h"}`}
+                                        item={item}
+                                        active={selected?.atendimento_id === item.atendimento_id}
+                                        onClick={() => onPickAtendimento(item)}
+                                    />
+                                ))
+                            )}
+                        </div>
+                    </aside>
+
+                    {/* ===== MENSAGENS DO VELÓRIO ===== */}
+                    <section className={`${detalheCel ? "flex" : "hidden lg:flex"} min-h-0 min-w-0 flex-col bg-[#FAFBFD] dark:bg-[#1C2334]`}>
+                        {!selected ? (
+                            <div className="grid flex-1 place-items-center px-6 py-12 text-center">
+                                <div>
+                                    <span className="mx-auto mb-3 grid size-14 place-items-center rounded-2xl bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/20 dark:text-white">
+                                        <IconMessageCircle2 size={28} stroke={1.8} />
+                                    </span>
+                                    <h2 className="text-lg font-extrabold">Nenhum velório escolhido</h2>
+                                    <p className={`mx-auto mt-1.5 max-w-sm text-sm ${TXT_SEC}`}>Escolha um velório na lista para ver as mensagens.</p>
+                                </div>
                             </div>
                         ) : (
                             <>
-                                {/* CABEÇALHO DO ATENDIMENTO */}
-                                <div className={`mb-4 ${CARD} p-4 lg:px-5`}>
-                                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                        <div className="min-w-0">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span className={`text-xs font-extrabold uppercase tracking-[.08em] ${TXT_SEC}`}>
-                                                    {normalizeSala(selected.sala)} · nº {selected.atendimento_id}
+                                {/* Cabeçalho */}
+                                <div className="flex flex-wrap items-center gap-3 border-b border-[#EEF1F6] bg-white px-4 py-3 dark:border-white/[0.1] dark:bg-[#232B3F] lg:px-6 lg:py-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setDetalheCel(false)}
+                                        className="-ml-1 grid size-10 shrink-0 place-items-center rounded-xl hover:bg-[#EEF2F7] dark:hover:bg-white/[0.08] lg:hidden"
+                                        aria-label="Voltar para a lista"
+                                    >
+                                        <IconChevronLeft size={22} stroke={2} />
+                                    </button>
+                                    <div className="min-w-0 flex-1">
+                                        <h2 className="truncate text-[19px] font-extrabold leading-tight lg:text-[21px]">{nomeBonito(selected.falecido)}</h2>
+                                        <p className={`mt-0.5 flex flex-wrap items-center gap-x-2 text-[13px] font-semibold ${TXT_SEC}`}>
+                                            <span>
+                                                {[salaSelecionada === "Atendimento Externo" ? "Externo" : salaSelecionada, `nº ${selected.atendimento_id}`, periodoCurto(selected)]
+                                                    .filter(Boolean)
+                                                    .join(" · ")}
+                                            </span>
+                                            {derivePeriodStatusStrict(selected) === "em_andamento" ? (
+                                                <span className="inline-flex items-center gap-1.5 text-[11.5px] font-extrabold tracking-[.06em] text-[#C8402F] dark:text-[#FF9C92]">
+                                                    <span className="size-2 rounded-full bg-[#E5483B]" aria-hidden="true" />
+                                                    AO VIVO
                                                 </span>
-                                                <span className={`rounded-full border-[1.5px] px-2.5 py-0.5 text-[11.5px] font-extrabold ${periodClass(derivePeriodStatusStrict(selected))}`}>
-                                                    {periodLabel(derivePeriodStatusStrict(selected))}
-                                                </span>
-                                            </div>
-                                            <h2 className="mt-1 truncate text-[22px] font-extrabold leading-tight lg:text-2xl">{selected.falecido}</h2>
-                                            <div className={`mt-0.5 text-sm ${TXT_SEC}`}>
-                                                {[formatDateBR(selected.data_nascimento), formatDateBR(selected.data_falecimento)].filter(Boolean).join(" – ")}
-                                            </div>
-                                        </div>
-
-                                        <div className="flex flex-wrap gap-2">
-                                            {selected.link_publico ? (
-                                                <a href={selected.link_publico} target="_blank" rel="noreferrer" className={`${BTN_SEC} flex-1 sm:flex-none`}>
-                                                    <IconExternalLink size={18} stroke={1.8} />
-                                                    Legado de Luz
-                                                </a>
                                             ) : null}
-                                            <button
-                                                type="button"
-                                                onClick={onOpenModal}
-                                                className={`${BTN_PRI} flex-1 sm:flex-none`}
-                                                disabled={!approved.length}
-                                                title={approved.length ? "Gerar Livro de Homenagens em PDF" : "Sem mensagens aprovadas"}
-                                            >
-                                                <IconBook2 size={18} stroke={1.8} />
-                                                <span className="sm:hidden">Livro (PDF)</span>
-                                                <span className="hidden sm:inline">Gerar livro (PDF)</span>
-                                            </button>
-                                        </div>
+                                        </p>
                                     </div>
-                                    {!approved.length ? <p className={`mt-2 text-xs ${TXT_SEC} sm:text-right`}>O livro fica disponível quando houver homenagem aprovada.</p> : null}
-                                </div>
 
-                                {/* ABAS PENDENTES / APROVADAS */}
-                                <div className="mb-3 flex items-center gap-2">
-                                    <div className="flex rounded-xl border border-[#E3E8F0] bg-white p-1 dark:border-white/[0.12] dark:bg-[#232B3F]" role="tablist">
+                                    <div className="flex w-full rounded-xl bg-[#F1F4F8] p-1 dark:bg-[#1C2334] sm:w-auto" role="tablist">
                                         {(["pendentes", "aprovadas"] as const).map((a) => {
                                             const on = aba === a;
                                             const n = a === "pendentes" ? received.length : approved.length;
@@ -1705,19 +1820,15 @@ export default function MensagensPage() {
                                                     aria-selected={on}
                                                     onClick={() => setAba(a)}
                                                     className={[
-                                                        "inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-bold transition",
-                                                        on ? "bg-[#313C55] text-white dark:bg-[#3D6A99]" : `${TXT_SEC} hover:text-[#313C55] dark:hover:text-white`,
+                                                        "inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-3.5 text-[13.5px] font-bold transition sm:flex-none",
+                                                        on ? "bg-white text-[#313C55] shadow-sm dark:bg-[#3D6A99] dark:text-white" : `${TXT_SEC} hover:text-[#313C55] dark:hover:text-white`,
                                                     ].join(" ")}
                                                 >
-                                                    {a === "pendentes" ? "Pendentes" : "Aprovadas"}
+                                                    {a === "pendentes" ? "Para aprovar" : "Aprovadas"}
                                                     <span
                                                         className={[
-                                                            "grid h-6 min-w-6 place-items-center rounded-full px-1.5 text-[12px] font-extrabold",
-                                                            a === "pendentes" && n > 0
-                                                                ? "bg-[#F2CB3F] text-[#313C55]"
-                                                                : on
-                                                                    ? "bg-white/20 text-white"
-                                                                    : "bg-[#EEF2F7] text-[#5B6478] dark:bg-white/10 dark:text-[#AEB9CF]",
+                                                            "grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11.5px] font-extrabold",
+                                                            a === "pendentes" && n > 0 ? "bg-[#F2CB3F] text-[#313C55]" : "bg-black/[0.06] dark:bg-white/10",
                                                         ].join(" ")}
                                                     >
                                                         {n}
@@ -1726,39 +1837,77 @@ export default function MensagensPage() {
                                             );
                                         })}
                                     </div>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => loadMessages(selected)}
-                                        disabled={loadingMessages}
-                                        className={`${BTN_ICONE} ml-auto`}
-                                        title="Atualizar mensagens"
-                                        aria-label="Atualizar mensagens"
-                                    >
-                                        <IconRefresh size={20} stroke={1.8} className={loadingMessages ? "animate-spin" : ""} />
-                                    </button>
                                 </div>
 
-                                {loadingMessages && listaAtual.length === 0 ? (
-                                    <div className={`${CARD} p-4 text-sm font-bold ${TXT_SEC}`}>Carregando homenagens…</div>
-                                ) : listaAtual.length === 0 ? (
-                                    <div className={`${CARD} px-4 py-8 text-center text-sm ${TXT_SEC}`}>
-                                        {aba === "pendentes" ? "Nenhuma homenagem esperando aprovação." : "Ainda não há homenagem aprovada neste atendimento."}
-                                    </div>
-                                ) : (
-                                    <div className="grid items-start gap-3 sm:grid-cols-2 [&>*]:min-w-0">
-                                        {listaAtual.map((m) => (
-                                            <MessageCard
-                                                key={`${aba}-${m.id}`}
-                                                item={m}
-                                                pendente={aba === "pendentes"}
-                                                ocupado={actionLoadingId === m.id}
-                                                onAprovar={() => approveMessage(m.id)}
-                                                onExcluir={() => requestDeleteMessage(m)}
-                                            />
-                                        ))}
-                                    </div>
-                                )}
+                                {/* Mensagens */}
+                                <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-4 lg:px-6 lg:py-5">
+                                    {loadingMessages && listaAtual.length === 0 ? (
+                                        <p className={`py-8 text-center text-sm font-bold ${TXT_SEC}`}>Carregando mensagens…</p>
+                                    ) : listaAtual.length === 0 ? (
+                                        <div className="py-12 text-center">
+                                            <span className="mx-auto mb-3 grid size-12 place-items-center rounded-2xl bg-[#E3F4EA] text-[#24704A] dark:bg-[#2E8B57]/20 dark:text-[#9FD8B5]">
+                                                <IconCheck size={24} stroke={2} />
+                                            </span>
+                                            <p className="text-[15px] font-extrabold">
+                                                {aba === "pendentes" ? "Tudo em dia" : "Nenhuma mensagem aprovada ainda"}
+                                            </p>
+                                            <p className={`mt-1 text-sm ${TXT_SEC}`}>
+                                                {aba === "pendentes" ? "Nenhuma mensagem esperando aprovação neste velório." : "As mensagens aprovadas aparecem aqui."}
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid gap-2.5 sm:gap-3">
+                                            {listaAtual.map((m) => (
+                                                <MessageCard
+                                                    key={`${aba}-${m.id}`}
+                                                    item={m}
+                                                    pendente={aba === "pendentes"}
+                                                    ocupado={actionLoadingId === m.id || aprovandoTodas}
+                                                    onAprovar={() => approveMessage(m.id)}
+                                                    onExcluir={() => requestDeleteMessage(m)}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Rodapé */}
+                                <div className="flex flex-wrap items-center gap-2 border-t border-[#EEF1F6] bg-white px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] dark:border-white/[0.1] dark:bg-[#232B3F] lg:gap-3 lg:px-6">
+                                    <span className={`hidden min-w-0 flex-1 text-[13.5px] font-semibold lg:block ${TXT_SEC}`}>
+                                        {tvSala
+                                            ? `As aprovadas aparecem na TV da ${salaSelecionada} e no Legado de Luz.`
+                                            : "As aprovadas aparecem no Legado de Luz."}
+                                    </span>
+                                    {tvSala ? (
+                                        <a href={tvSala} target="_blank" rel="noreferrer" className={`${BTN_SEC} flex-1 lg:flex-none`}>
+                                            <IconDeviceTv size={18} stroke={1.8} />
+                                            Ver na TV
+                                        </a>
+                                    ) : null}
+                                    {selected.link_publico ? (
+                                        <a href={selected.link_publico} target="_blank" rel="noreferrer" className={`${BTN_SEC} flex-1 lg:flex-none`} title="Legado de Luz">
+                                            <IconExternalLink size={18} stroke={1.8} />
+                                            <span className="hidden sm:inline">Legado de Luz</span>
+                                            <span className="sm:hidden">Legado</span>
+                                        </a>
+                                    ) : null}
+                                    <button
+                                        type="button"
+                                        onClick={onOpenModal}
+                                        className={`${BTN_SEC} flex-1 lg:flex-none`}
+                                        disabled={!approved.length}
+                                        title={approved.length ? "Gerar Livro de Homenagens em PDF" : "Sem mensagens aprovadas"}
+                                    >
+                                        <IconBook2 size={18} stroke={1.8} />
+                                        Livro (PDF)
+                                    </button>
+                                    {received.length > 0 ? (
+                                        <button type="button" onClick={aprovarTodas} disabled={ocupadoGeral} className={`${BTN_PRI} w-full lg:w-auto`}>
+                                            <IconChecks size={18} stroke={2} />
+                                            {aprovandoTodas ? "Aprovando…" : `Aprovar todas (${received.length})`}
+                                        </button>
+                                    ) : null}
+                                </div>
                             </>
                         )}
                     </section>
@@ -1768,8 +1917,8 @@ export default function MensagensPage() {
             {/* JANELA: EXCLUIR */}
             <Janela
                 open={!!deleteTarget}
-                titulo="Excluir homenagem?"
-                subtitulo="Esta ação não poderá ser desfeita."
+                titulo={deleteTarget && received.some((m) => m.id === deleteTarget.id) ? "Recusar homenagem?" : "Excluir homenagem?"}
+                subtitulo="Ela é apagada e não aparece na TV nem no Legado de Luz. Não dá para desfazer."
                 icone={
                     <span className="grid size-10 place-items-center rounded-xl bg-[#FDECEA] text-[#B42318] dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">
                         <IconTrash size={20} stroke={1.8} />
@@ -1793,7 +1942,11 @@ export default function MensagensPage() {
                             disabled={!!deleteTarget && actionLoadingId === deleteTarget.id}
                             className={BTN_PERIGO}
                         >
-                            {deleteTarget && actionLoadingId === deleteTarget.id ? "Excluindo..." : "Excluir"}
+                            {deleteTarget && actionLoadingId === deleteTarget.id
+                                ? "Aguarde..."
+                                : received.some((m) => m.id === deleteTarget?.id)
+                                    ? "Recusar"
+                                    : "Excluir"}
                         </button>
                     </>
                 }
