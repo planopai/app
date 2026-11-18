@@ -4,10 +4,11 @@
  * Provisão do ano — 17/11/2026. Back-end: fin_provisao.php (mesma tabela fin_orcamento da aba Mês).
  *   GradeProvisao: naturezas × 12 meses + ano, gerar a partir do realizado / média de 3 meses / provisão do ano anterior
  *                  com reajuste (só células vazias), tocar no valor para mudar e "Repetir nos meses seguintes".
+ *                  "Limpar o ano" apaga a provisão do ano no recorte, para gerar de novo.
  *   OrcadoRealizado: o ano até o mês atual, com a barra do quanto já foi usado (acima de 100% fica em alerta).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { IconAlertTriangle, IconRefresh, IconWand } from '@tabler/icons-react';
+import { IconAlertTriangle, IconRefresh, IconTrash, IconWand } from '@tabler/icons-react';
 import { api, brl, BTN_PRI, BTN_SEC, CAMPO, CAMPO_P, CARTAO, ERRO, Janela, mensagemErro, NOTA, paraNumero, ROTULO, SUB } from '../../contas-pagar/components/fin';
 
 export const URL_PROVISAO = 'https://api.planoassistencialintegrado.com.br/fin_provisao.php';
@@ -159,6 +160,7 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
     const [reaj, setReaj] = useState('');
     const [gerando, setGerando] = useState(false);
     const [cel, setCel] = useState<{ n: Nat; m: number; valor: number } | null>(null);
+    const [limpar, setLimpar] = useState(false);
     const { d, erro, carregar, arvore } = useAno(ano, filtro);
     const [erroAcao, setErroAcao] = useState<string | null>(null);
 
@@ -222,6 +224,9 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
                 </label>
                 <button type="button" className={BTN_PRI} disabled={gerando || !d} onClick={() => void gerar()}>
                     <IconWand size={18} /> {gerando ? 'Gerando…' : `Gerar ${ano}`}
+                </button>
+                <button type="button" className={BTN_SEC} disabled={!d} onClick={() => setLimpar(true)}>
+                    <IconTrash size={18} /> Limpar o ano
                 </button>
                 <button type="button" className={BTN_SEC} onClick={() => void carregar()} aria-label="Atualizar">
                     <IconRefresh size={18} />
@@ -306,6 +311,19 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
                     <div className={SUB}>Resultado previsto = receitas − deduções, custos e despesas (as entradas e saídas não operacionais ficam fora).</div>
                 </>
             ) : null}
+            {limpar && d ? (
+                <LimparAno
+                    ano={ano}
+                    filtro={filtro}
+                    recorte={filtro ? (filtro[0] === 'a' ? d.areas.find((a) => `a${a.id}` === filtro)?.nome : d.locais.find((l) => `l${l.id}` === filtro)?.nome) || '' : ''}
+                    onFechar={() => setLimpar(false)}
+                    feito={async (m) => {
+                        setLimpar(false);
+                        avisar(m);
+                        await carregar();
+                    }}
+                />
+            ) : null}
             {cel && d ? (
                 <EditarCelula
                     ano={ano}
@@ -321,6 +339,51 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
                 />
             ) : null}
         </div>
+    );
+}
+
+function LimparAno({ ano, filtro, recorte, onFechar, feito }: { ano: number; filtro: string; recorte: string; onFechar: () => void; feito: (m: string) => void }) {
+    const [erro, setErro] = useState<string | null>(null);
+    const [ocupado, setOcupado] = useState(false);
+    const ok = async () => {
+        setOcupado(true);
+        try {
+            const j = await api(URL_PROVISAO, 'limpar', { ano, filtro });
+            feito(j.msg);
+        } catch (e: any) {
+            const m = mensagemErro(e, 'Não foi possível limpar.');
+            if (m) setErro(m);
+        } finally {
+            setOcupado(false);
+        }
+    };
+    return (
+        <Janela
+            titulo={`Limpar a provisão de ${ano}`}
+            onFechar={onFechar}
+            largura="max-w-md"
+            rodape={
+                <>
+                    <button type="button" className={BTN_SEC} onClick={onFechar}>
+                        Voltar
+                    </button>
+                    <button type="button" className={BTN_PRI} disabled={ocupado} onClick={() => void ok()}>
+                        {ocupado ? 'Limpando…' : 'Limpar o ano'}
+                    </button>
+                </>
+            }
+        >
+            <div className={NOTA}>
+                <IconAlertTriangle size={18} className="mt-0.5 shrink-0" />
+                <span>
+                    {recorte
+                        ? `Apaga as metas de ${ano} de ${recorte}, de janeiro a dezembro. As de outras áreas e locais ficam.`
+                        : `Apaga todas as metas de ${ano}, de janeiro a dezembro, inclusive as divididas por área, local ou veículo (aba Mês).`}{' '}
+                    Os outros anos não mudam. Depois, use Gerar para montar de novo.
+                </span>
+            </div>
+            {erro ? <div className={ERRO}>{erro}</div> : null}
+        </Janela>
     );
 }
 
