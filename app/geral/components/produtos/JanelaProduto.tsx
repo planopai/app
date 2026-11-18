@@ -14,6 +14,7 @@ const ICONE_ABA: Record<string, NomeIcone> = { dados: "documento", estoque: "cai
 export function JanelaProduto({ v, m, aviso }: { v: JanelaProdutoV; m: boolean; aviso?: string }) {
     const arquivo = useRef<HTMLInputElement>(null);
     const grade2 = { display: "grid", gridTemplateColumns: m ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))", gap: "12px" } as const;
+    const grade3 = { display: "grid", gridTemplateColumns: m ? "minmax(0,1fr)" : "repeat(3,minmax(0,1fr))", gap: "12px" } as const;
 
     const abas = (
         <div style={{ padding: m ? "10px 16px 0" : "12px 24px 0" }}>
@@ -43,8 +44,8 @@ export function JanelaProduto({ v, m, aviso }: { v: JanelaProdutoV; m: boolean; 
                 titulo={v.titulo}
                 sub={v.subtitulo || undefined}
                 aoFechar={v.fechar}
-                largura={860}
-                altura="88%"
+                largura={1120}
+                altura="100%"
                 antesTitulo={
                     <span className="thumb" style={m ? { width: "44px", height: "44px", borderRadius: "12px" } : { width: "52px", height: "52px", borderRadius: "14px" }}>
                         {v.foto ? <img src={v.foto} alt="" /> : <Ic n="caixa" />}
@@ -82,7 +83,7 @@ export function JanelaProduto({ v, m, aviso }: { v: JanelaProdutoV; m: boolean; 
 
                 {v.aba === "dados" && (
                     <>
-                        <div style={grade2}>
+                        <div style={grade3}>
                             <div style={{ gridColumn: "1 / -1" }}>
                                 <p className="flbl">{v.novo ? "Nome *" : "Nome"}</p>
                                 <input className="inp" value={v.nome} onChange={v.onNome} aria-label="Nome" />

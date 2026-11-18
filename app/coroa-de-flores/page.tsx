@@ -31,6 +31,7 @@ import { createPortal } from "react-dom";
 import { useOpcoesConvenio } from "@/app/acompanhamento/components/OsAtendimento";
 import { JanelaOSPorId } from "@/app/os/components/OSDoAtendimento";
 import { BotaoCancelarPedidoCoroa } from "@/components/correcoes/CancelarPedidoCoroa";
+import { BotaoCorrecoesPedidoCoroa } from "@/components/correcoes/CorrecoesPedidoCoroa";
 import { classeOpcaoSimNao, MarcaSimNao } from "@/app/acompanhamento/components/simNaoCores";
 import { atendimentoDeveFicarNoQuadro, aguardandoRecolhimento } from "@/components/atendimentos/regrasQuadro";
 import {
@@ -4786,6 +4787,22 @@ export default function Page() {
                                         <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
                                             {manualDetailMsg}
                                         </div>
+                                    )}
+
+                                    {/* Correções (18/11/2026): trocar modelo/frase (mesmo depois da Coroa Pronta) e voltar uma etapa.
+                                        Só para quem tem a permissão "Correções do atendimento". */}
+                                    {manualDetail && !manualDetailLoading && (
+                                        <BotaoCorrecoesPedidoCoroa
+                                            className="mt-4"
+                                            pedidoId={Number(manualDetail.id)}
+                                            falecido={String((manualDetail as any).falecido ?? "")}
+                                            onFeito={() => {
+                                                setManualPanel(null);
+                                                setManualDetail(null);
+                                                void fetchManualOrders(true);
+                                                void fetchConfeccaoOrders(true);
+                                            }}
+                                        />
                                     )}
                                 </div>
                             </div>
