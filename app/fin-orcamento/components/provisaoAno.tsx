@@ -2,14 +2,16 @@
 
 /**
  * Provisão do ano — 17/11/2026. Back-end: fin_provisao.php (mesma tabela fin_orcamento da aba Mês).
- *   GradeProvisao: naturezas × 12 meses + ano, gerar a partir do realizado / média de 3 meses / provisão do ano anterior
- *                  com reajuste (só células vazias), tocar no valor para mudar e "Repetir nos meses seguintes".
+ *   GradeProvisao: naturezas × 12 meses + ano, tocar no valor para mudar e "Repetir nos meses seguintes".
+ *                  18/11/2026: o "Gerar" (repetia o ano anterior com reajuste) virou "Montar AAAA" (montarOrcamento.tsx).
  *                  "Limpar o ano" apaga a provisão do ano no recorte, para gerar de novo.
+ *   18/11/2026: grupos abrem e fecham (começa com o primeiro nível aberto); entradas em verde e saídas em vermelho.
  *   OrcadoRealizado: o ano até o mês atual, com a barra do quanto já foi usado (acima de 100% fica em alerta).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { IconAlertTriangle, IconRefresh, IconTrash, IconWand } from '@tabler/icons-react';
+import { IconAlertTriangle, IconChevronDown, IconChevronRight, IconRefresh, IconTrash, IconWand } from '@tabler/icons-react';
 import { api, brl, BTN_PRI, BTN_SEC, CAMPO, CAMPO_P, CARTAO, ERRO, Janela, mensagemErro, NOTA, paraNumero, ROTULO, SUB } from '../../contas-pagar/components/fin';
+import { MontarOrcamento } from './montarOrcamento'; // 18/11/2026: substitui o Gerar
 
 export const URL_PROVISAO = 'https://api.planoassistencialintegrado.com.br/fin_provisao.php';
 
@@ -31,6 +33,11 @@ const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'o
 const M12 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 const num = (v: number) => (Math.abs(v) < 0.005 ? '' : v.toLocaleString('pt-BR', { maximumFractionDigits: 0 }));
 const DESPESAS = ['DEDUCAO', 'CUSTO_VARIAVEL', 'CUSTO_FIXO', 'DESPESA'];
+// 18/11/2026: cor dos números (entradas × saídas)
+const COR_ENT = 'text-[#3F5A0A] dark:text-[#CFE38A]';
+const COR_SAI = 'text-[#B42318] dark:text-[#FF9C92]';
+const BARRA_ENT = 'border-l-[3px] border-l-[#8FAE4A]';
+const BARRA_SAI = 'border-l-[3px] border-l-[#C7685E]';
 
 function anoPadrao() {
     const d = new Date();
@@ -156,15 +163,31 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
     const [ano, setAno] = useState(anoPadrao());
     const [filtro, setFiltro] = useState('');
     const [todas, setTodas] = useState(false);
-    const [base, setBase] = useState<'realizado' | 'media3' | 'provisao'>('realizado');
-    const [reaj, setReaj] = useState('');
-    const [gerando, setGerando] = useState(false);
+    const [montar, setMontar] = useState(false); // 18/11/2026: Montar o orçamento (no lugar do Gerar)
     const [cel, setCel] = useState<{ n: Nat; m: number; valor: number } | null>(null);
     const [limpar, setLimpar] = useState(false);
     const { d, erro, carregar, arvore } = useAno(ano, filtro);
-    const [erroAcao, setErroAcao] = useState<string | null>(null);
+    const [ab, setAb] = useState<Record<string, boolean>>({}); // grupos abertos (padrão: só o primeiro nível)
 
     const linhas = useMemo(() => (d && arvore ? montarLinhas(d, arvore, todas) : []), [d, arvore, todas]);
+    const aberto = (l: Linha) => ab[l.n.codigo] ?? l.nivel === 0;
+    // linhas visíveis: some tudo que está abaixo de um grupo fechado
+    const visiveis = useMemo(() => {
+        const out: Linha[] = [];
+        let corte = Infinity;
+        linhas.forEach((l) => {
+            if (l.nivel > corte) return;
+            corte = Infinity;
+            out.push(l);
+            if (!l.folha && !(ab[l.n.codigo] ?? l.nivel === 0)) corte = l.nivel;
+        });
+        return out;
+    }, [linhas, ab]);
+    const tudo = (abrir: boolean) => setAb(Object.fromEntries(linhas.filter((l) => !l.folha).map((l) => [l.n.codigo, abrir])));
+    const entrada = (n: Nat) => {
+        const c = arvore?.classe(n) ?? null;
+        return c === 'RECEITA' || (c === 'NAO_OPERACIONAL' && n.codigo.startsWith('4'));
+    };
     const resultado = useMemo(() => {
         if (!d || !arvore) return null;
         const r = M12.map(() => 0);
@@ -178,25 +201,6 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
         return r;
     }, [d, arvore, linhas]);
 
-    const gerar = async () => {
-        const r = reaj.trim() ? paraNumero(reaj) : 0;
-        if (r === null || Number.isNaN(r)) return setErroAcao('Reajuste inválido.');
-        setGerando(true);
-        setErroAcao(null);
-        try {
-            const j = await api(URL_PROVISAO, 'gerar', { ano, filtro, base, reajuste: r });
-            avisar(j.msg);
-            await carregar();
-        } catch (e: any) {
-            const m = mensagemErro(e, 'Não foi possível gerar.');
-            if (m) setErroAcao(m);
-        } finally {
-            setGerando(false);
-        }
-    };
-
-    const baseNome = { realizado: `Realizado de ${ano - 1}`, media3: 'Média dos últimos 3 meses', provisao: `Provisão de ${ano - 1}` };
-
     return (
         <div className="flex flex-col gap-3">
             <div className={`${CARTAO} flex flex-wrap items-end gap-3 p-3.5`}>
@@ -208,22 +212,8 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
                     <span className={ROTULO}>Área e local</span>
                     <FiltroArea d={d} valor={filtro} onChange={setFiltro} />
                 </label>
-                <label className="min-w-[200px] flex-1 sm:flex-none">
-                    <span className={ROTULO}>Partir de</span>
-                    <select className={CAMPO_P} value={base} onChange={(e) => setBase(e.target.value as typeof base)}>
-                        {(Object.keys(baseNome) as (keyof typeof baseNome)[]).map((k) => (
-                            <option key={k} value={k}>
-                                {baseNome[k]}
-                            </option>
-                        ))}
-                    </select>
-                </label>
-                <label className="w-[110px]">
-                    <span className={ROTULO}>Reajuste %</span>
-                    <input className={CAMPO_P} inputMode="decimal" placeholder="0" value={reaj} onChange={(e) => setReaj(e.target.value)} />
-                </label>
-                <button type="button" className={BTN_PRI} disabled={gerando || !d} onClick={() => void gerar()}>
-                    <IconWand size={18} /> {gerando ? 'Gerando…' : `Gerar ${ano}`}
+                <button type="button" className={BTN_PRI} disabled={!d} onClick={() => setMontar(true)}>
+                    <IconWand size={18} /> Montar {ano}
                 </button>
                 <button type="button" className={BTN_SEC} disabled={!d} onClick={() => setLimpar(true)}>
                     <IconTrash size={18} /> Limpar o ano
@@ -233,17 +223,32 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
                 </button>
             </div>
             <div className={SUB}>
-                Gerar preenche só as células vazias; o que já foi digitado fica. Toque num valor para mudar. {filtro ? 'Neste recorte, cada célula é a meta só desta área ou deste local.' : 'Em "Todas", a célula soma todas as metas do mês; as divididas por área, local ou veículo (com *) mudam na aba Mês ou no recorte.'}
+                Montar {ano} abre o orçamento por premissas e métodos (substitui o ano ou preenche só as células vazias). Toque num valor para mudar. {filtro ? 'Neste recorte, cada célula é a meta só desta área ou deste local.' : 'Em "Todas", a célula soma todas as metas do mês; as divididas por área, local ou veículo (com *) mudam na aba Mês ou no recorte.'}
             </div>
             {erro ? <div className={ERRO}>{erro}</div> : null}
-            {erroAcao ? <div className={ERRO}>{erroAcao}</div> : null}
             {!d && !erro ? <div className="py-8 text-center text-[#5B6478]">Carregando…</div> : null}
             {d ? (
                 <>
-                    <label className="flex items-center gap-2 self-start text-[14px] font-bold">
-                        <input type="checkbox" className="size-5 accent-[#313C55]" checked={todas} onChange={(e) => setTodas(e.target.checked)} />
-                        Mostrar todas as naturezas (também as sem valor)
-                    </label>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <label className="flex items-center gap-2 text-[14px] font-bold">
+                            <input type="checkbox" className="size-5 accent-[#313C55]" checked={todas} onChange={(e) => setTodas(e.target.checked)} />
+                            Mostrar todas as naturezas (também as sem valor)
+                        </label>
+                        <button type="button" className="text-[14px] font-extrabold underline-offset-2 hover:underline" onClick={() => tudo(true)}>
+                            Abrir tudo
+                        </button>
+                        <button type="button" className="text-[14px] font-extrabold underline-offset-2 hover:underline" onClick={() => tudo(false)}>
+                            Fechar tudo
+                        </button>
+                        <span className={`${SUB} flex items-center gap-3`}>
+                            <span className="inline-flex items-center gap-1.5">
+                                <span className="inline-block size-3 rounded-sm bg-[#8FAE4A]" /> Entradas
+                            </span>
+                            <span className="inline-flex items-center gap-1.5">
+                                <span className="inline-block size-3 rounded-sm bg-[#C7685E]" /> Saídas
+                            </span>
+                        </span>
+                    </div>
                     {linhas.length === 0 ? (
                         <div className={`${CARTAO} p-6 text-center text-[14px] text-[#5B6478] dark:text-[#AEB9CF]`}>Sem provisão nem realizado em {ano}. Use Gerar ou marque "Mostrar todas as naturezas".</div>
                     ) : (
@@ -261,12 +266,31 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {linhas.map((l) => {
+                                    {visiveis.map((l) => {
                                         const tot = l.prov.reduce((s, v) => s + v, 0);
+                                        const ent = entrada(l.n);
+                                        const cor = ent ? COR_ENT : COR_SAI;
                                         return (
                                             <tr key={l.n.id} className={`border-t border-[#E3E8F0] dark:border-white/[0.08] ${l.folha ? '' : 'bg-[#FAFBFD] font-extrabold dark:bg-white/[0.03]'}`}>
-                                                <td className={`sticky left-0 z-[1] bg-inherit px-3 py-1.5 ${l.folha ? 'bg-white dark:bg-[#232B3F]' : 'bg-[#FAFBFD] dark:bg-[#262F44]'}`} style={{ paddingLeft: 12 + l.nivel * 12 }}>
-                                                    <span className="text-[#5B6478] dark:text-[#AEB9CF]">{l.n.codigo}</span> <span className="break-words">{l.n.nome}</span>
+                                                <td className={`sticky left-0 z-[1] bg-inherit py-1.5 pr-3 ${ent ? BARRA_ENT : BARRA_SAI} ${l.folha ? 'bg-white dark:bg-[#232B3F]' : 'bg-[#FAFBFD] dark:bg-[#262F44]'}`} style={{ paddingLeft: 6 + l.nivel * 14 }}>
+                                                    <span className="flex items-center gap-1">
+                                                        {l.folha ? (
+                                                            <span className="w-7 shrink-0" />
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                className="grid size-7 shrink-0 place-items-center rounded-lg hover:bg-black/5 dark:hover:bg-white/10"
+                                                                aria-label={aberto(l) ? 'Fechar o grupo' : 'Abrir o grupo'}
+                                                                aria-expanded={aberto(l)}
+                                                                onClick={() => setAb((o) => ({ ...o, [l.n.codigo]: !aberto(l) }))}
+                                                            >
+                                                                {aberto(l) ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
+                                                            </button>
+                                                        )}
+                                                        <span>
+                                                            <span className="text-[#5B6478] dark:text-[#AEB9CF]">{l.n.codigo}</span> <span className="break-words">{l.n.nome}</span>
+                                                        </span>
+                                                    </span>
                                                 </td>
                                                 {M12.map((m, i) => {
                                                     const v = l.prov[i];
@@ -277,19 +301,19 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
                                                                 <button
                                                                     type="button"
                                                                     onClick={() => setCel({ n: l.n, m, valor: v })}
-                                                                    className={`min-h-9 w-full rounded-lg px-1.5 text-right hover:bg-[#E9EFF6] dark:hover:bg-[#3D6A99]/20 ${v ? '' : 'text-[#B8C0CE]'}`}
+                                                                    className={`min-h-9 w-full rounded-lg px-1.5 text-right hover:bg-[#E9EFF6] dark:hover:bg-[#3D6A99]/20 ${v ? cor : 'text-[#B8C0CE]'}`}
                                                                     aria-label={`${l.n.nome} · ${MESES[i]}`}
                                                                 >
                                                                     {num(v) || '·'}
                                                                     {div ? '*' : ''}
                                                                 </button>
                                                             ) : (
-                                                                <span className="px-1.5">{num(v)}</span>
+                                                                <span className={`px-1.5 ${cor}`}>{num(v)}</span>
                                                             )}
                                                         </td>
                                                     );
                                                 })}
-                                                <td className="px-3 py-1.5 text-right font-extrabold">{num(tot)}</td>
+                                                <td className={`px-3 py-1.5 text-right font-extrabold ${cor}`}>{num(tot)}</td>
                                             </tr>
                                         );
                                     })}
@@ -310,6 +334,16 @@ export function GradeProvisao({ avisar }: { avisar: (m: string) => void }) {
                     )}
                     <div className={SUB}>Resultado previsto = receitas − deduções, custos e despesas (as entradas e saídas não operacionais ficam fora).</div>
                 </>
+            ) : null}
+            {montar ? (
+                <MontarOrcamento
+                    ano={ano}
+                    onFechar={() => setMontar(false)}
+                    feito={async (m) => {
+                        avisar(m);
+                        await carregar();
+                    }}
+                />
             ) : null}
             {limpar && d ? (
                 <LimparAno
