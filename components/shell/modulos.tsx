@@ -64,6 +64,7 @@ import {
 } from "@tabler/icons-react";
 import { IconChartFunnel } from "@tabler/icons-react"; // 27/10/2026: Gestão do funil
 import { IconSettingsDollar, IconWallet } from "@tabler/icons-react"; // 06/11/2026: Folha de pagamento
+import { IconFileText, IconListCheck } from "@tabler/icons-react"; // 18/11/2026: módulo Contratos
 import { IconReceipt2 } from "@tabler/icons-react"; // 06/11/2026: Folha do mês
 import { IconStars, IconCoin, IconRoute } from "@tabler/icons-react"; // 09/11/2026: avaliação, comissões e viagens
 import { IconReceipt, IconCreditCard, IconAdjustmentsDollar } from "@tabler/icons-react"; // 11/11/2026: financeiro da empresa
@@ -205,6 +206,19 @@ export const MODULOS: Modulo[] = [
             { id: "noticias", titulo: "Notícias", desc: "Mensagens para o app dos clientes", href: "/noticias", slugs: ["noticias"], icone: IconNews },
             // 06/11/2026: Propostas de adesão vieram da Comunicação.
             { id: "messenger-propostas", titulo: "Propostas de adesão", desc: "Planos vendidos pelo WhatsApp para lançar na Unymos", href: "/messenger-propostas", slugs: ["messenger-propostas"], icone: IconClipboardPlus },
+        ],
+    },
+    // 18/11/2026: módulo Contratos (substituir a Unymos no plano). Entrada em /modulo/contratos, para quem vê alguma tela dele.
+    {
+        id: "contratos",
+        titulo: "Contratos",
+        desc: "Contratos, beneficiários, planos e regras",
+        icone: IconFileText,
+        hub: { href: "/modulo/contratos", slug: "" },
+        itens: [
+            { id: "contratos", titulo: "Contratos", desc: "Contratos e beneficiários", href: "/contratos", slugs: ["contratos"], icone: IconFileText, secao: "Contratos" },
+            { id: "contratos-planos", titulo: "Planos", desc: "Cadastro, preços, regras e aditivos de cada plano", href: "/contratos-planos", slugs: ["contratos-planos"], icone: IconListDetails, secao: "Configurações" },
+            { id: "contratos-regras", titulo: "Regras", desc: "Carência, cobrança, situação, cancelamento e reajuste", href: "/contratos-regras", slugs: ["contratos-regras"], icone: IconListCheck, secao: "Configurações" },
         ],
     },
     {

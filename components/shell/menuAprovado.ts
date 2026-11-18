@@ -45,6 +45,9 @@ export const MENU_APROVADO: ConfigMenu = {
             ["parceiros", "Rede de Descontos"], ["medicos", "Rede de Descontos"], ["relatorio-guias", "Rede de Descontos"],
             ["sorteios", "Comunicação com o Associado"], ["noticias", "Comunicação com o Associado"],
         ]),
+        m("contratos", "Contratos", "Contratos, beneficiários, planos e regras", "file-text", [ // 18/11/2026
+            ["contratos", "Contratos"], ["contratos-planos", "Configurações"], ["contratos-regras", "Configurações"],
+        ]),
         m("comercial", "Comercial", "Vendas, campanhas e contatos", "briefcase", [
             ["messenger-funil", "Funil de Vendas"], ["messenger-funil-gestao", "Funil de Vendas"],
             ["messenger-disparos", "Contatos"], ["leads", "Contatos"],

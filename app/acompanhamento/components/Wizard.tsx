@@ -3930,7 +3930,7 @@ function AvisoTravaItens({ podeAlterar, baixaFeita }: { podeAlterar: boolean; ba
                 <b>Itens travados após o Corpo Pronto.</b>{" "}
                 {podeAlterar ? (
                     <>
-                        Você pode alterar porque tem a permissão Correções do atendimento (ou a Gestão).
+                        Você pode alterar porque tem a permissão Correções do atendimento.
                         {baixaFeita
                             ? " A baixa no estoque já foi feita no Corpo Pronto: ao salvar, o estoque é acertado só no item que mudar (o antigo volta, o novo sai)."
                             : " A baixa no estoque acontece no Corpo Pronto, com os itens que estiverem aqui."}
