@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * Configurações do Messenger › Avisos do financeiro — 17/11/2026. Back-end: aurora_15.php.
+ * Configurações do Messenger › Avisos do financeiro — 17/11/2026. Back-end: aurora_18.php.
  * Liga e desliga cada aviso. Cada aviso vai pela notificação do app (abre a tela de origem) e a Aurora interna conta os avisos
  * do dia quando a pessoa abre a conversa ou pergunta. Quem recebe sai da chave da tela, em Permissões.
  */
 import React, { useEffect, useState } from "react";
 import { API_BASE, apiJson } from "@/components/messenger/api";
 
-const URL_AVISOS = `${API_BASE}/aurora_15.php`;
+const URL_AVISOS = `${API_BASE}/aurora_18.php`;
 
 type Cfg = Record<string, boolean>;
 type Ultima = { fim?: string; msg?: string; erros?: string[] } | null;

@@ -14,7 +14,7 @@ import { Icone } from "../messenger/components/Lista";
 import { limparCacheRespostas } from "../messenger/components/Acoes";
 import { aceitaPasta, confirmarPermissao, desligarAutomatico, ligarAutomatico, modoSalvar, nomePasta } from "@/components/messenger/salvarArquivos";
 import { AbaEtiquetas, AbaSetores } from "./SetoresEtiquetas";
-import { AbaAvisosFinanceiro } from "./AvisosFinanceiro"; // 17/11/2026: avisos do financeiro (aurora_15.php)
+import { AbaAvisosFinanceiro } from "./AvisosFinanceiro"; // 17/11/2026: avisos do financeiro (aurora_18.php)
 
 type Resposta = { id: number; atalho: string; texto: string; pessoal: boolean };
 type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; max_etiquetas?: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string; precos?: Record<string, number>; ia?: ConfigIa; kb_departamentos?: { id: number; nome: string }[]; ocioso?: ConfigOcioso };

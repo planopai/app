@@ -1454,7 +1454,8 @@ function Importar({ onFechar, avisar }: { onFechar: () => void; avisar: (m: stri
                             passou a vir do PAI Conecta (VPS são as OS: a partir de outubro vêm do contas a receber).
                         </span>
                     </div>
-                    <div className={`${CARTAO} max-h-[420px] overflow-auto`}>
+                    {/* 18/11/2026: shrink-0 e altura mínima, senão a lista do de-para encolhia até sumir na janela */}
+                    <div className={`${CARTAO} max-h-[420px] min-h-[220px] shrink-0 overflow-auto`}>
                         {faltam.map((f) => {
                             const m = mapa[f.chave] || {};
                             return (

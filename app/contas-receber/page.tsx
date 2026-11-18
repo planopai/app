@@ -2461,7 +2461,7 @@ function Cartoes({ onFechar, avisar }: { onFechar: () => void; avisar: (m: strin
                         <input
                             ref={arq}
                             type="file"
-                            accept=".csv,text/csv"
+                            accept=".csv,.txt,text/csv,text/plain"
                             className="hidden"
                             onChange={(e) => {
                                 const f = e.target.files?.[0];
@@ -2471,7 +2471,7 @@ function Cartoes({ onFechar, avisar }: { onFechar: () => void; avisar: (m: strin
                         />
                     </div>
                     <div className={NOTA}>
-                        No site da Cielo: Vendas → exportar em CSV (todas as máquinas e o e-commerce). As não aprovadas são ignoradas. O sistema casa pelo NSU; cartão passado na OS (sem NSU) casa pela máquina, dia e valor.
+                        Aceita o TXT CIELO03 do Extrato Eletrônico (Cielo › Extrato Eletrônico › Envio e Recebimento) ou o CSV de vendas do site da Cielo. As não aprovadas são ignoradas. O sistema casa pelo NSU; cartão passado na OS (sem NSU) casa pela máquina, dia e valor.
                         {conf?.ultima_importacao ? ` Última importação: ${dataBR(conf.ultima_importacao)} ${String(conf.ultima_importacao).slice(11, 16)}.` : ''}
                     </div>
                     {conf ? (
