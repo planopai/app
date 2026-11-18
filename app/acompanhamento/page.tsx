@@ -57,6 +57,7 @@ import Visita, {
 } from "./components/visita";
 
 import Wizard, { type CampoFaltando, type TravaItens } from "./components/Wizard";
+import { RevisarCorrecaoItens, listarMudancasCorrecao, type CorrecaoAntes, type PedidoRevisao } from "./components/CorrecaoItens";
 import BuscaBeneficiarioPAI, { dataISO } from "./components/BuscaBeneficiarioPAI";
 // Orçamento → Novo registro (13/10/2026): as ferramentas ficam na pasta do Orçamento.
 import { camposDoOrcamento, marcarOrcamentoConvertido } from "@/app/orcamento/components/paraAtendimento";
@@ -713,6 +714,28 @@ export default function AcompanhamentoPage() {
 
   /* -------------------- OS no atendimento (Editar registro) -------------------- */
   const [osCampos, setOsCampos] = useState<OsCampos>(OS_CAMPOS_VAZIO);
+
+  /* -------------------- Correções › Corrigir itens (18/11/2026) -------------------- */
+  // O registro (e os campos da OS) como estavam ao abrir a correção: é o "Antes" de cada item.
+  const [correcaoItens, setCorrecaoItens] = useState<CorrecaoAntes | null>(null);
+  const correcaoItensRef = useRef<CorrecaoAntes | null>(null);
+  const [revisaoCorrecao, setRevisaoCorrecao] = useState<PedidoRevisao | null>(null);
+  const revisaoResolverRef = useRef<((motivo: string | null) => void) | null>(null);
+  /** Abre a revisão e espera: devolve o motivo (confirmou) ou null (voltou para ajustar). */
+  const pedirRevisaoCorrecao = useCallback(
+    (pedido: PedidoRevisao) =>
+      new Promise<string | null>((resolve) => {
+        revisaoResolverRef.current = resolve;
+        setRevisaoCorrecao(pedido);
+      }),
+    [],
+  );
+  const fecharRevisaoCorrecao = useCallback((motivo: string | null) => {
+    const resolver = revisaoResolverRef.current;
+    revisaoResolverRef.current = null;
+    setRevisaoCorrecao(null);
+    resolver?.(motivo);
+  }, []);
   // true quando o Local do velório já foi lido do banco (ou é registro novo): só então ele é gravado.
   const localCerimoniaCarregadoRef = useRef(false);
   const [osColunasFaltando, setOsColunasFaltando] = useState<string[]>([]);
@@ -2967,6 +2990,23 @@ export default function AcompanhamentoPage() {
         }
       }
 
+      // Correções › Corrigir itens (18/11/2026): antes de gravar, revisão com o antes/depois,
+      // a prévia do estoque (só o que mudou) e o motivo, que vai para o histórico e para o estoque.
+      const correcaoAtual = correcaoItensRef.current;
+      if (wizardEditing && correcaoAtual && payload.acao === "editar") {
+        const mudancas = listarMudancasCorrecao(correcaoAtual, dataAtualizada, osCampos);
+        setWizardSubmitting(false);
+        const motivoCorrecao = await pedirRevisaoCorrecao({
+          id: String(payload.id ?? (dataAtualizada as any).id ?? ""),
+          falecido: String((dataAtualizada as any).falecido ?? correcaoAtual.registro.falecido ?? ""),
+          mudancas,
+          registro: payload,
+        });
+        if (motivoCorrecao == null) return;
+        setWizardSubmitting(true);
+        payload.motivo_correcao = motivoCorrecao;
+      }
+
       // Em edição, sincroniza a Ordem de Serviço ANTES de gravar o atendimento.
       // Assim, se o pedido já entrou em produção ou o estoque artificial não
       // comportar a alteração, o próprio atendimento não fica divergente.
@@ -4123,8 +4163,24 @@ export default function AcompanhamentoPage() {
     (id: Registro["id"]) => {
       const idx = registros.findIndex((r) => String(r.id) === String(id));
       if (idx < 0) return;
+      correcaoItensRef.current = null;
+      setCorrecaoItens(null);
       setTipoAtendimento(resolveTipoFromRegistro(registros[idx]));
       abrirWizard("editar", idx, null);
+    },
+    [registros, abrirWizard],
+  );
+
+  /** Correções › Corrigir itens (18/11/2026): a aba Itens do Editar registro, com o Antes de cada item. */
+  const abrirCorrecaoItens = useCallback(
+    (id: Registro["id"]) => {
+      const idx = registros.findIndex((r) => String(r.id) === String(id));
+      if (idx < 0) return;
+      const antes: CorrecaoAntes = { registro: { ...(registros[idx] as any) }, os: null };
+      correcaoItensRef.current = antes;
+      setCorrecaoItens(antes);
+      setTipoAtendimento(resolveTipoFromRegistro(registros[idx]));
+      abrirWizard("editar", idx, 1);
     },
     [registros, abrirWizard],
   );
@@ -4159,6 +4215,8 @@ export default function AcompanhamentoPage() {
     if (!wizardOpen) {
       orcamentoOsRef.current = null;
       orcamentoEmUsoRef.current = null;
+      correcaoItensRef.current = null;
+      setCorrecaoItens(null);
     }
   }, [wizardOpen]);
 
@@ -4174,10 +4232,14 @@ export default function AcompanhamentoPage() {
     }
     if (!registros.some((r) => String(r.id) === alvo)) return; // espera a lista trazer o atendimento
     editarDaUrlRef.current = true;
+    // ?corrigir=1 (18/11/2026): veio de Correções › Corrigir itens do Quadro.
+    const corrigir = url.searchParams.get("corrigir") === "1";
     url.searchParams.delete("editar");
+    url.searchParams.delete("corrigir");
     window.history.replaceState(window.history.state, "", url.pathname + (url.search ? url.search : "") + url.hash);
-    editarPorId(alvo);
-  }, [registros, editarPorId]);
+    if (corrigir) abrirCorrecaoItens(alvo);
+    else editarPorId(alvo);
+  }, [registros, editarPorId, abrirCorrecaoItens]);
 
   /* Editar registro (layout do mockup): documentos e Registrar ação ficam na coluna da direita. */
   const abrirDocumentoDoWizard = useCallback(
@@ -4290,6 +4352,13 @@ export default function AcompanhamentoPage() {
       .then((r) => {
         if (!vivo) return;
         setOsCampos(r.campos);
+        // Correção dos itens: guarda a OS como estava (Prefeitura, terceirizado, translado) para o "Antes".
+        const corr = correcaoItensRef.current;
+        if (corr && !corr.os && String(corr.registro?.id) === String(wizardRegistroId)) {
+          const comOs: CorrecaoAntes = { ...corr, os: { ...r.campos } };
+          correcaoItensRef.current = comOs;
+          setCorrecaoItens(comOs);
+        }
         setOsColunasFaltando(r.faltando);
         localCerimoniaCarregadoRef.current = true;
         if (r.localCerimonia) {
@@ -4427,6 +4496,7 @@ export default function AcompanhamentoPage() {
         onVeiculoRequired={handleVeiculoRequired}
         onFotoAcaoRequired={handleFotoAcaoRequired}
         onAbrirCadastro={(id) => editarPorId(id)}
+        onCorrigirItens={(id) => abrirCorrecaoItens(id)}
         onCorrecaoFeita={(msg) => {
           setAcaoOpen(false);
           void fetchRegistros();
@@ -4513,6 +4583,13 @@ export default function AcompanhamentoPage() {
         aviso={wizardMsg}
         onFecharAviso={() => setWizardMsg(null)}
         travaItens={travaItens}
+        correcao={correcaoItens}
+      />
+
+      <RevisarCorrecaoItens
+        pedido={revisaoCorrecao}
+        onConfirmar={(motivo) => fecharRevisaoCorrecao(motivo)}
+        onCancelar={() => fecharRevisaoCorrecao(null)}
       />
 
       <MateriaisModal

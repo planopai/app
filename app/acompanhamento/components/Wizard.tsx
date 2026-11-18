@@ -10,6 +10,7 @@ import { RascunhoOSContext, montarRascunhoOS, OS_CAMPOS_VAZIO, type OsCampos } f
 import { NOME_TERMO, situacaoTermo, termosDoAtendimento } from "./termos";
 import { LOCAL_MEMORIAL, locaisCerimonia, localCerimoniaEfetivo } from "./constants";
 import { getLatestOfflineSignature } from "@/lib/offline/signatures";
+import { AvisoModoCorrecao, CaixaAntes, textoAntes, textoAntesTranslado, type CorrecaoAntes } from "./CorrecaoItens";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
@@ -1112,6 +1113,7 @@ export default function Wizard({
     aviso,
     onFecharAviso,
     travaItens,
+    correcao,
 }: {
     open: boolean;
     onClose: () => void;
@@ -1170,6 +1172,8 @@ export default function Wizard({
      * O servidor (informativo.php) confere a mesma regra ao salvar.
      */
     travaItens?: TravaItens | null;
+    /** 18/11/2026: Correções › Corrigir itens. Mostra o "Antes (lançado)" em cada item; salvar abre a revisão (page.tsx). */
+    correcao?: CorrecaoAntes | null;
 }) {
     const [ornamentacaoVal, setOrnamentacaoVal] = useState<string>("");
     const [involVal, setInvolVal] = useState<string>("");
@@ -2185,7 +2189,7 @@ export default function Wizard({
                             <div className="text-xs text-[#5B6478] dark:text-[#AEB9CF]">
                                 {isRestrito && (
                                     <>
-                                        Editando apenas: <b>{wizardStepTitles[wizardRestrictGroup!]}</b>
+                                        {correcao ? "Corrigindo" : "Editando apenas"}: <b>{wizardStepTitles[wizardRestrictGroup!]}</b>
                                     </>
                                 )}
                             </div>
@@ -2203,7 +2207,7 @@ export default function Wizard({
                                         aria-busy={wizardSubmitting}
                                         title={bloqueiaPorAssistencia ? 'Selecione "Sim" ou "Não" em Assistência' : undefined}
                                     >
-                                        {wizardSubmitting ? "Salvando…" : emEdicao && !isRestrito ? "Salvar alterações" : "Salvar"}
+                                        {wizardSubmitting ? "Salvando…" : correcao ? "Revisar e salvar" : emEdicao && !isRestrito ? "Salvar alterações" : "Salvar"}
                                     </button>
                                 ) : (
                                     <>
@@ -2296,9 +2300,11 @@ export default function Wizard({
                     })}
                 </div>
 
-                {ehPassoItens && travaItens && (
+                {ehPassoItens && correcao ? (
+                    <AvisoModoCorrecao />
+                ) : ehPassoItens && travaItens ? (
                     <AvisoTravaItens podeAlterar={travaItens.podeAlterar} baixaFeita={travaItens.baixaFeita} />
-                )}
+                ) : null}
 
                 <div
                     className={
@@ -3873,9 +3879,12 @@ export default function Wizard({
                                     );
                                 }
                                 if (osTransladoSlot && ((step.id === "invol" && involVal !== "Sim") || step.id === "invol_item")) {
+                                    if (correcao) depoisDoItem.push(<CaixaAntes key="antes-translado" texto={`Translado: ${textoAntesTranslado(correcao)}`} />);
                                     depoisDoItem.push(<React.Fragment key="os-translado">{osTransladoSlot}</React.Fragment>);
                                 }
                             }
+                            // Modo correção (18/11/2026): o que está lançado aparece acima do campo, que vira o "Depois".
+                            const antesTexto = correcao && ehPassoItens ? textoAntes(step.id, correcao) : null;
                             return (
                                 <React.Fragment key={step.id}>
                                     {abreSecao ? (
@@ -3883,6 +3892,7 @@ export default function Wizard({
                                             {secao === "principais" ? "Itens principais" : "Demais itens e serviços"}
                                         </div>
                                     ) : null}
+                                    {antesTexto != null ? <CaixaAntes texto={antesTexto} /> : null}
                                     {travaItens && !travaItens.podeAlterar && travaItens.campos.includes(step.id) ? (
                                         /* Item travado: fieldset desabilita os campos nativos; pointer-events-none barra os botões próprios (Sim/Não, listas). */
                                         <fieldset disabled aria-disabled="true" className="m-0 min-w-0 border-0 p-0 sm:col-span-2" title="Item travado após o Corpo Pronto">
@@ -3920,13 +3930,13 @@ function AvisoTravaItens({ podeAlterar, baixaFeita }: { podeAlterar: boolean; ba
                 <b>Itens travados após o Corpo Pronto.</b>{" "}
                 {podeAlterar ? (
                     <>
-                        Você pode alterar porque tem acesso à Gestão.
+                        Você pode alterar porque tem a permissão Correções do atendimento (ou a Gestão).
                         {baixaFeita
-                            ? " A baixa no estoque já foi feita no Corpo Pronto: trocar um item aqui não mexe no estoque. Corrija a saída pela movimentação."
+                            ? " A baixa no estoque já foi feita no Corpo Pronto: ao salvar, o estoque é acertado só no item que mudar (o antigo volta, o novo sai)."
                             : " A baixa no estoque acontece no Corpo Pronto, com os itens que estiverem aqui."}
                     </>
                 ) : (
-                    <>A baixa no estoque já foi feita. Urna, roupa, véu, cordão, invol, tanatopraxia (com o procedimento e os insumos), ornamentação, kit lanche e coroa não podem mais ser alterados. Se precisar, fale com a Gestão.</>
+                    <>A baixa no estoque já foi feita. Urna, roupa, véu, cordão, invol, tanatopraxia (com o procedimento e os insumos), ornamentação, kit lanche e coroa não podem mais ser alterados. Se precisar, use Correções › Corrigir itens (quem tem a permissão).</>
                 )}
             </div>
         </div>

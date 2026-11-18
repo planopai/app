@@ -86,6 +86,7 @@ export default function AcaoModal({
     onFotoAcaoRequired,
     onAbrirCadastro,
     onCorrecaoFeita,
+    onCorrigirItens,
 }: {
     open: boolean;
     setOpen: (b: boolean) => void;
@@ -113,6 +114,8 @@ export default function AcaoModal({
     onAbrirCadastro?: (id: string) => void;
     /** Depois de uma correção da Gestão (voltar etapa / cancelar). Sem esta função, a página recarrega. */
     onCorrecaoFeita?: (msg: string) => void;
+    /** 18/11/2026: Correções › Corrigir itens. Sem esta função, vai para /acompanhamento?editar=<id>&corrigir=1. */
+    onCorrigirItens?: (id: string) => void;
 }) {
     const [frontMsg, setFrontMsg] = useState<{ text: string; ok: boolean } | null>(null);
     const [me, setMe] = useState<OfflineSession | null>(null);
@@ -627,12 +630,18 @@ export default function AcaoModal({
                     </div>
                 )}
 
-                {/* Correções da Gestão (09/10/2026): voltar uma etapa ou cancelar o atendimento. Só aparece com a página Gestão. */}
+                {/* Correções (09/10/2026; 18/11/2026): corrigir itens, voltar uma etapa ou cancelar o atendimento.
+                    Aparece para quem tem a permissão "Correções do atendimento" (ou a Gestão). */}
                 {efetivo && networkOnline && (
                     <BotaoCorrecoesAtendimento
                         className="mt-4"
                         id={acaoId}
                         falecido={(efetivo as any)?.falecido}
+                        onCorrigirItens={(id) => {
+                            setOpen(false);
+                            if (onCorrigirItens) onCorrigirItens(id);
+                            else if (typeof window !== "undefined") window.location.assign(`/acompanhamento?editar=${encodeURIComponent(id)}&corrigir=1`);
+                        }}
                         onFeito={(msg) => {
                             setOpen(false);
                             if (onCorrecaoFeita) onCorrecaoFeita(msg);
@@ -650,6 +659,9 @@ export default function AcaoModal({
                 )}
                 {frontMsg && <TextFeedback kind={frontMsg.ok ? "success" : "error"}>{frontMsg.text}</TextFeedback>}
                 {acaoMsg && <TextFeedback kind={acaoMsg.ok ? "success" : "error"}>{acaoMsg.text}</TextFeedback>}
+
+                {/* 18/11/2026: espaço no fim para o botão flutuante (chat) não cobrir o botão Correções. */}
+                <div aria-hidden="true" className="h-20 shrink-0" />
         </>
     );
 

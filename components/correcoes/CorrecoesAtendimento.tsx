@@ -77,11 +77,14 @@ export function BotaoCorrecoesAtendimento({
     id,
     falecido,
     onFeito,
+    onCorrigirItens,
     className = "",
 }: {
     id: string | number | null | undefined;
     falecido?: string;
     onFeito?: (msg: string) => void;
+    /** 18/11/2026: abre a tela de itens do atendimento em modo correção (Antes/Depois). */
+    onCorrigirItens?: (id: string) => void;
     className?: string;
 }) {
     const pode = usePodeCorrigir();
@@ -98,13 +101,21 @@ export function BotaoCorrecoesAtendimento({
                     <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
                     <path d="M3 3v5h5" />
                 </svg>
-                Correções da Gestão
+                Correções
             </button>
             {aberto ? (
                 <JanelaCorrecoes
                     id={String(id)}
                     falecido={falecido}
                     onFechar={() => setAberto(false)}
+                    onCorrigirItens={
+                        onCorrigirItens
+                            ? () => {
+                                  setAberto(false);
+                                  onCorrigirItens(String(id));
+                              }
+                            : undefined
+                    }
                     onFeito={(msg) => {
                         setAberto(false);
                         onFeito?.(msg);
@@ -115,7 +126,19 @@ export function BotaoCorrecoesAtendimento({
     );
 }
 
-function JanelaCorrecoes({ id, falecido, onFechar, onFeito }: { id: string; falecido?: string; onFechar: () => void; onFeito: (msg: string) => void }) {
+function JanelaCorrecoes({
+    id,
+    falecido,
+    onFechar,
+    onFeito,
+    onCorrigirItens,
+}: {
+    id: string;
+    falecido?: string;
+    onFechar: () => void;
+    onFeito: (msg: string) => void;
+    onCorrigirItens?: () => void;
+}) {
     const [modo, setModo] = useState<Modo>("escolher");
     const [previa, setPrevia] = useState<any>(null);
     const [carregando, setCarregando] = useState(false);
@@ -164,7 +187,7 @@ function JanelaCorrecoes({ id, falecido, onFechar, onFeito }: { id: string; fale
     };
 
     const motivoOk = motivo.trim().length >= 5;
-    const titulo = modo === "voltar" ? "Voltar uma etapa" : modo === "cancelar" ? "Cancelar atendimento" : "Correções da Gestão";
+    const titulo = modo === "voltar" ? "Voltar uma etapa" : modo === "cancelar" ? "Cancelar atendimento" : "Correções";
 
     const rodape = feito ? (
         <button type="button" className={BTN_PRINCIPAL} onClick={() => onFeito(feito)}>
@@ -193,6 +216,13 @@ function JanelaCorrecoes({ id, falecido, onFechar, onFeito }: { id: string; fale
                 <Aviso tom="ok">{feito}</Aviso>
             ) : modo === "escolher" ? (
                 <div className="flex flex-col gap-2.5">
+                    {onCorrigirItens ? (
+                        <OpcaoCorrecao
+                            titulo="Corrigir itens"
+                            texto="Troca de item, depósito, autorização da Prefeitura ou terceirizado. Mostra o antes e o depois; o estoque é acertado só no que mudou."
+                            onClick={onCorrigirItens}
+                        />
+                    ) : null}
                     <OpcaoCorrecao
                         titulo="Voltar uma etapa"
                         texto="Desfaz a última etapa registrada (comando errado). Voltando do Corpo Pronto, a baixa volta para o estoque e os itens destravam."
@@ -205,7 +235,9 @@ function JanelaCorrecoes({ id, falecido, onFechar, onFeito }: { id: string; fale
                         onClick={() => void abrir("cancelar")}
                     />
                     <div className="mt-1 text-xs text-[#5B6478] dark:text-[#AEB9CF]">
-                        Item ou local errado depois do Corpo Pronto: corrija no Editar registro. O estoque é acertado ao salvar.
+                        {onCorrigirItens
+                            ? "Nome, datas, horários e locais continuam no Editar registro."
+                            : "Item ou local errado depois do Corpo Pronto: corrija no Editar registro. O estoque é acertado ao salvar."}
                     </div>
                 </div>
             ) : carregando ? (

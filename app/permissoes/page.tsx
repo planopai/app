@@ -56,7 +56,7 @@ const API_URL = "https://api.planoassistencialintegrado.com.br/pai_api.php";
 const GRUPOS_URL = "https://api.planoassistencialintegrado.com.br/grupos.php";
 
 /** Chaves que dão poder sobre acessos, pessoas ou dinheiro (aparecem com destaque). */
-const SENSIVEIS = new Set(["gestao", "permissoes", "usuarios", "auditoria", "tesouraria-gestao", "contas-receber-gestao", "resultados-config", "folha", "fin-config"]);
+const SENSIVEIS = new Set(["gestao", "permissoes", "usuarios", "auditoria", "tesouraria-gestao", "contas-receber-gestao", "resultados-config", "folha", "fin-config", "correcoes"]);
 
 /* -------------------------------------------------------------------------- */
 /* Estilos                                                                     */
@@ -165,6 +165,11 @@ function montarArvore(modulos: Modulo[], fixos: ItemModulo[], validas: Set<strin
                     continue;
                 }
                 sec.linhas.push({ key: k, nomes: [it.titulo], parte: k.endsWith("-gestao") ? "Gestão" : temGestao ? "Operação" : null, onde: `${titulo}${sTit ? ` › ${sTit}` : ""}` });
+            }
+            // 18/11/2026: "Correções do atendimento" não é tela do menu; fica logo abaixo da tela de Atendimentos.
+            if (ks.includes("acompanhamento") && validas.has("correcoes") && !lugares.has("correcoes")) {
+                anota("correcoes", `${titulo}${sTit ? ` › ${sTit}` : ""} › ${it.titulo}`);
+                sec.linhas.push({ key: "correcoes", nomes: ["Correções do atendimento"], parte: null, onde: `${titulo}${sTit ? ` › ${sTit}` : ""}` });
             }
         }
         // seção sem título primeiro (como no menu)
