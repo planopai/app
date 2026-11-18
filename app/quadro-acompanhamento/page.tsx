@@ -188,6 +188,7 @@ type LogItem = {
     id?: number | string;
     datahora?: string;
     acao?: string;
+    status_anterior?: string;
     status_novo?: string;
     detalhes?: any;
     usuario?: string;
@@ -2378,7 +2379,27 @@ function getRegistroTrackingId(r: Registro): string {
     );
 }
 
+/**
+ * 18/11/2026: só log que MUDA a etapa conta para a linha de status.
+ * "editou" grava status_anterior = status_novo = etapa do momento da edição; depois de um
+ * "Voltar etapa" esse log antigo (ex.: editado em fase08) fazia o Quadro achar que o
+ * atendimento ainda estava na etapa desfeita. "salvou foto"/"assinou" não têm etapa.
+ */
+function logMudaEtapa(log: LogItem): boolean {
+    const acao = String(log.acao ?? "").trim().toLowerCase();
+    if (acao.startsWith("editou") || acao.startsWith("salvou foto") || acao.startsWith("assinou")) return false;
+    if (acao === "atualizou status" || acao === "material_recolhido" || acao === "voltou etapa") return true;
+    const ant = normalizarStatus(log.status_anterior);
+    const novo = normalizarStatus(log.status_novo);
+    return !(ant && novo && ant === novo);
+}
+
+function ehVoltaDeEtapa(log: LogItem): boolean {
+    return String(log.acao ?? "").trim().toLowerCase() === "voltou etapa";
+}
+
 function getStatusFromLog(log: LogItem): string | undefined {
+    if (!logMudaEtapa(log)) return undefined;
     const detalhes = isPlainObject(log.detalhes) ? (log.detalhes as Record<string, unknown>) : {};
     const raw =
         log.status_novo ??
@@ -2502,8 +2523,13 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
     const createdTs = getRegistroCreatedTs(registro, logs, nowMs);
 
     const statusEvents = (logs ?? [])
-        .map((log) => ({ key: getStatusFromLog(log), ts: parseLogTs(log.datahora) }))
-        .filter((x): x is { key: string; ts: number } => !!x.key && x.ts > 0)
+        .map((log) => {
+            const volta = ehVoltaDeEtapa(log);
+            // Voltar para "Aberto" grava status_novo = aguardando (não é "faseNN").
+            const key = volta && normalizarStatus(log.status_novo) === "aguardando" ? "aguardando" : getStatusFromLog(log);
+            return { key, ts: parseLogTs(log.datahora), volta };
+        })
+        .filter((x): x is { key: string; ts: number; volta: boolean } => !!x.key && x.ts > 0)
         .sort((a, b) => a.ts - b.ts);
 
     // O atendimento nasce em "aguardando" (resposta ao chamado). Esse intervalo, até a
@@ -2512,6 +2538,15 @@ function buildStatusSegments(registro: Registro, logs: LogItem[] | undefined, no
 
     for (const ev of statusEvents) {
         if (ev.ts < createdTs) continue;
+
+        // 18/11/2026: "Voltar etapa" (Correções da Gestão) é uma volta de verdade: tira da linha
+        // as etapas à frente da etapa de destino, mesmo que estejam no histórico.
+        if (ev.volta) {
+            const destinoRank = statusFlowRank(ev.key);
+            while (unique.length > 1 && statusFlowRank(unique[unique.length - 1].key) > destinoRank) unique.pop();
+            if (unique[unique.length - 1]?.key !== ev.key) unique.push({ key: ev.key, ts: ev.ts });
+            continue;
+        }
 
         const last = unique[unique.length - 1];
         if (last?.key === ev.key) continue;
