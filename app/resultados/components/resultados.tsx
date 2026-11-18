@@ -10,17 +10,22 @@
  * DRE por competência e por caixa (mês a mês, comparar, por área de negócio com rateio configurável e por local), fluxo de caixa
  * (realizado e previsto, alerta de saldo mínimo), ISS retido das NFs da Prefeitura e pacote do contador em planilha Excel.
  * Até a virada, mensalidades e contas a pagar entram pela importação mensal dos relatórios da Unymos (salvos como .xlsx).
+ *
+ * 18/11/2026: data da virada e aba Unymos × Conecta no Fechamento e Contador; DRE e Fluxo abrem no mês atual com o botão Período
+ * (atalhos e personalizado), cartões compactos, avisos e explicações no botão ⓘ; no Fluxo, a tabela vem antes dos gráficos (com legenda e valores).
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     IconAdjustmentsDollar,
     IconAlertTriangle,
+    IconCalendar,
     IconChartBar,
     IconChevronDown,
     IconChevronRight,
     IconDownload,
     IconFileSpreadsheet,
+    IconInfoCircle,
     IconLock,
     IconRefresh,
     IconUpload,
@@ -36,8 +41,10 @@ import {
     BTN_PRI,
     BTN_SEC,
     CAMPO,
+    CAMPO_P,
     CARTAO,
     dataBR,
+    diaMais,
     ERRO,
     hojeISO,
     Janela,
@@ -80,11 +87,16 @@ type Dre = {
     importados: Record<string, string[]>;
     pendencias: Record<'a_classificar' | 'sem_natureza' | 'pref_sem_nf', { n: number; v: number }>;
     rateio: Rateio;
+    virada: string | null;
 };
-type Semana = { ini: string; fim: string; atual: boolean; real: boolean; e: Record<string, number>; s: Record<string, number> };
+type Semana = { ini: string; fim: string; atual: boolean; real: boolean; re: number; rs: number; e: Record<string, number>; s: Record<string, number> };
 type Fluxo = {
     hoje: string;
-    semanas: Semana[];
+    modo: 'sem' | 'mes';
+    de: string;
+    ate: string;
+    virada: string | null;
+    periodos: Semana[];
     mens_estimada: number[];
     mens_media: number;
     contas: { nome: string; tipo: string; saldo: number }[];
@@ -132,7 +144,7 @@ export type TelaRes = 'dre' | 'fluxo' | 'fechamento';
 
 /** Uma das telas de resultados. O DRE e o Fluxo de Caixa só leem; Importar e Configurar ficam no Fechamento e Contador. */
 export function TelaResultados({ tela }: { tela: TelaRes }) {
-    const [aba, setAba] = useState<'cont' | 'meses'>('cont');
+    const [aba, setAba] = useState<'cont' | 'meses' | 'conf'>('cont');
     const { avisar, aviso } = useAviso();
     const [janela, setJanela] = useState<null | 'config' | 'importar'>(null);
     const [versao, setVersao] = useState(0);
@@ -163,6 +175,7 @@ export function TelaResultados({ tela }: { tela: TelaRes }) {
                             [
                                 ['cont', 'Pacote do contador'],
                                 ['meses', 'Fechar o mês'],
+                                ['conf', 'Unymos × Conecta'],
                             ] as const
                         ).map(([k, r]) => (
                             <button key={k} type="button" role="tab" aria-selected={aba === k} className={PILULA(aba === k)} onClick={() => setAba(k)}>
@@ -175,6 +188,7 @@ export function TelaResultados({ tela }: { tela: TelaRes }) {
                 {tela === 'fluxo' ? <AbaFluxo versao={versao} /> : null}
                 {tela === 'fechamento' && aba === 'cont' ? <AbaContador avisar={avisar} /> : null}
                 {tela === 'fechamento' && aba === 'meses' ? <FechamentoDoMes /> : null}
+                {tela === 'fechamento' && aba === 'conf' ? <AbaConferencia key={versao} avisar={avisar} /> : null}
             </div>
             {janela === 'config' ? (
                 <Configurar
@@ -200,24 +214,106 @@ export function TelaResultados({ tela }: { tela: TelaRes }) {
     );
 }
 
+/* ============================== filtro de período (18/11/2026) ============================== */
+
+const fimDoMes = (ym: string) => {
+    const [a, m] = ym.split('-').map(Number);
+    return `${ym}-${String(new Date(a, m, 0).getDate()).padStart(2, '0')}`;
+};
+const BTN_INFO = (on: boolean) =>
+    `inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border px-3 text-[13.5px] font-extrabold leading-none ${
+        on ? 'border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]' : 'border-[#C9D1DE] bg-white text-[#313C55] dark:border-white/[0.2] dark:bg-[#232B3F] dark:text-white'
+    }`;
+
+/** Caixa que abre embaixo de um botão (período, ⓘ). Fecha ao clicar fora. */
+function Pop({ rotulo, icone, children, largura = 'w-[340px]', aberto, setAberto, destaque = false }: { rotulo: React.ReactNode; icone: React.ReactNode; children: React.ReactNode; largura?: string; aberto: boolean; setAberto: (v: boolean) => void; destaque?: boolean }) {
+    const ref = React.useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!aberto) return;
+        const f = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) setAberto(false);
+        };
+        document.addEventListener('mousedown', f);
+        return () => document.removeEventListener('mousedown', f);
+    }, [aberto, setAberto]);
+    return (
+        <div ref={ref} className="relative">
+            <button type="button" className={BTN_INFO(aberto || destaque)} onClick={() => setAberto(!aberto)} aria-expanded={aberto}>
+                {icone} {rotulo}
+            </button>
+            {aberto ? (
+                <div className={`absolute left-0 top-[calc(100%+6px)] z-[20] max-w-[calc(100vw-2rem)] ${largura} rounded-2xl border border-[#E3E8F0] bg-white p-3.5 text-[14px] shadow-xl dark:border-white/[0.12] dark:bg-[#232B3F]`}>{children}</div>
+            ) : null}
+        </div>
+    );
+}
+
+type PresetDre = 'este' | 'passado' | 'u3' | 'u6' | 'u12' | 'ano' | 'anoPassado' | 'pers';
+const PRESETS_DRE: [PresetDre, string][] = [
+    ['este', 'Este mês'],
+    ['passado', 'Mês passado'],
+    ['u3', 'Últimos 3 meses'],
+    ['u6', 'Últimos 6 meses'],
+    ['u12', 'Últimos 12 meses'],
+    ['ano', 'Este ano'],
+    ['anoPassado', 'Ano passado'],
+    ['pers', 'Personalizado'],
+];
+function periodoDre(p: PresetDre, m0: string, pers: [string, string]): [string, string] {
+    const ano = m0.slice(0, 4);
+    if (p === 'passado') return [mesMais(m0, -1), mesMais(m0, -1)];
+    if (p === 'u3') return [mesMais(m0, -3), mesMais(m0, -1)];
+    if (p === 'u6') return [mesMais(m0, -6), mesMais(m0, -1)];
+    if (p === 'u12') return [mesMais(m0, -12), mesMais(m0, -1)];
+    if (p === 'ano') return [`${ano}-01`, m0];
+    if (p === 'anoPassado') return [`${Number(ano) - 1}-01`, `${Number(ano) - 1}-12`];
+    if (p === 'pers') {
+        let [a, b] = pers[0] <= pers[1] ? pers : [pers[1], pers[0]];
+        if (mesMais(a, 23) < b) a = mesMais(b, -23); // até 24 meses
+        return [a, b];
+    }
+    return [m0, m0];
+}
+const rotuloPeriodo = (de: string, ate: string) => (de === ate ? mesBR(de) : `${mesCurto(de)} a ${mesCurto(ate)}`);
+
+/** Os 24 meses para escolher (do atual para trás) mais 12 à frente quando pedido. */
+const listaMeses = (m0: string, frente = 0) => Array.from({ length: 24 + frente }, (_, i) => mesMais(m0, frente - i));
+
+function KpiMini({ k, v, cls = '', escuro = false }: { k: string; v: string; cls?: string; escuro?: boolean }) {
+    return (
+        <div className={`flex min-w-0 flex-col rounded-xl border px-3 py-2 ${escuro ? 'border-[#313C55] bg-[#313C55] text-white' : 'border-[#E3E8F0] bg-white dark:border-white/[0.12] dark:bg-[#232B3F]'}`}>
+            <span className={`truncate text-[11px] font-extrabold uppercase tracking-[0.06em] ${escuro ? 'text-[#D6DCE8]' : 'text-[#5B6478] dark:text-[#AEB9CF]'}`}>{k}</span>
+            <span className={`text-[18px] font-extrabold leading-tight tabular-nums ${cls}`}>{v}</span>
+        </div>
+    );
+}
+
 /* ============================== DRE ============================== */
 
 function AbaDre({ versao }: { versao: number }) {
     const hoje = hojeISO();
+    const m0 = hoje.slice(0, 7);
     const [regime, setRegime] = useState<'comp' | 'caixa'>('comp');
     const [vis, setVis] = useState<'meses' | 'comp' | 'areas' | 'locais'>('meses');
-    const [ate, setAte] = useState(hoje.slice(0, 7));
-    const [mes, setMes] = useState(mesMais(hoje.slice(0, 7), -1));
+    // 18/11/2026: abre sempre no mês atual; o botão Período troca (atalhos e personalizado)
+    const [preset, setPreset] = useState<PresetDre>('este');
+    const [pers, setPers] = useState<[string, string]>([mesMais(m0, -6), mesMais(m0, -1)]);
+    const [rasc, setRasc] = useState<{ p: PresetDre; pers: [string, string] }>({ p: 'este', pers: [mesMais(m0, -6), mesMais(m0, -1)] });
+    const [popPer, setPopPer] = useState(false);
+    const [popInfo, setPopInfo] = useState(false);
+    const [mes, setMes] = useState(m0);
     const [d, setD] = useState<Dre | null>(null);
     const [erro, setErro] = useState<string | null>(null);
     const [carregando, setCarregando] = useState(false);
     const [ab, setAb] = useState<Record<string, boolean>>({ R: true });
     const [drill, setDrill] = useState<{ nat: Nat | null; mes: string } | null>(null);
+    const [pDe, pAte] = periodoDre(preset, m0, pers);
 
     const carregar = useCallback(async () => {
         setCarregando(true);
         try {
-            const j = await api(URL_RES, 'dre', undefined, `&regime=${regime}&de=${mesMais(ate, -11)}&ate=${ate}`);
+            const [de, ate] = vis === 'meses' ? [pDe, pAte] : [mesMais(mes, -3), mes];
+            const j = await api(URL_RES, 'dre', undefined, `&regime=${regime}&de=${de}&ate=${ate}`);
             setD(j.dados);
             setErro(null);
         } catch (e: any) {
@@ -226,7 +322,7 @@ function AbaDre({ versao }: { versao: number }) {
         } finally {
             setCarregando(false);
         }
-    }, [regime, ate]);
+    }, [regime, vis, pDe, pAte, mes]);
     useEffect(() => {
         void carregar();
     }, [carregar, versao]);
@@ -237,11 +333,13 @@ function AbaDre({ versao }: { versao: number }) {
 
     const cols: Col[] = useMemo(() => {
         if (!d) return [];
-        const meses6 = d.meses.slice(-6);
-        if (vis === 'meses')
-            return meses6
-                .map((m): Col => ({ rotulo: mesCurto(m) + (m === hoje.slice(0, 7) ? ' (parcial)' : ''), m, f: (l) => (l.m === m ? l.v : 0) }))
-                .concat([{ rotulo: 'Total 6 meses', tot: true, f: (l) => (meses6.includes(l.m) ? l.v : 0) }]);
+        if (vis === 'meses') {
+            const ms = d.meses;
+            const c: Col[] = ms.map((m): Col => ({ rotulo: mesCurto(m) + (m === m0 ? ' (parcial)' : ''), m, f: (l) => (l.m === m ? l.v : 0) }));
+            if (ms.length > 1)
+                c.push({ rotulo: 'Total', tot: true, f: (l) => (ms.includes(l.m) ? l.v : 0) }, { rotulo: 'Média', tot: true, f: (l) => (ms.includes(l.m) ? l.v / ms.length : 0) });
+            return c;
+        }
         if (vis === 'comp') {
             const ant = mesMais(mes, -1);
             const m3 = [1, 2, 3].map((k) => mesMais(mes, -k));
@@ -340,7 +438,9 @@ function AbaDre({ versao }: { versao: number }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [d, cols, ab, valSec]);
 
-    const kpiCol: Col | null = d ? { rotulo: '', m: vis === 'meses' ? mesMais(hoje.slice(0, 7), -1) : mes, f: (l) => (l.m === (vis === 'meses' ? mesMais(hoje.slice(0, 7), -1) : mes) ? l.v : 0) } : null;
+    // cartões: último mês do período (Mês a mês) ou o mês escolhido
+    const mesK = vis === 'meses' ? pAte : mes;
+    const kpiCol: Col | null = d ? { rotulo: '', m: mesK, f: (l) => (l.m === mesK ? l.v : 0) } : null;
     const k = (id: string) => (kpiCol ? valSec(SECOES.find((s) => s.id === id)!, kpiCol) : 0);
     const kRB = k('R'),
         kRL = k('=RL'),
@@ -348,12 +448,20 @@ function AbaDre({ versao }: { versao: number }) {
         kRO = k('=RO');
     const fixos = -(k('F') + k('X'));
     const mcp = kRL ? kMC / kRL : 0;
-    const mesK = kpiCol?.m || mes;
     const fechado = !!d?.fechados.includes(mesK);
     const pend = d?.pendencias;
     const temPend = !!pend && (pend.a_classificar.n > 0 || pend.sem_natureza.n > 0 || pend.pref_sem_nf.n > 0);
     const grid = { gridTemplateColumns: `minmax(300px,1.6fr) repeat(${cols.length}, minmax(112px,1fr))` };
-    const mesesSel = d?.meses.slice().reverse() ?? [];
+    const semImport = !!d && !Object.keys(d.importados).length;
+    const avisos: React.ReactNode[] = [];
+    if (d && !fechado) avisos.push(`${mesBR(mesK)}: mês aberto (ainda pode mudar).`);
+    if (d && semImport) avisos.push('Sem importação da Unymos no período: mensalidades e contas a pagar de lá não aparecem.');
+    if (temPend && regime === 'comp')
+        avisos.push(
+            `Pendências que mudam a DRE:${pend!.a_classificar.n ? ` ${pend!.a_classificar.n} título(s) em natureza de pendência (${brl(pend!.a_classificar.v)});` : ''}${
+                pend!.sem_natureza.n ? ` ${pend!.sem_natureza.n} lançamento(s) sem natureza (${brl(pend!.sem_natureza.v)});` : ''
+            }${pend!.pref_sem_nf.n ? ` ${pend!.pref_sem_nf.n} OS da Prefeitura de mês fechado sem NF (${brl(pend!.pref_sem_nf.v)});` : ''} corrija no contas a pagar ou a receber.`,
+        );
 
     return (
         <>
@@ -381,22 +489,109 @@ function AbaDre({ versao }: { versao: number }) {
                     ))}
                 </span>
                 {vis === 'meses' ? (
-                    <select className="h-11 rounded-xl bg-white px-3 text-[15px] dark:bg-[#232B3F]" value={ate} onChange={(e) => setAte(e.target.value)} aria-label="Até o mês">
-                        {Array.from({ length: 24 }, (_, i) => mesMais(hoje.slice(0, 7), -i)).map((m) => (
-                            <option key={m} value={m}>
-                                até {mesBR(m).toLowerCase()}
-                            </option>
-                        ))}
-                    </select>
+                    <Pop
+                        aberto={popPer}
+                        setAberto={(v) => {
+                            if (v) setRasc({ p: preset, pers });
+                            setPopPer(v);
+                        }}
+                        icone={<IconCalendar size={17} />}
+                        rotulo={<>{rotuloPeriodo(pDe, pAte)} ▾</>}
+                        largura="w-[360px]"
+                    >
+                        <div className="grid grid-cols-2 gap-1.5">
+                            {PRESETS_DRE.map(([p, r]) => (
+                                <button key={p} type="button" className={`${PILULA(rasc.p === p)} !min-h-9 !rounded-xl !px-3 !text-[13.5px]`} onClick={() => setRasc({ ...rasc, p })}>
+                                    {r}
+                                </button>
+                            ))}
+                        </div>
+                        {rasc.p === 'pers' ? (
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                                {(['De', 'Até'] as const).map((r, i) => (
+                                    <label key={r} className="block">
+                                        <span className={ROTULO}>{r}</span>
+                                        <select className={CAMPO_P} value={rasc.pers[i]} onChange={(e) => setRasc({ ...rasc, pers: (i ? [rasc.pers[0], e.target.value] : [e.target.value, rasc.pers[1]]) as [string, string] })}>
+                                            {listaMeses(m0).map((m) => (
+                                                <option key={m} value={m}>
+                                                    {mesBR(m)}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                ))}
+                            </div>
+                        ) : null}
+                        <div className={`${SUB} mt-2.5`}>Até 24 meses. Com mais de um mês aparecem as colunas Total e Média; os cartões usam o último mês do período.</div>
+                        <div className="mt-3 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                className={BTN_PEQ}
+                                onClick={() => {
+                                    setPreset('este');
+                                    setPopPer(false);
+                                }}
+                            >
+                                Limpar
+                            </button>
+                            <button
+                                type="button"
+                                className={BTN_PEQ_PRI}
+                                onClick={() => {
+                                    setPreset(rasc.p);
+                                    setPers(rasc.pers);
+                                    setPopPer(false);
+                                }}
+                            >
+                                Aplicar
+                            </button>
+                        </div>
+                    </Pop>
                 ) : (
-                    <select className="h-11 rounded-xl bg-white px-3 text-[15px] dark:bg-[#232B3F]" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
-                        {mesesSel.map((m) => (
+                    <select className="h-10 rounded-xl bg-white px-3 text-[14px] font-bold dark:bg-[#232B3F]" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
+                        {listaMeses(m0).map((m) => (
                             <option key={m} value={m}>
                                 {mesBR(m)}
                             </option>
                         ))}
                     </select>
                 )}
+                <Pop aberto={popInfo} setAberto={setPopInfo} icone={<IconInfoCircle size={17} />} rotulo={avisos.length ? `${avisos.length} aviso${avisos.length > 1 ? 's' : ''}` : 'Como ler'} destaque={avisos.length > 0} largura="w-[440px]">
+                    {avisos.length ? (
+                        <>
+                            <b>Avisos</b>
+                            <ul className="mb-2.5 mt-1 list-disc space-y-1 pl-5">
+                                {avisos.map((a, i) => (
+                                    <li key={i}>{a}</li>
+                                ))}
+                            </ul>
+                        </>
+                    ) : null}
+                    <b>Como ler</b>
+                    <ul className={`${SUB} mt-1 list-disc space-y-1 pl-5 !text-[13px]`}>
+                        <li>
+                            Referência: {d?.virada ? `Unymos até ${mesBR(mesMais(d.virada, -1)).toLowerCase()}; PAI Conecta a partir de ${mesBR(d.virada).toLowerCase()}.` : 'Unymos em todos os meses (data da virada ainda não definida, no Fechamento e Contador).'}
+                            {d && Object.keys(d.importados).length ? ` Importado da Unymos no período: ${Object.keys(d.importados).sort().map(mesCurto).join(', ')}.` : ''}
+                        </li>
+                        <li>
+                            {vis === 'locais'
+                                ? 'Por local: as despesas com local no rateio (energia, água, aluguel, manutenção, combustível e veículos). O que não tem local fica em "Sem local".'
+                                : vis === 'areas'
+                                  ? `Por área de negócio: receitas e custos pela área do lançamento; o Simples acompanha a receita de cada área. Custos fixos e despesas comuns: ${
+                                        d?.rateio?.modo === 'percentual' ? 'divididos pelos percentuais configurados' : d?.rateio?.modo === 'nao' ? 'ficam em "Sem área" (sem rateio)' : 'divididos pela receita de cada área'
+                                    }.`
+                                  : regime === 'caixa'
+                                    ? 'Caixa: pela data em que o dinheiro entrou ou saiu (baixa). Juros e multa ficam à parte; o ISS retido entra como dedução.'
+                                    : 'Competência: pelo mês do serviço ou da despesa, pago ou não. A OS entra no mês dela (a da Prefeitura no mês do atendimento, não da NF); o importado da Unymos entra pelo mês do pagamento.'}
+                        </li>
+                        <li>
+                            Cartões de {mesBR(mesK).toLowerCase()}: receita bruta {mil(kRB)}
+                            {d?.orcado?.[mesK] ? ` (orçado ${mil(d.orcado[mesK])})` : ''}; margem de contribuição {mil(kMC)} depois dos custos variáveis; resultado operacional = {pct(kRB ? kRO / kRB : NaN)} da receita bruta; ponto de equilíbrio = receita líquida que
+                            cobre custos fixos e despesas ({mil(fixos)}).
+                        </li>
+                        <li>Clique num valor de natureza para ver os lançamentos.</li>
+                    </ul>
+                </Pop>
                 <span className="flex-1" />
                 <button type="button" className={BTN_PEQ} disabled={!d} onClick={() => d && void baixarDre(d, rows, cols, regime)}>
                     <IconDownload size={18} /> Planilha
@@ -408,34 +603,14 @@ function AbaDre({ versao }: { versao: number }) {
 
             {erro ? <div className={ERRO}>{erro}</div> : null}
 
-            <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-                <Kpi k={`Receita líquida · ${mesCurto(mesK)}`} v={mil(kRL)} s={`bruta ${mil(kRB)}${d?.orcado?.[mesK] ? ` · orçado ${mil(d.orcado[mesK])}` : ''}`} />
-                <Kpi k="Margem de contribuição" v={pct(mcp)} s={`${mil(kMC)} depois dos custos variáveis`} />
-                <Kpi k="Resultado operacional" v={mil(kRO)} s={`${pct(kRB ? kRO / kRB : NaN)} da receita bruta`} cls={kRO >= 0 ? 'text-[#3F5A0A] dark:text-[#CFE38A]' : 'text-[#B42318] dark:text-[#FF9C92]'} />
-                <Kpi k="Ponto de equilíbrio" v={mcp > 0 ? mil(fixos / mcp) : '—'} s={`receita líquida que cobre custos fixos e despesas (${mil(fixos)})`} escuro />
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                <KpiMini k={`Receita líquida · ${mesCurto(mesK)}`} v={mil(kRL)} />
+                <KpiMini k="Margem de contribuição" v={pct(mcp)} />
+                <KpiMini k="Resultado operacional" v={mil(kRO)} cls={kRO >= 0 ? 'text-[#3F5A0A] dark:text-[#CFE38A]' : 'text-[#B42318] dark:text-[#FF9C92]'} />
+                <KpiMini k="Ponto de equilíbrio" v={mcp > 0 ? mil(fixos / mcp) : '—'} escuro />
             </div>
 
-            <div className="flex flex-wrap gap-2">
-                <span className={`${SELO} ${fechado ? S_OK : S_AVISO}`}>
-                    {mesBR(mesK)}: {fechado ? 'mês fechado' : 'mês aberto (ainda pode mudar)'}
-                </span>
-                {d && Object.keys(d.importados).length ? <span className={`${SELO} !whitespace-normal !shrink ${S_AB}`}>Inclui o importado da Unymos: {Object.keys(d.importados).sort().map(mesCurto).join(', ')}</span> : null}
-                {d && !Object.keys(d.importados).length ? <span className={`${SELO} !whitespace-normal !shrink ${S_MUDO}`}>Sem importação da Unymos no período: mensalidades e contas a pagar de lá não aparecem</span> : null}
-            </div>
-
-            {temPend && regime === 'comp' ? (
-                <div className={`${NOTA} ${S_AVISO} items-center`}>
-                    <IconAlertTriangle size={18} className="shrink-0" />
-                    <span className="flex-1">
-                        Pendências que mudam a DRE:
-                        {pend!.a_classificar.n ? ` ${pend!.a_classificar.n} título(s) em natureza de pendência (${brl(pend!.a_classificar.v)});` : ''}
-                        {pend!.sem_natureza.n ? ` ${pend!.sem_natureza.n} lançamento(s) sem natureza (${brl(pend!.sem_natureza.v)});` : ''}
-                        {pend!.pref_sem_nf.n ? ` ${pend!.pref_sem_nf.n} OS da Prefeitura de mês fechado sem NF (${brl(pend!.pref_sem_nf.v)});` : ''} corrija no contas a pagar ou a receber.
-                    </span>
-                </div>
-            ) : null}
-
-            <div className={`${CARTAO} max-h-[calc(100dvh-260px)] overflow-auto`}>
+            <div className={`${CARTAO} max-h-[calc(100dvh-200px)] overflow-auto`}>
                 {carregando && !d ? <div className="px-4 py-8 text-center text-[#5B6478]">Carregando…</div> : null}
                 {d ? (
                     <div className="min-w-max text-[14px]">
@@ -494,17 +669,6 @@ function AbaDre({ versao }: { versao: number }) {
                     </div>
                 ) : null}
             </div>
-            <div className={SUB}>
-                {vis === 'locais'
-                    ? 'Por local: as despesas com local no rateio (energia, água, aluguel, manutenção, combustível e veículos). O que não tem local fica em "Sem local".'
-                    : vis === 'areas'
-                      ? `Por área de negócio: receitas e custos pela área do lançamento; o Simples acompanha a receita de cada área. Custos fixos e despesas comuns: ${
-                            d?.rateio?.modo === 'percentual' ? 'divididos pelos percentuais configurados' : d?.rateio?.modo === 'nao' ? 'ficam em "Sem área" (sem rateio)' : 'divididos pela receita de cada área'
-                        } (Configurar).`
-                      : regime === 'caixa'
-                        ? 'Caixa: pela data em que o dinheiro entrou ou saiu (baixa). Juros e multa ficam à parte; o ISS retido entra como dedução. Clique num valor de natureza para ver os lançamentos.'
-                        : 'Competência: pelo mês do serviço ou da despesa, pago ou não. A OS entra no mês dela (a da Prefeitura no mês do atendimento, não da NF); o importado da Unymos entra pelo mês do pagamento. Clique num valor de natureza para ver os lançamentos.'}
-            </div>
             {drill ? <Detalhe regime={regime} nat={drill.nat} mes={drill.mes} onFechar={() => setDrill(null)} /> : null}
         </>
     );
@@ -520,20 +684,22 @@ function Kpi({ k, v, s, cls = '', escuro = false }: { k: string; v: string; s: s
     );
 }
 
-function Detalhe({ regime, nat, mes, onFechar }: { regime: string; nat: Nat | null; mes: string; onFechar: () => void }) {
+function Detalhe({ regime, nat, mes, onFechar, conf = false }: { regime: string; nat: Nat | null; mes: string; onFechar: () => void; conf?: boolean }) {
     const [d, setD] = useState<{ linhas: any[]; total: number; limitado: boolean } | null>(null);
     const [erro, setErro] = useState<string | null>(null);
     useEffect(() => {
         void (async () => {
             try {
-                const j = await api(URL_RES, 'detalhe', undefined, `&regime=${regime}&mes=${mes}${nat ? `&natureza_id=${nat.id}` : ''}`);
+                const j = await api(URL_RES, 'detalhe', undefined, `&regime=${regime}&mes=${mes}${nat ? `&natureza_id=${nat.id}` : ''}${conf ? '&conf=1' : ''}`);
                 setD(j.dados);
             } catch (e: any) {
                 const m = mensagemErro(e, 'Não foi possível abrir os lançamentos.');
                 if (m) setErro(m);
             }
         })();
-    }, [regime, nat, mes]);
+    }, [regime, nat, mes, conf]);
+    // 18/11/2026: na conferência, os lançamentos de cada lado separados (Unymos e PAI Conecta)
+    const blocos: [string, any[]][] = !d ? [] : conf ? [['Unymos', d.linhas.filter((l) => l.fonte === 'UNYMOS')], ['PAI Conecta', d.linhas.filter((l) => l.fonte !== 'UNYMOS')]] : [['', d.linhas]];
     return (
         <Janela
             titulo={nat ? `${nat.codigo} ${nat.nome}` : 'Sem natureza'}
@@ -547,9 +713,15 @@ function Detalhe({ regime, nat, mes, onFechar }: { regime: string; nat: Nat | nu
             }
         >
             {!d && !erro ? <div className="py-6 text-center text-[#5B6478]">Carregando…</div> : null}
-            {d ? (
-                <div className={`${CARTAO} overflow-hidden`}>
-                    {d.linhas.map((l, i) => (
+            {blocos.map(([tit, linhas]) => (
+                <div key={tit} className={`${CARTAO} overflow-hidden`}>
+                    {tit ? (
+                        <div className="flex justify-between border-b border-[#EEF2F7] bg-[#F6F8FB] px-3 py-2 text-[12px] font-extrabold uppercase tracking-[0.06em] text-[#5B6478] dark:border-white/[0.06] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                            <span>{tit}</span>
+                            <span className="tabular-nums">{brl(linhas.reduce((a: number, l: any) => a + l.valor, 0))}</span>
+                        </div>
+                    ) : null}
+                    {linhas.map((l: any, i: number) => (
                         <div key={i} className="grid grid-cols-[88px_minmax(0,1fr)_120px] items-center gap-3 border-t border-[#EEF2F7] px-3 py-2.5 text-[14px] first:border-t-0 dark:border-white/[0.06] lg:grid-cols-[88px_minmax(0,1.5fr)_140px_minmax(0,1fr)_120px]">
                             <span className="tabular-nums">{dataBR(l.data) || '—'}</span>
                             <span className="min-w-0">
@@ -561,10 +733,11 @@ function Detalhe({ regime, nat, mes, onFechar }: { regime: string; nat: Nat | nu
                             <b className="text-right tabular-nums">{brl(l.valor)}</b>
                         </div>
                     ))}
-                    {!d.linhas.length ? <div className="px-4 py-6 text-center text-[#5B6478]">Nenhum lançamento.</div> : null}
+                    {!linhas.length ? <div className="px-4 py-6 text-center text-[#5B6478]">Nenhum lançamento.</div> : null}
                 </div>
-            ) : null}
+            ))}
             {d?.limitado ? <div className={SUB}>Mostrando os 300 maiores. Para a lista inteira, use a planilha do pacote do contador.</div> : null}
+            {conf ? <div className={SUB}>O que só aparece na Unymos foi feito lá e ainda não é lançado no PAI Conecta: é isso que a equipe precisa passar a lançar antes da virada.</div> : null}
             <div className={SUB}>Natureza errada se corrige no título (aba Natureza do contas a pagar ou a receber); num mês fechado, só depois que a Gestão reabrir.</div>
             {erro ? <div className={ERRO}>{erro}</div> : null}
         </Janela>
@@ -619,17 +792,58 @@ const SAIDAS: [string, string][] = [
     ['outros', 'Outras saídas'],
 ];
 
+// 18/11/2026: período do fluxo = quanto para trás (realizado) + quanto para frente (previsto), ou personalizado
+type Atras = '0' | '4s' | '3m' | '6m' | '12m';
+type Frente = '4s' | '13s' | '6m' | '12m';
+const ATRAS: [Atras, string][] = [
+    ['0', 'Nenhum'],
+    ['4s', '4 semanas'],
+    ['3m', '3 meses'],
+    ['6m', '6 meses'],
+    ['12m', '12 meses'],
+];
+const FRENTE: [Frente, string][] = [
+    ['4s', '4 semanas'],
+    ['13s', '13 semanas'],
+    ['6m', '6 meses'],
+    ['12m', '12 meses'],
+];
+type PerFluxo = { atras: Atras; frente: Frente; pers: boolean; de: string; ate: string };
+function periodoFluxo(p: PerFluxo, hoje: string): [string, string] {
+    if (p.pers) return p.de <= p.ate ? [p.de, p.ate] : [p.ate, p.de];
+    const m0 = hoje.slice(0, 7);
+    const de = p.atras === '0' ? hoje : p.atras === '4s' ? diaMais(hoje, -28) : `${mesMais(m0, -Number(p.atras.replace('m', '')))}-01`;
+    const ate = p.frente === '4s' ? diaMais(hoje, 27) : p.frente === '13s' ? diaMais(hoje, 90) : fimDoMes(mesMais(m0, Number(p.frente.replace('m', ''))));
+    return [de, ate];
+}
+const rotuloFluxo = (p: PerFluxo) =>
+    p.pers ? `${dataBR(p.de)} a ${dataBR(p.ate)}` : `${p.atras === '0' ? 'De hoje' : `${ATRAS.find((x) => x[0] === p.atras)![1]} atrás`} + ${FRENTE.find((x) => x[0] === p.frente)![1]} à frente`;
+
+const kMil = (v: number) => (Math.abs(v) < 500 ? '0' : `${v < 0 ? '−' : ''}${Math.round(Math.abs(v) / 1000).toLocaleString('pt-BR')}`);
+const COR_E = '#8FAE4A';
+const COR_S = '#C7685E';
+const COR_MIN = '#E0B400';
+
 function AbaFluxo({ versao }: { versao: number }) {
+    const hoje = hojeISO();
     const [f, setF] = useState<Fluxo | null>(null);
     const [erro, setErro] = useState<string | null>(null);
-    const [modo, setModo] = useState<'sem' | 'mes'>('sem');
+    const [modo, setModo] = useState<'sem' | 'mes'>('mes');
+    const [per, setPer] = useState<PerFluxo>({ atras: '3m', frente: '6m', pers: false, de: diaMais(hoje, -28), ate: diaMais(hoje, 90) });
+    const [rasc, setRasc] = useState<PerFluxo>(per);
+    const [popPer, setPopPer] = useState(false);
+    const [popInfo, setPopInfo] = useState(false);
     const [mens, setMens] = useState(true);
     const [apl, setApl] = useState(false);
     const [ab, setAb] = useState<{ e?: boolean; s?: boolean }>({});
+    const [de, ate] = periodoFluxo(per, hoje);
+    // períodos longos passam a mensal sozinhos (mais de 26 semanas)
+    const longo = (new Date(ate).getTime() - new Date(de).getTime()) / 86400000 > 26 * 7;
+    const modoEf = modo === 'sem' && longo ? 'mes' : modo;
     useEffect(() => {
         void (async () => {
             try {
-                const j = await api(URL_RES, 'fluxo');
+                const j = await api(URL_RES, 'fluxo', undefined, `&modo=${modoEf}&de=${de}&ate=${ate}`);
                 setF(j.dados);
                 setErro(null);
             } catch (e: any) {
@@ -637,62 +851,51 @@ function AbaFluxo({ versao }: { versao: number }) {
                 if (m) setErro(m);
             }
         })();
-    }, [versao]);
+    }, [versao, modoEf, de, ate]);
 
-    const per = useMemo(() => {
+    const ps = useMemo(() => {
         if (!f) return [];
-        const sem = f.semanas.map((s, i) => ({
-            l: `${s.ini.slice(8, 10)}/${s.ini.slice(5, 7)}`,
+        return f.periodos.map((s, i) => ({
+            l: f.modo === 'mes' ? mesCurto(s.ini.slice(0, 7)) : `${s.ini.slice(8, 10)}/${s.ini.slice(5, 7)}`,
             real: s.real,
             atual: s.atual,
-            e: { ...s.e, mens: (s.e.mens || 0) + (mens && !s.real ? f.mens_estimada[i] || 0 : 0) } as Record<string, number>,
+            re: s.re,
+            rs: s.rs,
+            e: { ...s.e, mens: (s.e.mens || 0) + (mens ? f.mens_estimada[i] || 0 : 0) } as Record<string, number>,
             s: { ...s.s } as Record<string, number>,
-            m: s.ini.slice(0, 7),
         }));
-        if (modo === 'sem') return sem;
-        const g = new Map<string, (typeof sem)[number]>();
-        sem.forEach((s) => {
-            const x = g.get(s.m) || { l: mesCurto(s.m), real: true, atual: false, e: { rec: 0, pref: 0, cart: 0, mens: 0, outros: 0 } as Record<string, number>, s: { forn: 0, folha: 0, imp: 0, ret: 0, outros: 0 } as Record<string, number>, m: s.m };
-            x.real = x.real && s.real;
-            x.atual = x.atual || s.atual;
-            ENTRADAS.forEach(([k]) => (x.e[k] += s.e[k] || 0));
-            SAIDAS.forEach(([k]) => (x.s[k] += s.s[k] || 0));
-            g.set(s.m, x);
-        });
-        return Array.from(g.values());
-    }, [f, modo, mens]);
+    }, [f, mens]);
 
     if (erro) return <div className={ERRO}>{erro}</div>;
     if (!f) return <div className="py-8 text-center text-[#5B6478]">Carregando…</div>;
 
-    const ent = (p: (typeof per)[number]) => ENTRADAS.reduce((a, [k]) => a + (p.e[k] || 0), 0);
-    const sai = (p: (typeof per)[number]) => SAIDAS.reduce((a, [k]) => a + (p.s[k] || 0), 0);
-    const iA = per.findIndex((p) => p.atual);
+    const ent = (p: (typeof ps)[number]) => ENTRADAS.reduce((a, [k]) => a + (p.e[k] || 0), 0);
+    const sai = (p: (typeof ps)[number]) => SAIDAS.reduce((a, [k]) => a + (p.s[k] || 0), 0);
+    const iA = ps.findIndex((p) => p.atual);
     const saldoHoje = f.saldo + (apl ? f.saldo_aplicacoes : 0);
     const minimo = f.saldo_minimo;
-    // saldo no início do período atual = saldo de hoje; para trás desconta o realizado, para frente soma o previsto
-    const sIni: number[] = new Array(per.length).fill(0);
-    const sFim: number[] = new Array(per.length).fill(0);
+    // saldo no início do período atual = saldo de hoje menos o que já entrou e saiu nele; para trás desconta o realizado, para frente soma o previsto
+    const sIni: number[] = new Array(ps.length).fill(0);
+    const sFim: number[] = new Array(ps.length).fill(0);
     if (iA >= 0) {
-        sIni[iA] = saldoHoje;
-        for (let i = iA; i < per.length; i++) {
+        sIni[iA] = saldoHoje - (ps[iA].re - ps[iA].rs);
+        for (let i = iA; i < ps.length; i++) {
             if (i > iA) sIni[i] = sFim[i - 1];
-            sFim[i] = sIni[i] + ent(per[i]) - sai(per[i]);
+            sFim[i] = sIni[i] + ent(ps[i]) - sai(ps[i]);
         }
         for (let i = iA - 1; i >= 0; i--) {
             sFim[i] = sIni[i + 1];
-            sIni[i] = sFim[i] - ent(per[i]) + sai(per[i]);
+            sIni[i] = sFim[i] - ent(ps[i]) + sai(ps[i]);
         }
     }
-    const futuros = per.map((_, i) => i).filter((i) => i >= iA);
-    const baixo = per.map((_, i) => i >= iA && sFim[i] < minimo);
+    const futuros = ps.map((_, i) => i).filter((i) => i >= iA);
+    const baixo = ps.map((_, i) => i >= iA && sFim[i] < minimo);
     const iB = baixo.indexOf(true);
-    const maxB = Math.max(1, ...per.map((p) => Math.max(ent(p), sai(p))));
-    const maxS = Math.max(1, ...sFim, minimo) * 1.1;
-    const entPrev = futuros.reduce((a, i) => a + ent(per[i]), 0);
-    const saiPrev = futuros.reduce((a, i) => a + sai(per[i]), 0);
+    // o que ainda vai entrar e sair: no período atual, só a parte prevista
+    const entPrev = futuros.reduce((a, i) => a + ent(ps[i]) - (i === iA ? ps[i].re : 0), 0);
+    const saiPrev = futuros.reduce((a, i) => a + sai(ps[i]) - (i === iA ? ps[i].rs : 0), 0);
     const menor = futuros.length ? Math.min(...futuros.map((i) => sFim[i])) : saldoHoje;
-    const grid = { gridTemplateColumns: `230px repeat(${per.length}, minmax(100px,1fr))` };
+    const grid = { gridTemplateColumns: `230px repeat(${ps.length}, minmax(100px,1fr))` };
 
     const linha = (nome: string, vals: number[], tipo: 'sec' | 'nat' | 'tot', toggle?: () => void, aberto?: boolean) => (
         <div key={nome} className={`grid min-h-10 items-center border-b border-[#EEF2F7] dark:border-white/[0.06] ${tipo === 'tot' ? 'bg-[#313C55] font-extrabold text-white' : tipo === 'sec' ? 'bg-[#F6F8FB] font-extrabold dark:bg-[#1C2334]' : ''}`} style={grid}>
@@ -707,71 +910,152 @@ function AbaFluxo({ versao }: { versao: number }) {
                 {nome}
             </span>
             {vals.map((v, i) => (
-                <span key={i} className={`px-3 text-right tabular-nums ${tipo === 'tot' && baixo[i] ? 'text-[#FFB4AB]' : ''} ${per[i].real ? '' : 'italic'}`}>
+                <span key={i} className={`px-3 text-right tabular-nums ${tipo === 'tot' && baixo[i] ? 'text-[#FFB4AB]' : ''} ${ps[i].real ? '' : 'italic'}`}>
                     {n0(v)}
                 </span>
             ))}
         </div>
     );
 
+    // gráficos (SVG): 1) entradas × saídas com o valor em cima de cada barra; 2) saldo no fim de cada período com a linha do saldo mínimo
+    const W = 76;
+    const larg = ps.length * W + 16;
+    const maxB = Math.max(1, ...ps.map((p) => Math.max(ent(p), sai(p))));
+    const alt = (v: number) => (v / maxB) * 120;
+    const sMax = Math.max(0, minimo, ...sFim);
+    const sMin = Math.min(0, ...sFim);
+    const yS = (v: number) => 20 + ((sMax - v) / (sMax - sMin || 1)) * 110;
+    const legenda = (cor: string, txt: string, tipo: 'q' | 'l' | 'p' = 'q', op = 1) => (
+        <span className="inline-flex items-center gap-1.5">
+            {tipo === 'q' ? <span className="inline-block size-3 rounded-sm" style={{ background: cor, opacity: op }} /> : tipo === 'p' ? <span className="inline-block size-3 rounded-full" style={{ background: cor }} /> : <span className="inline-block w-5 border-t-2 border-dashed" style={{ borderColor: cor }} />}
+            {txt}
+        </span>
+    );
+
     return (
         <>
             <div className="flex flex-wrap items-center gap-2">
                 <span className={SEG}>
-                    <button type="button" className={segBtn(modo === 'sem')} onClick={() => setModo('sem')}>
+                    <button type="button" className={segBtn(modoEf === 'sem')} onClick={() => setModo('sem')} disabled={longo} title={longo ? 'Período longo: só por mês' : undefined}>
                         Semanal
                     </button>
-                    <button type="button" className={segBtn(modo === 'mes')} onClick={() => setModo('mes')}>
+                    <button type="button" className={segBtn(modoEf === 'mes')} onClick={() => setModo('mes')}>
                         Mensal
                     </button>
                 </span>
-                <Marca on={mens} onClick={() => setMens(!mens)} rotulo={`Mensalidades estimadas (média de 3 meses importados: ${brl(f.mens_media)} por mês)`} />
-                <Marca on={apl} onClick={() => setApl(!apl)} rotulo="Contar aplicações no saldo" />
+                <Pop
+                    aberto={popPer}
+                    setAberto={(v) => {
+                        if (v) setRasc(per);
+                        setPopPer(v);
+                    }}
+                    icone={<IconCalendar size={17} />}
+                    rotulo={<>{rotuloFluxo(per)} ▾</>}
+                    largura="w-[380px]"
+                >
+                    <div className={ROTULO}>Realizado (para trás)</div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {ATRAS.map(([k, r]) => (
+                            <button key={k} type="button" className={`${PILULA(!rasc.pers && rasc.atras === k)} !min-h-9 !px-3 !text-[13.5px]`} onClick={() => setRasc({ ...rasc, pers: false, atras: k })}>
+                                {r}
+                            </button>
+                        ))}
+                    </div>
+                    <div className={`${ROTULO} mt-3`}>Previsto (para frente)</div>
+                    <div className="flex flex-wrap gap-1.5">
+                        {FRENTE.map(([k, r]) => (
+                            <button key={k} type="button" className={`${PILULA(!rasc.pers && rasc.frente === k)} !min-h-9 !px-3 !text-[13.5px]`} onClick={() => setRasc({ ...rasc, pers: false, frente: k })}>
+                                {r}
+                            </button>
+                        ))}
+                    </div>
+                    <button type="button" className={`${PILULA(rasc.pers)} mt-3 !min-h-9 !px-3 !text-[13.5px]`} onClick={() => setRasc({ ...rasc, pers: true })}>
+                        Personalizado
+                    </button>
+                    {rasc.pers ? (
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                            <label className="block">
+                                <span className={ROTULO}>De</span>
+                                <input type="date" className={CAMPO_P} value={rasc.de} onChange={(e) => setRasc({ ...rasc, de: e.target.value })} />
+                            </label>
+                            <label className="block">
+                                <span className={ROTULO}>Até</span>
+                                <input type="date" className={CAMPO_P} value={rasc.ate} onChange={(e) => setRasc({ ...rasc, ate: e.target.value })} />
+                            </label>
+                        </div>
+                    ) : null}
+                    <div className={`${SUB} mt-2.5`}>O período sempre inclui hoje. Mais de 26 semanas passa a mensal sozinho.</div>
+                    <div className="mt-3 flex justify-end gap-2">
+                        <button
+                            type="button"
+                            className={BTN_PEQ}
+                            onClick={() => {
+                                setPer({ ...per, atras: '3m', frente: '6m', pers: false });
+                                setPopPer(false);
+                            }}
+                        >
+                            Limpar
+                        </button>
+                        <button
+                            type="button"
+                            className={BTN_PEQ_PRI}
+                            disabled={rasc.pers && (!rasc.de || !rasc.ate)}
+                            onClick={() => {
+                                setPer(rasc);
+                                setPopPer(false);
+                            }}
+                        >
+                            Aplicar
+                        </button>
+                    </div>
+                </Pop>
+                <Pop aberto={popInfo} setAberto={setPopInfo} icone={<IconInfoCircle size={17} />} rotulo="Como ler" largura="w-[460px]">
+                    <ul className={`${SUB} list-disc space-y-1 pl-5 !text-[13px]`}>
+                        <li>
+                            Realizado (até hoje): {f.virada ? `importado da Unymos até ${mesBR(mesMais(f.virada, -1)).toLowerCase()} e baixas do PAI Conecta a partir de ${mesBR(f.virada).toLowerCase()}` : 'importado da Unymos (data da virada ainda não definida)'}.
+                        </li>
+                        <li>
+                            Previsto (em itálico, de hoje em diante): títulos a receber e a pagar em aberto do PAI Conecta pelo vencimento, cartões pela previsão da Cielo, NFs da Prefeitura pelo vencimento (sem o ISS retido), contas a pagar da Unymos pelo relatório 90
+                            importado e mensalidades estimadas (média de 3 meses importados: {brl(f.mens_media)} por mês).
+                        </li>
+                        {f.vencidos.e + f.vencidos.s > 0 ? (
+                            <li>
+                                Títulos vencidos e não pagos entram no período atual: a receber {brl(f.vencidos.e)}, a pagar {brl(f.vencidos.s)}.
+                            </li>
+                        ) : null}
+                        <li>
+                            Saldo de hoje pela Tesouraria:{' '}
+                            {f.contas
+                                .filter((c) => (apl || c.tipo !== 'APLICACAO') && Math.abs(c.saldo) >= 0.005)
+                                .map((c) => `${c.nome} ${brl(c.saldo)}`)
+                                .join(' · ') || '—'}
+                            {apl ? '' : ` (aplicações fora: ${brl(f.saldo_aplicacoes)})`}. Para trás, o saldo é recalculado a partir dele.
+                        </li>
+                        <li>Saldo mínimo: {brl(minimo)} (Fechamento e Contador › Saldo mínimo e rateio).</li>
+                    </ul>
+                </Pop>
+                <Marca on={mens} onClick={() => setMens(!mens)} rotulo="Mensalidades estimadas" />
+                <Marca on={apl} onClick={() => setApl(!apl)} rotulo="Contar aplicações" />
             </div>
-            <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-                <Kpi k="Saldo hoje" v={mil(saldoHoje)} s={apl ? 'bancos, caixas e aplicações' : `bancos e caixas (aplicações: ${mil(f.saldo_aplicacoes)})`} escuro />
-                <Kpi k="Entradas previstas" v={mil(entPrev)} s={`até ${per[per.length - 1]?.l}${mens ? ' · com mensalidades estimadas' : ''}`} />
-                <Kpi k="Saídas previstas" v={mil(saiPrev)} s="contas a pagar do PAI e da Unymos" />
-                <Kpi k="Menor saldo previsto" v={mil(menor)} s={`saldo mínimo: ${mil(minimo)}`} cls={iB >= 0 ? 'text-[#B42318] dark:text-[#FF9C92]' : 'text-[#3F5A0A] dark:text-[#CFE38A]'} />
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                <KpiMini k="Saldo hoje" v={mil(saldoHoje)} escuro />
+                <KpiMini k="Entradas previstas" v={mil(entPrev)} />
+                <KpiMini k="Saídas previstas" v={mil(saiPrev)} />
+                <KpiMini k="Menor saldo previsto" v={mil(menor)} cls={iB >= 0 ? 'text-[#B42318] dark:text-[#FF9C92]' : 'text-[#3F5A0A] dark:text-[#CFE38A]'} />
             </div>
             {iB >= 0 ? (
-                <div className={`${NOTA} ${S_RUIM} items-center`}>
+                <div className={`${NOTA} ${S_RUIM} items-center !py-2`}>
                     <IconAlertTriangle size={18} className="shrink-0" />
                     <span>
-                        O saldo previsto fica abaixo do mínimo ({brl(minimo)}) em {per[iB].l} ({brl(sFim[iB])}). Antecipe cobranças, adie pagamentos ou resgate aplicação.
+                        Abaixo do saldo mínimo ({mil(minimo)}) em {ps[iB].l}: {brl(sFim[iB])}.
                     </span>
                 </div>
             ) : null}
-            {f.vencidos.e + f.vencidos.s > 0 ? (
-                <div className={SUB}>
-                    Títulos vencidos e não pagos entram no período atual: a receber {brl(f.vencidos.e)}, a pagar {brl(f.vencidos.s)}.
-                </div>
-            ) : null}
-            <div className={`${CARTAO} p-4`}>
-                <div className="relative flex h-[220px] items-end gap-2 border-b border-[#E3E8F0] pb-6 dark:border-white/[0.1]">
-                    <div className="absolute inset-x-0 z-0 border-t-2 border-dashed border-[#E0B400]" style={{ bottom: `${24 + (minimo / maxS) * 180}px` }} title="Saldo mínimo" />
-                    {per.map((p, i) => (
-                        <div key={i} className="relative z-[1] flex h-full min-w-0 flex-1 flex-col items-center justify-end">
-                            <div className="flex h-full w-full items-end justify-center gap-[3px]">
-                                <span className={`block w-[38%] max-w-[22px] rounded-t ${p.real ? 'bg-[#B3CE52]' : 'bg-[#B3CE52]/55'}`} style={{ height: `${(ent(p) / maxB) * 100}%` }} />
-                                <span className={`block w-[38%] max-w-[22px] rounded-t ${p.real ? 'bg-[#E8857A]' : 'bg-[#E8857A]/55'}`} style={{ height: `${(sai(p) / maxB) * 100}%` }} />
-                            </div>
-                            <span
-                                className={`absolute left-1/2 size-3 -translate-x-1/2 rounded-full ring-[3px] ring-white dark:ring-[#232B3F] ${baixo[i] ? 'bg-[#B42318]' : 'bg-[#313C55] dark:bg-[#F2CB3F]'}`}
-                                style={{ bottom: `${Math.max(0, (sFim[i] / maxS) * 180) - 6}px` }}
-                                title={`Saldo no fim: ${brl(sFim[i])}`}
-                            />
-                            <span className={`absolute -bottom-6 whitespace-nowrap text-[11.5px] font-bold ${p.atual ? 'text-[#313C55] dark:text-white' : 'text-[#5B6478] dark:text-[#AEB9CF]'}`}>{p.l}</span>
-                        </div>
-                    ))}
-                </div>
-                <div className={`${SUB} mt-7`}>Barras: entradas (verde) e saídas (vermelho), mais claras no previsto. Ponto: saldo no fim do período. Linha tracejada: saldo mínimo.</div>
-            </div>
             <div className={`${CARTAO} overflow-auto`}>
                 <div className="min-w-max text-[14px]">
                     <div className="sticky top-0 z-[3] grid border-b border-[#E3E8F0] bg-[#F6F8FB] text-[11.5px] font-extrabold uppercase tracking-[0.06em] text-[#5B6478] dark:border-white/[0.08] dark:bg-[#1C2334] dark:text-[#AEB9CF]" style={grid}>
-                        <span className="sticky left-0 bg-[#F6F8FB] px-3 py-2.5 dark:bg-[#1C2334]">{modo === 'sem' ? 'Semana de' : 'Mês'}</span>
-                        {per.map((p, i) => (
+                        <span className="sticky left-0 bg-[#F6F8FB] px-3 py-2.5 dark:bg-[#1C2334]">{f.modo === 'sem' ? 'Semana de' : 'Mês'}</span>
+                        {ps.map((p, i) => (
                             <span key={i} className="px-3 py-2.5 text-right">
                                 {p.l}
                                 {p.atual ? ' · atual' : p.real ? '' : ' · prev.'}
@@ -779,21 +1063,79 @@ function AbaFluxo({ versao }: { versao: number }) {
                         ))}
                     </div>
                     {linha('Saldo no início', sIni, 'sec')}
-                    {linha('Entradas', per.map(ent), 'sec', () => setAb({ ...ab, e: !ab.e }), ab.e)}
-                    {ab.e ? ENTRADAS.map(([k, r]) => linha(r, per.map((p) => p.e[k] || 0), 'nat')) : null}
-                    {linha('Saídas', per.map((p) => -sai(p)), 'sec', () => setAb({ ...ab, s: !ab.s }), ab.s)}
-                    {ab.s ? SAIDAS.map(([k, r]) => linha(r, per.map((p) => -(p.s[k] || 0)), 'nat')) : null}
+                    {linha('Entradas', ps.map(ent), 'sec', () => setAb({ ...ab, e: !ab.e }), ab.e)}
+                    {ab.e ? ENTRADAS.map(([k, r]) => linha(r, ps.map((p) => p.e[k] || 0), 'nat')) : null}
+                    {linha('Saídas', ps.map((p) => -sai(p)), 'sec', () => setAb({ ...ab, s: !ab.s }), ab.s)}
+                    {ab.s ? SAIDAS.map(([k, r]) => linha(r, ps.map((p) => -(p.s[k] || 0)), 'nat')) : null}
                     {linha('Saldo no fim', sFim, 'tot')}
                 </div>
             </div>
-            <div className={SUB}>
-                Realizado: baixas do PAI Conecta e o importado da Unymos. Previsto (em itálico): títulos a receber e a pagar em aberto pelo vencimento, cartões pela previsão da Cielo, NFs da Prefeitura pelo vencimento
-                (sem o ISS retido), contas a pagar da Unymos pelo relatório de previsão importado e mensalidades estimadas. Saldo de hoje pela Tesouraria:{' '}
-                {f.contas
-                    .filter((c) => (apl || c.tipo !== 'APLICACAO') && Math.abs(c.saldo) >= 0.005)
-                    .map((c) => `${c.nome} ${brl(c.saldo)}`)
-                    .join(' · ')}
-                .
+            <div className={`${CARTAO} flex flex-col gap-3 p-4`}>
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <b className="text-[14px]">Entradas e saídas por {f.modo === 'mes' ? 'mês' : 'semana'} (R$ mil)</b>
+                    <span className={`${SUB} flex flex-wrap gap-3`}>
+                        {legenda(COR_E, 'Entradas')}
+                        {legenda(COR_S, 'Saídas')}
+                        {legenda('#8A93A6', 'mais claro = previsto', 'q', 0.45)}
+                    </span>
+                </div>
+                <div className="overflow-x-auto">
+                    <svg viewBox={`0 0 ${larg} 176`} style={{ width: '100%', minWidth: ps.length * 58, height: 'auto' }} className="text-[#5B6478] dark:text-[#AEB9CF]" role="img" aria-label="Entradas e saídas por período">
+                        <line x1="8" x2={larg - 8} y1="150" y2="150" stroke="currentColor" strokeOpacity=".25" />
+                        {ps.map((p, i) => {
+                            const x = 8 + i * W + W / 2;
+                            const e = ent(p),
+                                s = sai(p),
+                                op = p.real ? 1 : 0.5;
+                            return (
+                                <g key={i}>
+                                    <rect x={x - 25} y={150 - alt(e)} width="24" height={alt(e)} rx="2" fill={COR_E} opacity={op} />
+                                    <rect x={x + 1} y={150 - alt(s)} width="24" height={alt(s)} rx="2" fill={COR_S} opacity={op} />
+                                    <text x={x - 13} y={146 - alt(e)} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={COR_E}>
+                                        {kMil(e)}
+                                    </text>
+                                    <text x={x + 13} y={146 - alt(s)} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={COR_S}>
+                                        {kMil(s)}
+                                    </text>
+                                    <text x={x} y="167" textAnchor="middle" fontSize="11" fontWeight={p.atual ? 800 : 600} fill="currentColor">
+                                        {p.l}
+                                        {p.atual ? ' ·' : ''}
+                                    </text>
+                                </g>
+                            );
+                        })}
+                    </svg>
+                </div>
+                <div className="flex flex-wrap items-baseline justify-between gap-2 border-t border-[#EEF2F7] pt-3 dark:border-white/[0.06]">
+                    <b className="text-[14px]">Saldo no fim de cada {f.modo === 'mes' ? 'mês' : 'semana'} (R$ mil)</b>
+                    <span className={`${SUB} flex flex-wrap gap-3`}>
+                        {legenda('#313C55', 'Saldo', 'p')}
+                        {legenda('#B42318', 'abaixo do mínimo', 'p')}
+                        {legenda(COR_MIN, `saldo mínimo (${mil(minimo)})`, 'l')}
+                    </span>
+                </div>
+                <div className="overflow-x-auto">
+                    <svg viewBox={`0 0 ${larg} 156`} style={{ width: '100%', minWidth: ps.length * 58, height: 'auto' }} className="text-[#5B6478] dark:text-[#AEB9CF]" role="img" aria-label="Saldo no fim de cada período">
+                        {sMin < 0 ? <line x1="8" x2={larg - 8} y1={yS(0)} y2={yS(0)} stroke="currentColor" strokeOpacity=".3" /> : null}
+                        <line x1="8" x2={larg - 8} y1={yS(minimo)} y2={yS(minimo)} stroke={COR_MIN} strokeWidth="1.5" strokeDasharray="5 4" />
+                        <polyline fill="none" stroke="currentColor" strokeOpacity=".45" strokeWidth="1.5" points={ps.map((_, i) => `${8 + i * W + W / 2},${yS(sFim[i])}`).join(' ')} />
+                        {ps.map((p, i) => {
+                            const x = 8 + i * W + W / 2;
+                            const ruim = sFim[i] < minimo;
+                            return (
+                                <g key={i}>
+                                    <circle cx={x} cy={yS(sFim[i])} r="4.5" className={ruim ? '' : 'fill-[#313C55] dark:fill-[#F2CB3F]'} fill={ruim ? '#B42318' : undefined} />
+                                    <text x={x} y={yS(sFim[i]) - 9} textAnchor="middle" fontSize="10.5" fontWeight="700" fill={ruim ? '#B42318' : 'currentColor'}>
+                                        {kMil(sFim[i])}
+                                    </text>
+                                    <text x={x} y="150" textAnchor="middle" fontSize="11" fontWeight={p.atual ? 800 : 600} fill="currentColor">
+                                        {p.l}
+                                    </text>
+                                </g>
+                            );
+                        })}
+                    </svg>
+                </div>
             </div>
         </>
     );
@@ -805,6 +1147,251 @@ function Marca({ on, onClick, rotulo }: { on: boolean; onClick: () => void; rotu
             <span className={`grid size-[22px] shrink-0 place-items-center rounded-md border-2 text-[13px] ${on ? 'border-[#313C55] bg-[#313C55] text-white' : 'border-[#C9D1DE]'}`}>{on ? '✓' : ''}</span>
             <span>{rotulo}</span>
         </button>
+    );
+}
+
+/* ============================== Unymos × Conecta (18/11/2026) ============================== */
+
+type Conf = {
+    mes: string;
+    regime: 'comp' | 'caixa';
+    virada: string | null;
+    tolerancia: number;
+    linhas: { n: number | null; u: number; c: number }[];
+    naturezas: Nat[];
+    mensalidade: number | null;
+    importados: string[];
+};
+
+/** Conferência lado a lado: até a virada a referência é a Unymos; o que se lança no PAI Conecta aparece aqui sem somar. */
+function AbaConferencia({ avisar }: { avisar: (m: string) => void }) {
+    const hoje = hojeISO();
+    const m0 = hoje.slice(0, 7);
+    const [mes, setMes] = useState(mesMais(m0, -1));
+    const [regime, setRegime] = useState<'comp' | 'caixa'>('caixa');
+    const [d, setD] = useState<Conf | null>(null);
+    const [erro, setErro] = useState<string | null>(null);
+    const [janela, setJanela] = useState(false);
+    const [drill, setDrill] = useState<Nat | null | undefined>(undefined);
+    const carregar = useCallback(async () => {
+        try {
+            const j = await api(URL_RES, 'conferencia', undefined, `&mes=${mes}&regime=${regime}`);
+            setD(j.dados);
+            setErro(null);
+        } catch (e: any) {
+            const m = mensagemErro(e, 'Não foi possível carregar a conferência.');
+            if (m) setErro(m);
+        }
+    }, [mes, regime]);
+    useEffect(() => {
+        void carregar();
+    }, [carregar]);
+
+    const natPorId = useMemo(() => new Map((d?.naturezas ?? []).map((n) => [n.id, n])), [d]);
+    const tol = d?.tolerancia ?? 0.05;
+    type Lc = { n: Nat | null; u: number; c: number; sit: string; cls: string; ok: boolean; esperado: boolean };
+    const grupos = useMemo(() => {
+        if (!d) return [] as { nome: string; sinal: number; ls: Lc[] }[];
+        const ls: Lc[] = d.linhas
+            .filter((l) => Math.abs(l.u) >= 0.005 || Math.abs(l.c) >= 0.005)
+            .map((l) => {
+                const n = l.n ? natPorId.get(l.n) ?? null : null;
+                const u = Math.abs(l.u) < 0.005 ? 0 : l.u;
+                const c = Math.abs(l.c) < 0.005 ? 0 : l.c;
+                const dif = Math.abs(c - u);
+                const base = Math.max(Math.abs(u), Math.abs(c));
+                let sit = 'Bate',
+                    cls = S_OK,
+                    ok = true,
+                    esperado = false;
+                if (!c && l.n && l.n === d.mensalidade) [sit, cls, ok, esperado] = ['Só na Unymos · esperado', S_MUDO, false, true];
+                else if (!c) [sit, cls, ok] = ['Só na Unymos', S_AVISO, false];
+                else if (!u) [sit, cls, ok] = ['Só no Conecta', S_AB, false];
+                else if (dif > tol * base) [sit, cls, ok] = [`Diferente · ${Math.round((dif / Math.abs(u)) * 100)}%`, S_RUIM, false];
+                return { n, u, c, sit, cls, ok, esperado };
+            })
+            .sort((a, b) => (a.n?.codigo || 'z').localeCompare(b.n?.codigo || 'z'));
+        const entrada = (n: Nat | null) => !!n && (n.classe === 'RECEITA' || (n.classe === 'NAO_OPERACIONAL' && n.codigo.startsWith('4')));
+        return [
+            { nome: 'Entradas', sinal: 1, ls: ls.filter((l) => entrada(l.n)) },
+            { nome: 'Saídas', sinal: -1, ls: ls.filter((l) => !entrada(l.n)) },
+        ];
+    }, [d, natPorId, tol]);
+    const todas = grupos.flatMap((g) => g.ls).filter((l) => !l.esperado);
+    const batem = todas.filter((l) => l.ok).length;
+    const pronto = todas.length > 0 && batem === todas.length;
+    const totU = grupos[0]?.ls.reduce((a, l) => a + l.u, 0) ?? 0;
+    const totC = grupos[0]?.ls.reduce((a, l) => a + l.c, 0) ?? 0;
+    const cols = 'grid grid-cols-[minmax(220px,1.6fr)_repeat(3,minmax(104px,1fr))_minmax(150px,1fr)] items-center gap-2 px-3';
+
+    return (
+        <>
+            <div className={`${CARTAO} flex flex-wrap items-center gap-3 px-4 py-3`}>
+                <div className="min-w-0 flex-1">
+                    <b>Referência dos números: {d?.virada ? `Unymos até ${mesBR(mesMais(d.virada, -1)).toLowerCase()} · PAI Conecta a partir de ${mesBR(d.virada).toLowerCase()}` : 'Unymos (data da virada não definida)'}</b>
+                    <div className={SUB}>
+                        Antes da virada, DRE, Fluxo de Caixa, Painel, Provisão e pacote do contador usam só o importado da Unymos; o lançado no PAI Conecta aparece aqui, em conferência, sem somar. A partir dela vale só o Conecta e a importação desses meses é
+                        recusada.
+                    </div>
+                </div>
+                <button type="button" className={BTN_PEQ_PRI} onClick={() => setJanela(true)}>
+                    <IconCalendar size={17} /> {d?.virada ? 'Mudar data da virada' : 'Definir data da virada'}
+                </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+                <select className="h-10 rounded-xl bg-white px-3 text-[14px] font-bold dark:bg-[#232B3F]" value={mes} onChange={(e) => setMes(e.target.value)} aria-label="Mês">
+                    {listaMeses(m0).map((m) => (
+                        <option key={m} value={m}>
+                            {mesBR(m)}
+                        </option>
+                    ))}
+                </select>
+                <span className={SEG}>
+                    <button type="button" className={segBtn(regime === 'caixa')} onClick={() => setRegime('caixa')}>
+                        Caixa
+                    </button>
+                    <button type="button" className={segBtn(regime === 'comp')} onClick={() => setRegime('comp')}>
+                        Competência
+                    </button>
+                </span>
+                <span className={SUB}>Diferença até {Math.round(tol * 100)}% conta como “bate”.</span>
+                <span className="flex-1" />
+                <button type="button" className={BTN_PEQ} onClick={() => void carregar()} aria-label="Atualizar">
+                    <IconRefresh size={18} />
+                </button>
+            </div>
+            {erro ? <div className={ERRO}>{erro}</div> : null}
+            {d ? (
+                <>
+                    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                        <KpiMini k="Entradas · Unymos" v={mil(totU)} />
+                        <KpiMini k="Entradas · Conecta" v={mil(totC)} />
+                        <KpiMini k="Naturezas que batem" v={`${batem} de ${todas.length}`} />
+                        <KpiMini k="Pronto para virar?" v={pronto ? 'Sim' : 'Ainda não'} cls={pronto ? 'text-[#3F5A0A] dark:text-[#CFE38A]' : 'text-[#B42318] dark:text-[#FF9C92]'} />
+                    </div>
+                    {!d.importados.length ? <div className={`${NOTA} ${S_AVISO} !py-2`}>{mesBR(d.mes)} ainda não foi importado da Unymos (Importar da Unymos, no alto da tela).</div> : null}
+                    <div className={`${CARTAO} overflow-auto`}>
+                        <div className="min-w-[760px] text-[14px]">
+                            <div className={`${cols} border-b border-[#E3E8F0] bg-[#F6F8FB] py-2.5 text-[11.5px] font-extrabold uppercase tracking-[0.06em] text-[#5B6478] dark:border-white/[0.08] dark:bg-[#1C2334] dark:text-[#AEB9CF]`}>
+                                <span>Natureza</span>
+                                <span className="text-right">Unymos</span>
+                                <span className="text-right">Conecta</span>
+                                <span className="text-right">Diferença</span>
+                                <span>Situação</span>
+                            </div>
+                            {grupos.map((g) => (
+                                <React.Fragment key={g.nome}>
+                                    <div className={`${cols} min-h-10 border-b border-[#EEF2F7] bg-[#F6F8FB] font-extrabold dark:border-white/[0.06] dark:bg-[#1C2334]`}>
+                                        <span>{g.nome}</span>
+                                        <span className="text-right tabular-nums">{n0(g.sinal * g.ls.reduce((a, l) => a + l.u, 0))}</span>
+                                        <span className="text-right tabular-nums">{n0(g.sinal * g.ls.reduce((a, l) => a + l.c, 0))}</span>
+                                        <span className="text-right tabular-nums">{n0(g.sinal * g.ls.reduce((a, l) => a + l.c - l.u, 0))}</span>
+                                        <span />
+                                    </div>
+                                    {g.ls.map((l, i) => (
+                                        <button key={i} type="button" className={`${cols} min-h-10 w-full border-b border-[#EEF2F7] text-left hover:bg-[#E9EFF6] dark:border-white/[0.06] dark:hover:bg-[#3D6A99]/25`} onClick={() => setDrill(l.n)}>
+                                            <span className="min-w-0 truncate pl-3">
+                                                <span className="mr-2 text-[12.5px] font-bold tabular-nums opacity-70">{l.n?.codigo || ''}</span>
+                                                {l.n?.nome || 'Sem natureza'}
+                                            </span>
+                                            <span className="text-right tabular-nums">{n0(g.sinal * l.u)}</span>
+                                            <span className="text-right tabular-nums">{n0(g.sinal * l.c)}</span>
+                                            <span className="text-right tabular-nums">{n0(g.sinal * (l.c - l.u))}</span>
+                                            <span>
+                                                <span className={`${SELO} ${l.cls}`}>{l.sit}</span>
+                                            </span>
+                                        </button>
+                                    ))}
+                                    {!g.ls.length ? <div className="border-b border-[#EEF2F7] px-6 py-3 text-[#5B6478] dark:border-white/[0.06]">Nada no mês.</div> : null}
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    </div>
+                    <div className={SUB}>Clique numa linha para ver os lançamentos dos dois lados. “Só na Unymos · esperado” = o que ainda não tem módulo no Conecta (mensalidades, até o módulo do Plano).</div>
+                </>
+            ) : !erro ? (
+                <div className="py-8 text-center text-[#5B6478]">Carregando…</div>
+            ) : null}
+            {drill !== undefined && d ? <Detalhe regime={regime} nat={drill} mes={d.mes} conf onFechar={() => setDrill(undefined)} /> : null}
+            {janela ? (
+                <Virada
+                    atual={d?.virada ?? null}
+                    onFechar={() => setJanela(false)}
+                    onFeito={(m) => {
+                        avisar(m);
+                        setJanela(false);
+                        void carregar();
+                    }}
+                />
+            ) : null}
+        </>
+    );
+}
+
+/** Data da virada: 1º dia do mês em que o PAI Conecta passa a ser a referência. Só a Gestão grava (o back-end confere). */
+function Virada({ atual, onFechar, onFeito }: { atual: string | null; onFechar: () => void; onFeito: (m: string) => void }) {
+    const m0 = hojeISO().slice(0, 7);
+    const [mes, setMes] = useState(atual ?? mesMais(m0, 1));
+    const [motivo, setMotivo] = useState('');
+    const [erro, setErro] = useState<string | null>(null);
+    const [ocupado, setOcupado] = useState(false);
+    const gravar = async (valor: string) => {
+        setOcupado(true);
+        try {
+            const j = await api(URL_RES, 'virada', { mes: valor, motivo });
+            onFeito(j.msg);
+        } catch (e: any) {
+            const m = mensagemErro(e, 'Não foi possível gravar a data da virada.');
+            if (m) setErro(m);
+        } finally {
+            setOcupado(false);
+        }
+    };
+    const opcoes = Array.from({ length: 30 }, (_, i) => mesMais(m0, 12 - i));
+    return (
+        <Janela
+            titulo="Data da virada"
+            sub="Primeiro dia em que o PAI Conecta passa a ser a referência"
+            onFechar={onFechar}
+            rodape={
+                <>
+                    <button type="button" className={BTN_SEC} onClick={onFechar}>
+                        Cancelar
+                    </button>
+                    {atual ? (
+                        <button type="button" className={BTN_SEC} disabled={ocupado || !motivo.trim()} onClick={() => void gravar('')}>
+                            Retirar a data
+                        </button>
+                    ) : null}
+                    <button type="button" className={BTN_PRI} disabled={ocupado || (!!atual && (mes === atual || !motivo.trim()))} onClick={() => void gravar(mes)}>
+                        Salvar
+                    </button>
+                </>
+            }
+        >
+            <div className={`${NOTA} ${S_AVISO}`}>
+                <IconAlertTriangle size={18} className="mt-0.5 shrink-0" />
+                <span>Escolha o 1º dia de um mês, depois de pelo menos um mês inteiro batendo na conferência. Meses antes dessa data usam a Unymos; a partir dela, só o PAI Conecta. Vale para todos os relatórios de uma vez.</span>
+            </div>
+            <label className="block">
+                <span className={ROTULO}>A partir de</span>
+                <select className={CAMPO} value={mes} onChange={(e) => setMes(e.target.value)}>
+                    {opcoes.map((m) => (
+                        <option key={m} value={m}>
+                            1º de {mesBR(m).toLowerCase()}
+                        </option>
+                    ))}
+                </select>
+            </label>
+            {atual ? (
+                <label className="block">
+                    <span className={ROTULO}>Motivo da mudança</span>
+                    <input className={CAMPO} value={motivo} maxLength={300} onChange={(e) => setMotivo(e.target.value)} placeholder="Fica no histórico" />
+                </label>
+            ) : null}
+            <div className={SUB}>Só a Gestão define. Pode ser mudada depois, com motivo, e fica no histórico.</div>
+            {erro ? <div className={ERRO}>{erro}</div> : null}
+        </Janela>
     );
 }
 
@@ -1069,7 +1656,7 @@ function AbaContador({ avisar }: { avisar: (m: string) => void }) {
             <div className={`${CARTAO} overflow-hidden`}>
                 <div className="px-4 pb-1 pt-3 text-[12px] font-extrabold uppercase tracking-[0.08em] text-[#5B6478] dark:text-[#AEB9CF]">O que vai na planilha do mês</div>
                 {[
-                    ['Lançamentos', `cada recebimento e pagamento do mês, com natureza, conta do contador, documento e conta bancária (inclui o importado da Unymos)`, p ? `${p.lancamentos.length + p.unymos.length} linhas` : ''],
+                    ['Lançamentos', `cada recebimento e pagamento do mês, com natureza, conta do contador, documento e conta bancária (${p?.referencia === 'CONECTA' ? 'PAI Conecta' : 'até a virada: o importado da Unymos'})`, p ? `${p.lancamentos.length + p.unymos.length} linhas` : ''],
                     ['DRE competência e DRE caixa', 'por natureza, na estrutura da tela de Resultados', ''],
                     ['ISS retido', 'NFs da Prefeitura recebidas no mês e o ISS de cada uma', p ? `${p.iss.length} NF(s)` : ''],
                     ['Saldos', 'saldo de cada conta no início e no fim do mês', p ? `${p.saldos.length} contas` : ''],
