@@ -833,6 +833,7 @@ export default function DashboardRequisicoesPage() {
     const [offset, setOffset] = useState(0);
     const [loading, setLoading] = useState(true);
     const [msg, setMsg] = useState("");
+    const [semAcesso, setSemAcesso] = useState(false); // 18/11/2026: o servidor confere a chave dashboard-requisicoes
     const [filterOpen, setFilterOpen] = useState(false);
     const [detail, setDetail] = useState<ReqDetail | null>(null);
     const [detailLoading, setDetailLoading] = useState(false);
@@ -903,6 +904,10 @@ export default function DashboardRequisicoesPage() {
                     apiGet<AlertasResp>("dashboard_alertas", f, { limit: 100 }),
                 ]);
 
+                if ([summaryResp, listResp, alertasResp].some((x) => (x as { sem_acesso?: number })?.sem_acesso)) {
+                    setSemAcesso(true);
+                    return;
+                }
                 if (!summaryResp.ok) throw new Error(summaryResp.msg || "Erro ao carregar resumo.");
                 if (!listResp.ok) throw new Error(listResp.msg || "Erro ao carregar lista.");
                 if (!alertasResp.ok) throw new Error(alertasResp.msg || "Erro ao carregar alertas.");
@@ -983,6 +988,10 @@ export default function DashboardRequisicoesPage() {
                 credentials: "include",
             });
 
+            if (r.status === 403) {
+                setSemAcesso(true);
+                return;
+            }
             if (!r.ok) {
                 const txt = await r.text().catch(() => "");
                 throw new Error(txt || "Não foi possível exportar o CSV.");
@@ -1018,6 +1027,20 @@ export default function DashboardRequisicoesPage() {
 
         setFilters(next);
         void applyFilters(next);
+    }
+
+    if (semAcesso) {
+        return (
+            <main className="min-h-[100dvh] bg-[#F6F8FB] px-4 pb-6 pt-3.5 text-[#313C55] [contain:inline-size] dark:bg-[#161C2A] dark:text-white lg:px-10 lg:pb-12 lg:pt-8">
+                <div className="mx-auto max-w-[1120px]">
+                    <h1 className="mb-4 text-[28px] font-extrabold leading-tight">Painel de Requisições</h1>
+                    <Card className="p-5">
+                        <p className="text-[16px] font-bold">Você não tem acesso a esta tela.</p>
+                        <p className="mt-1 text-sm text-[#5B6478] dark:text-[#AEB9CF]">Se precisar dela, peça à Gestão para liberar em Permissões.</p>
+                    </Card>
+                </div>
+            </main>
+        );
     }
 
     const nFiltros = activeFilterChips.length;
