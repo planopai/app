@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { dentroDeAba } from "@/lib/abas";
 
 declare global {
     interface Window {
@@ -74,6 +75,8 @@ export default function OneSignalInit() {
     useEffect(() => {
         // Só inicia depois do login; ao sair do /login este efeito roda de novo.
         if (telaPublica) return;
+        // 19/11/2026: nas abas do computador (quadros) a janela principal já cuida das notificações.
+        if (dentroDeAba()) return;
 
         // Evita múltiplas injeções do script
         if (sdkAgendado || document.querySelector('script[data-onesignal-v16="true"]')) return;

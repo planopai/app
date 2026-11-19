@@ -16,6 +16,7 @@ import {
 import { syncOperationalQueue } from "@/lib/offline/sync-engine";
 import { requestOperationalBackgroundSync } from "@/lib/offline/background-sync";
 import { pedirArmazenamentoPersistente } from "@/lib/offline/storage";
+import { dentroDeAba } from "@/lib/abas";
 
 const WARMUP_STATE_KEY =
     "pai_offline_routes_warmup_v2";
@@ -334,6 +335,7 @@ async function prepareOfflineRoutes(
     if (!("caches" in window)) return;
     if (preparandoRotas) return; // vários gatilhos ao mesmo tempo: roda uma vez só
     if (redeFraca()) return;
+    if (dentroDeAba()) return; // 19/11/2026: nas abas do computador quem prepara é a janela principal
     preparandoRotas = true;
     try {
     await esperarOcioso();
@@ -523,6 +525,8 @@ function installOfflineNavigationFallback():
 }
 
 async function runOperationalSyncNow(reason: string): Promise<void> {
+    // 19/11/2026: nas abas do computador a janela principal sincroniza (as telas com fila própria seguem sincronizando).
+    if (dentroDeAba()) return;
     // Sem login não há o que sincronizar (evita o 401 do informativo.php?me=1).
     if (emTelaPublica()) return;
 
@@ -728,6 +732,8 @@ export default function RegisterSW() {
         );
 
         const register = async () => {
+            // 19/11/2026: o Service Worker é registrado pela janela principal; a aba já fica sob o controle dele.
+            if (dentroDeAba()) return;
             try {
                 const registration =
                     await navigator.serviceWorker.register(

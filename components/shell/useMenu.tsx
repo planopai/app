@@ -13,6 +13,7 @@
  * Depois de salvar, as telas de organização chamam recarregarMenu() (ou disparam EVENTO_MENU) e tudo se atualiza.
  */
 import { useEffect, useSyncExternalStore } from "react";
+import { dentroDeAba } from "@/lib/abas";
 import { API_BASE, apiJson } from "@/components/messenger/api";
 import { aplicarPreferencias, montarMenu, type ConfigMenu, type PrefsMenu } from "./menuOrganizado";
 import type { ItemModulo, Modulo } from "./modulos";
@@ -183,6 +184,8 @@ export function useMenu(): MenuPronto {
             const c = lerCache();
             if (c) {
                 dados = c;
+                // 19/11/2026: dentro de uma aba do computador vale o menu que a janela principal já guardou.
+                if (dentroDeAba()) carregado = true;
                 avisar();
             }
         }

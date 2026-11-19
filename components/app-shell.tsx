@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header"; // remova se não usar
@@ -14,6 +14,7 @@ import { IconFile, IconHome } from "@tabler/icons-react";
 import { useMenu } from "@/components/shell/useMenu";
 import { acharModuloPorRota, MODULOS } from "@/components/shell/modulos";
 import OrdenarTabelas from "@/components/tabela/OrdenarTabelas"; // 19/11/2026: ordenar as listas clicando no nome da coluna
+import { instalarVisibilidadeDaAba, MSG_NAVEGAR, MSG_VISIVEL, ROTA_RESERVA } from "@/lib/abas";
 
 /* ======================================================================
  * 06/11/2026 — até 5 telas abertas em abas, como no navegador (decisão de 03/11/2026; computador e tablet deitado, ≥ 1024 px).
@@ -28,6 +29,14 @@ const MAX_ABAS = 10; // 07/11/2026: aumentado de 5 para 10 (reaplicado em 09/11/
 const CHAVE_ABAS = "pai_abas_v1";
 const SEM_ABAS = ["/quadrotv"];
 type AbaTela = { id: string; src: string; path: string; titulo?: string };
+/*
+ * 19/11/2026 — abas mais rápidas (lib/abas.ts):
+ *  - aba reserva: fica sempre uma aba pronta e escondida em /aba. Ao abrir uma tela, ela só troca de tela
+ *    (como no celular) em vez de carregar o app do zero. Logo depois, outra reserva é preparada;
+ *  - abas escondidas não consultam o servidor (a janela de cima avisa qual aba está à vista);
+ *  - ao recarregar a página, só a aba ativa carrega; as outras carregam quando forem abertas.
+ */
+const RESERVA_ESPERA_MS = 2500;
 const RAIZES_FIXAS = ["/", "/inicio"];
 
 /** Página raiz = Início ou a página do módulo (o "hub"). Só o endereço exato; telas dentro do módulo contam normalmente. */
@@ -51,6 +60,7 @@ function caminhoAtual() {
 function AbasDeTelas({ pathname }: { pathname: string }) {
     const menu = useMenu();
     const quadros = React.useRef<Record<string, HTMLIFrameElement | null>>({});
+    const quadroCarregado = React.useRef<Set<string>>(new Set()); // quadros que já avisaram a primeira tela
     const [abas, setAbas] = React.useState<AbaTela[]>(() => {
         try {
             const j = JSON.parse(window.sessionStorage.getItem(CHAVE_ABAS) || "null");
@@ -76,8 +86,35 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
     });
     const [ativa, setAtiva] = React.useState<string | null>(null);
     const [pedido, setPedido] = React.useState<string | null>(null);
-    const ref = React.useRef({ abas, ativa, modulos: menu.modulos });
-    ref.current = { abas, ativa, modulos: menu.modulos };
+    const [reserva, setReserva] = React.useState<AbaTela | null>(null);
+    const reservaPronta = React.useRef(false);
+    // abas cujo quadro já carregou (ao recarregar a página, as que não estão à vista esperam ser abertas)
+    const [carregadas, setCarregadas] = React.useState<Set<string>>(() => new Set());
+    const ref = React.useRef({ abas, ativa, modulos: menu.modulos, reserva });
+    ref.current = { abas, ativa, modulos: menu.modulos, reserva };
+
+    const avisarQuadro = React.useCallback((id: string, dados: Record<string, unknown>) => {
+        try {
+            quadros.current[id]?.contentWindow?.postMessage({ pai: dados.pai, ...dados }, window.location.origin);
+        } catch {
+            /* quadro fechado */
+        }
+    }, []);
+
+    /** Nova aba para o endereço: usa a aba reserva (já carregada) se estiver pronta; senão, carrega do zero. */
+    const novaAba = React.useCallback(
+        (path: string): AbaTela => {
+            const r = ref.current.reserva;
+            if (r && reservaPronta.current && quadros.current[r.id]?.contentWindow) {
+                reservaPronta.current = false;
+                setReserva(null);
+                avisarQuadro(r.id, { pai: MSG_NAVEGAR, path });
+                return { id: r.id, src: r.src, path };
+            }
+            return { id: novaId(), src: path, path };
+        },
+        [avisarQuadro],
+    );
 
     const nomeDa = React.useCallback(
         (path: string, reserva?: string) => {
@@ -106,19 +143,17 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
         if (ehPaginaRaiz(path, modulos)) {
             const raiz = lista.find((a) => ehPaginaRaiz(a.path, modulos));
             if (raiz) {
-                const quadro = quadros.current[raiz.id];
-                if (raiz.src === path && quadro?.contentWindow) {
-                    try {
-                        quadro.contentWindow.location.assign(path);
-                    } catch {
-                        /* mesma origem; se falhar, o src abaixo resolve na próxima troca */
-                    }
+                // 19/11/2026: a aba de navegação já está carregada: só troca de tela, sem recarregar o app.
+                if (quadroCarregado.current.has(raiz.id) && quadros.current[raiz.id]?.contentWindow) {
+                    avisarQuadro(raiz.id, { pai: MSG_NAVEGAR, path });
+                    setAbas(lista.map((a) => (a.id === raiz.id ? { ...a, path, titulo: undefined } : a)));
+                } else {
+                    setAbas(lista.map((a) => (a.id === raiz.id ? { ...a, src: path, path, titulo: undefined } : a)));
                 }
-                setAbas(lista.map((a) => (a.id === raiz.id ? { ...a, src: path, path, titulo: undefined } : a)));
                 setAtiva(raiz.id);
                 return;
             }
-            const nova = { id: novaId(), src: path, path };
+            const nova = novaAba(path);
             setAbas([...lista, nova]);
             setAtiva(nova.id);
             return;
@@ -127,10 +162,10 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
             setPedido(path);
             return;
         }
-        const nova = { id: novaId(), src: path, path };
+        const nova = novaAba(path);
         setAbas([...lista, nova]);
         setAtiva(nova.id);
-    }, []);
+    }, [novaAba, avisarQuadro]);
 
     // mudou o endereço da janela (menu, pesquisa, links do cabeçalho): abre na aba certa
     React.useEffect(() => {
@@ -163,17 +198,59 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
             if (e.data?.pai !== "rota") return;
             const id = Object.keys(quadros.current).find((k) => quadros.current[k]?.contentWindow === e.source);
             if (!id) return;
+            quadroCarregado.current.add(id);
+            // A aba reserva terminou de abrir: fica escondida e pronta para a próxima tela.
+            const r = ref.current.reserva;
+            if (r && r.id === id) {
+                reservaPronta.current = true;
+                avisarQuadro(id, { pai: MSG_VISIVEL, visivel: false });
+                return;
+            }
+            avisarQuadro(id, { pai: MSG_VISIVEL, visivel: id === ref.current.ativa });
             setAbas((lista) => lista.map((a) => (a.id === id ? { ...a, path: String(e.data.path || a.path), titulo: e.data.titulo ? String(e.data.titulo) : a.titulo } : a)));
         };
         window.addEventListener("message", f);
         return () => window.removeEventListener("message", f);
-    }, [abrir]);
+    }, [abrir, avisarQuadro]);
+
+    // a aba à vista atualiza; as outras param de consultar o servidor (lib/abas.ts)
+    React.useEffect(() => {
+        for (const a of abas) {
+            if (quadroCarregado.current.has(a.id)) avisarQuadro(a.id, { pai: MSG_VISIVEL, visivel: a.id === ativa });
+        }
+        if (ativa) {
+            setCarregadas((s) => (s.has(ativa) ? s : new Set(s).add(ativa)));
+        }
+    }, [ativa, abas, avisarQuadro]);
+
+    // prepara a próxima aba reserva quando o app está parado (depois de abrir uma tela)
+    React.useEffect(() => {
+        if (reserva) return;
+        let ocioso = 0;
+        const t = window.setTimeout(() => {
+            const ric: any = (window as any).requestIdleCallback;
+            const criar = () => {
+                if (document.hidden) return;
+                const nova = { id: novaId(), src: ROTA_RESERVA, path: ROTA_RESERVA };
+                setCarregadas((s) => new Set(s).add(nova.id));
+                setReserva(nova);
+            };
+            if (typeof ric === "function") ocioso = ric(criar, { timeout: 5000 });
+            else criar();
+        }, RESERVA_ESPERA_MS);
+        return () => {
+            window.clearTimeout(t);
+            const cic: any = (window as any).cancelIdleCallback;
+            if (ocioso && typeof cic === "function") cic(ocioso);
+        };
+    }, [reserva, abas.length]);
 
     const fechar = (id: string) => {
         const lista = ref.current.abas.filter((a) => a.id !== id);
         delete quadros.current[id];
+        quadroCarregado.current.delete(id);
         if (!lista.length) {
-            const inicio = { id: novaId(), src: "/", path: "/" };
+            const inicio = novaAba("/");
             setAbas([inicio]);
             setAtiva(inicio.id);
             return;
@@ -185,9 +262,10 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
         const alvo = pedido;
         const lista = ref.current.abas.filter((a) => a.id !== id);
         delete quadros.current[id];
+        quadroCarregado.current.delete(id);
         setPedido(null);
         if (!alvo) return;
-        const nova = { id: novaId(), src: alvo, path: alvo };
+        const nova = novaAba(alvo);
         setAbas([...lista, nova]);
         setAtiva(nova.id);
     };
@@ -237,17 +315,27 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
                 })}
             </div>
             <div className="relative min-h-0 flex-1 bg-[#F6F8FB] dark:bg-[#161C2A]">
-                {abas.map((a) => (
-                    <iframe
-                        key={a.id}
-                        ref={(el) => {
-                            quadros.current[a.id] = el;
-                        }}
-                        src={a.src}
-                        title={nomeDa(a.path, a.titulo).titulo}
-                        className={`absolute inset-0 h-full w-full border-0 ${a.id === ativa ? "" : "pointer-events-none invisible"}`}
-                    />
-                ))}
+                {/*
+                 * 19/11/2026: abas e aba reserva numa lista só, com a reserva sempre por último. Quando a reserva vira aba,
+                 * o quadro continua o mesmo (mesma chave, mesmo lugar) e não recarrega.
+                 */}
+                {(reserva ? [...abas, reserva] : abas).map((a) => {
+                    const ehReserva = a.id === reserva?.id;
+                    const carregar = ehReserva || carregadas.has(a.id) || a.id === ativa;
+                    return (
+                        <iframe
+                            key={a.id}
+                            ref={(el) => {
+                                quadros.current[a.id] = el;
+                            }}
+                            src={carregar ? a.src : undefined}
+                            title={ehReserva ? "Aba reserva" : nomeDa(a.path, a.titulo).titulo}
+                            aria-hidden={ehReserva ? true : undefined}
+                            tabIndex={ehReserva ? -1 : undefined}
+                            className={`absolute inset-0 h-full w-full border-0 ${!ehReserva && a.id === ativa ? "" : "pointer-events-none invisible"}`}
+                        />
+                    );
+                })}
             </div>
 
             {pedido
@@ -399,6 +487,22 @@ export default function AppShell({
             /* fora do app */
         }
     }, [noPainel, pathname]);
+
+    /*
+     * 19/11/2026: dentro de uma aba, a janela de cima pode pedir para trocar de tela sem recarregar o app
+     * (aba reserva e aba de navegação) e avisa se a aba está à vista (lib/abas.ts).
+     */
+    const router = useRouter();
+    React.useEffect(() => {
+        if (!noPainel) return;
+        instalarVisibilidadeDaAba();
+        const f = (e: MessageEvent) => {
+            if (e.origin !== window.location.origin || e.source !== window.parent) return;
+            if (e.data?.pai === MSG_NAVEGAR && typeof e.data.path === "string") router.push(e.data.path);
+        };
+        window.addEventListener("message", f);
+        return () => window.removeEventListener("message", f);
+    }, [noPainel, router]);
 
     /* 06/11/2026: dentro de uma aba, no Início e nas páginas de módulo, clicar numa tela abre numa aba nova (como na prévia). */
     const menuShell = useMenu();

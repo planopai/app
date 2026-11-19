@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { dentroDeAba } from "@/lib/abas";
 
 type Ctx = {
     /** null = carregando; [] = sem permissão; ['*'] ou slugs */
@@ -187,9 +188,18 @@ export function PermsProvider({
     }, [userKey]);
 
     // Revalida na montagem e sempre que o usuário muda.
+    // 19/11/2026: dentro de uma aba do computador usa as permissões que a janela principal já guardou
+    // (sem buscar de novo no servidor a cada aba). Sem cópia guardada, busca como antes.
     React.useEffect(() => {
+        if (dentroDeAba()) {
+            const guardadas = readCachedPerms(userKey);
+            if (guardadas) {
+                setPerms(guardadas);
+                return;
+            }
+        }
         void load();
-    }, [load]);
+    }, [load, userKey]);
 
     // Assim que a conexão voltar, confirma permissões atuais no servidor.
     React.useEffect(() => {
