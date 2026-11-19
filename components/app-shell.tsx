@@ -13,6 +13,7 @@ import { IconeAurora } from "@/components/shell/IconeAurora";
 import { IconFile, IconHome } from "@tabler/icons-react";
 import { useMenu } from "@/components/shell/useMenu";
 import { acharModuloPorRota, MODULOS } from "@/components/shell/modulos";
+import OrdenarTabelas from "@/components/tabela/OrdenarTabelas"; // 19/11/2026: ordenar as listas clicando no nome da coluna
 
 /* ======================================================================
  * 06/11/2026 — até 5 telas abertas em abas, como no navegador (decisão de 03/11/2026; computador e tablet deitado, ≥ 1024 px).
@@ -439,7 +440,7 @@ export default function AppShell({
 
     if (shouldHide || noPainel) {
         // Página "clean" (ex.: tela de login)
-        return <div className="flex min-h-dvh flex-col">{children}</div>;
+        return <div className="flex min-h-dvh flex-col"><OrdenarTabelas />{children}</div>;
     }
 
     return (
@@ -457,6 +458,7 @@ export default function AppShell({
             }
         >
             <AppSidebar variant="inset" />
+            <OrdenarTabelas />
             {/*
              * iPhone (09/10/2026): no celular/tablet (< 1024 px) a PÁGINA não rola mais — rola só a área do conteúdo.
              * Com a página rolando, o Safari do iPhone recolhe a barra de endereço e redesenha o que é fixo: a barra de baixo
