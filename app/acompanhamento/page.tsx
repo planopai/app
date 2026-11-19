@@ -946,7 +946,10 @@ export default function AcompanhamentoPage() {
     let session = null as Awaited<ReturnType<typeof getCurrentOfflineSession>>;
 
     // Desempenho (19/11/2026): a lista do servidor é pedida JÁ, junto com a conferência do login (antes era um depois do outro).
-    const urlLista = `${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`;
+    // 19/11/2026: &ativos=1 → o servidor manda só os atendimentos em andamento (a mesma regra da tabela),
+    // em vez do histórico inteiro. Com ?editar=<id> na URL (ex.: vindo do Orçamento), traz também esse atendimento.
+    const editarDaUrl = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("editar") : null;
+    const urlLista = `${ENDPOINT}/informativo.php?listar=1&ativos=1${editarDaUrl ? `&incluir=${encodeURIComponent(editarDaUrl)}` : ""}&_nocache=${Date.now()}`;
     const listaPromise: Promise<Response> | null = isOnlineNow()
       ? fetch(urlLista, { cache: "no-store", credentials: "include" })
       : null;

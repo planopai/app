@@ -148,7 +148,7 @@ async function atualizar() {
     });
 
     // Quadro e Minhas OS são de todos: os números de atendimento também.
-    const pQuadro = getJson<RegistroRegra[]>(`${ENDPOINT}/informativo.php?listar=1&_=${t}`, sig).then((lista) => {
+    const pQuadro = getJson<RegistroRegra[]>(`${ENDPOINT}/informativo.php?listar=1&ativos=1&_=${t}`, sig).then((lista) => {
         if (!Array.isArray(lista)) return null;
         const noQuadro = lista.filter(atendimentoDeveFicarNoQuadro);
         publicar({ servicos: noQuadro.length, recolher: noQuadro.filter(aguardandoRecolhimento).length });

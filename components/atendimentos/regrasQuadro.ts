@@ -4,6 +4,9 @@
  * É a mesma regra do Quadro de Acompanhamento (atendimentoDeveFicarNoQuadro). Fica aqui para a
  * lista de Atendimentos e os números do Início usarem exatamente o mesmo critério do Quadro:
  * concluídos não aparecem. O Quadro continua com a sua cópia (não foi alterado).
+ *
+ * ATENÇÃO (19/11/2026): o backend/api/informativo.php tem uma cópia desta regra (atendimento_em_andamento),
+ * usada em ?listar=1&ativos=1 para mandar só os atendimentos em andamento. Se mudar uma, mude a outra.
  */
 
 export type RegistroRegra = {
