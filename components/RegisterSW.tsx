@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 
 import {
-    OFFLINE_ROUTES,
     PAI_PAGES_CACHE,
     PAI_START_CACHE,
     isOfflineRoute,
@@ -48,7 +47,67 @@ function emTelaPublica(): boolean {
 const FULL_REFRESH_INTERVAL_MS =
     30 * 60 * 1000;
 
-const WARMUP_CONCURRENCY = 4;
+const WARMUP_CONCURRENCY = 2; // 19/11/2026: era 4 (disputava a internet com o uso normal)
+
+/*
+ * Desempenho (19/11/2026): antes eram preparadas TODAS as telas de OFFLINE_ROUTES (cerca de 50, inclusive
+ * telas que já saíram do app), logo depois do login e a cada 30 min. Agora só as telas de trabalho na rua,
+ * e só as que a pessoa pode abrir (permissões guardadas pelo PermsProvider). As outras telas continuam
+ * sendo guardadas quando a pessoa as abre (cache das páginas do Service Worker).
+ * Rota → chave de permissão (null = todos).
+ */
+const ROTAS_AQUECER: Array<[string, string | null]> = [
+    ["/", null],
+    ["/acompanhamento", "acompanhamento"],
+    ["/quadro-acompanhamento", "quadro-acompanhamento"],
+    ["/coroa-de-flores", "coroa-de-flores"],
+    ["/avisos", "avisos"],
+    ["/requisicao", "requisicao"],
+    ["/solicitar-produto", "solicitar-produto"],
+    ["/minhas-solicitacoes", "minhas-solicitacoes"],
+];
+
+function permissoesGuardadas(): string[] | null {
+    try {
+        const uid = decodeURIComponent((document.cookie.match(/(?:^|;\s*)pai_uid=([^;]*)/) || [])[1] || "");
+        if (!uid) return null;
+        const bruto = window.localStorage.getItem(`pai_permissions_v1:${uid}`);
+        if (!bruto) return null;
+        const j = JSON.parse(bruto);
+        const lista = Array.isArray(j) ? j : j?.perms;
+        return Array.isArray(lista) ? lista.map(String) : null;
+    } catch {
+        return null;
+    }
+}
+
+function rotasParaPreparar(): string[] {
+    const perms = permissoesGuardadas();
+    // Sem saber as permissões: só a Home e Atendimentos (as essenciais do Service Worker).
+    if (!perms) return ["/", "/acompanhamento"];
+    const todas = perms.includes("*");
+    return ROTAS_AQUECER.filter(([, chave]) => chave === null || todas || perms.includes(chave)).map(([rota]) => rota);
+}
+
+/** Internet fraca ou economia de dados ligada: não prepara nada agora. */
+function redeFraca(): boolean {
+    const c: any = (navigator as any).connection;
+    if (!c) return false;
+    return !!c.saveData || c.effectiveType === "slow-2g" || c.effectiveType === "2g";
+}
+
+/** Espera o app ficar parado (até 8 s + ocioso) antes de baixar as telas. */
+function esperarOcioso(): Promise<void> {
+    return new Promise((ok) => {
+        window.setTimeout(() => {
+            const ric: any = (window as any).requestIdleCallback;
+            if (typeof ric === "function") ric(() => ok(), { timeout: 10000 });
+            else ok();
+        }, 8000);
+    });
+}
+
+let preparandoRotas = false;
 
 type WarmupState = {
     completedAt: number;
@@ -273,6 +332,13 @@ async function prepareOfflineRoutes(
     if (emTelaPublica()) return;
     if (!isOnlineNow()) return;
     if (!("caches" in window)) return;
+    if (preparandoRotas) return; // vários gatilhos ao mesmo tempo: roda uma vez só
+    if (redeFraca()) return;
+    preparandoRotas = true;
+    try {
+    await esperarOcioso();
+    if (!isOnlineNow() || emTelaPublica()) return;
+    const ROTAS = rotasParaPreparar();
 
     const previous =
         readWarmupState();
@@ -295,11 +361,11 @@ async function prepareOfflineRoutes(
 
     async function worker() {
         while (
-            nextIndex < OFFLINE_ROUTES.length
+            nextIndex < ROTAS.length
         ) {
             const index = nextIndex++;
             const route =
-                OFFLINE_ROUTES[index];
+                ROTAS[index];
 
             const ok =
                 await prepareOneRoute(
@@ -321,7 +387,7 @@ async function prepareOfflineRoutes(
         {
             length: Math.min(
                 WARMUP_CONCURRENCY,
-                OFFLINE_ROUTES.length
+                ROTAS.length
             ),
         },
         () => worker()
@@ -347,6 +413,9 @@ async function prepareOfflineRoutes(
     console.log(
         `[PWA] Rotas offline preparadas: ${successCount} ok, ${failureCount} falharam.`
     );
+    } finally {
+        preparandoRotas = false;
+    }
 }
 
 /**

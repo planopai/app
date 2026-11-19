@@ -22,6 +22,8 @@ import { aguardaAcaoDe, aguardandoRecolhimento, atendimentoDeveFicarNoQuadro, ty
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const INTERVALO_MS = 15_000; // igual à home antiga; só consulta com a aba visível e com rede
+const ESTOQUE_INTERVALO_MS = 5 * 60_000;
+let estoqueConsultadoEm = 0;
 
 export type Contadores = {
     nome: string;
@@ -229,7 +231,11 @@ async function atualizar() {
         );
     }
 
-    if (has("geral") || has("estoque") || has("produtos")) {
+    // Desempenho (19/11/2026): o estoque inteiro (~500 KB) era baixado a cada 15 s só para contar os produtos
+    // abaixo do mínimo. Agora no máximo a cada 5 min (ao abrir o app, sempre consulta).
+    const estoqueVencido = Date.now() - estoqueConsultadoEm > ESTOQUE_INTERVALO_MS;
+    if ((has("geral") || has("estoque") || has("produtos")) && estoqueVencido) {
+        estoqueConsultadoEm = Date.now();
         tarefas.push(
             getJson<{ ok?: boolean; saldos?: SaldoContador[] }>(`${ENDPOINT}/materiais_gerais.php?init=1&_ts=${t}`, sig).then((j) => {
                 if (j?.ok && Array.isArray(j.saldos)) {
