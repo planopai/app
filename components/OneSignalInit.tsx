@@ -59,6 +59,9 @@ async function registerDevice(playerId: string, externalUserId?: string) {
  */
 const ROTAS_PUBLICAS = new Set<string>(["/login", "/ajuda"]);
 
+/* 19/11/2026: o SDK só é iniciado uma vez por abertura do app (ver o adiamento no fim do efeito). */
+let sdkAgendado = false;
+
 function ehRotaPublica(pathname: string | null | undefined): boolean {
     const p = String(pathname || "/").replace(/\/+$/, "") || "/";
     return ROTAS_PUBLICAS.has(p);
@@ -73,7 +76,7 @@ export default function OneSignalInit() {
         if (telaPublica) return;
 
         // Evita múltiplas injeções do script
-        if (document.querySelector('script[data-onesignal-v16="true"]')) return;
+        if (sdkAgendado || document.querySelector('script[data-onesignal-v16="true"]')) return;
 
         // Verificação para iOS: requer instalação como PWA
         const isIOS = /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
@@ -83,6 +86,8 @@ export default function OneSignalInit() {
             console.warn("[OneSignal] iOS requer instalação como PWA para funcionar.");
             return;
         }
+
+        sdkAgendado = true;
 
         // Patch do Service Worker: normaliza URL e escopo
         (() => {
@@ -158,20 +163,31 @@ export default function OneSignalInit() {
             console.debug("[OneSignal] device registrado:", playerId);
         });
 
-        // Injeta o SDK v16
-        const s = document.createElement("script");
-        s.src = "https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js";
-        s.async = true;
-        s.setAttribute("data-onesignal-v16", "true");
-        s.onerror = () => console.error("[OneSignal] Falha ao carregar o script v16.");
-        document.head.appendChild(s);
+        /*
+         * 19/11/2026: o SDK do OneSignal (e o aviso "ATIVAR" que ele coloca na página) só entra 3 s depois de a
+         * tela terminar de carregar. Antes ele podia mexer na página enquanto o React ainda a montava, o que gera
+         * o erro #418 no Console e faz o React desenhar a tela inteira de novo (mais lento). Também tira um script
+         * de fora da abertura do app. As notificações continuam iguais.
+         */
+        const injetarSdk = () => {
+            if (document.querySelector('script[data-onesignal-v16="true"]')) return;
+            const s = document.createElement("script");
+            s.src = "https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js";
+            s.async = true;
+            s.setAttribute("data-onesignal-v16", "true");
+            s.onerror = () => console.error("[OneSignal] Falha ao carregar o script v16.");
+            document.head.appendChild(s);
 
-        // Verifica se o SDK foi carregado após 5 segundos
-        setTimeout(() => {
-            if (!window.OneSignal) {
-                console.error("[OneSignal] SDK não carregado.");
-            }
-        }, 5000);
+            // Verifica se o SDK foi carregado após 5 segundos
+            setTimeout(() => {
+                if (!window.OneSignal) {
+                    console.error("[OneSignal] SDK não carregado.");
+                }
+            }, 5000);
+        };
+        const agendarSdk = () => window.setTimeout(injetarSdk, 3000);
+        if (document.readyState === "complete") agendarSdk();
+        else window.addEventListener("load", agendarSdk, { once: true });
     }, [telaPublica]);
 
     return null;
