@@ -591,7 +591,7 @@ function AbaRegras({ p, dados, gravar }: { p: Plano; dados: Dados; gravar: Grava
                     {p.situacao === "vende" ? " O plano só fica Pronto para vender com todas as obrigatórias preenchidas e aprovadas, e com preço vigente." : ""}
                 </span>
             </div>
-            {p.faltam.length ? <div className={`${NOTA} !bg-[#FDECEA] !text-[#B42318] dark:!bg-[#FF9C92]/10 dark:!text-[#FF9C92]`}>Faltam: {p.faltam.map(nomeTipo).join(", ")}.</div> : null}
+            {p.situacao === "vende" && p.faltam.length ? <div className={`${NOTA} !bg-[#FDECEA] !text-[#B42318] dark:!bg-[#FF9C92]/10 dark:!text-[#FF9C92]`}>Faltam: {p.faltam.map(nomeTipo).join(", ")}.</div> : null}
             <div className="grid gap-3 md:grid-cols-2">
                 {dados.tipos.map((t) => {
                     const rid = p.vagas[t.k];
@@ -599,7 +599,7 @@ function AbaRegras({ p, dados, gravar }: { p: Plano; dados: Dados; gravar: Grava
                     const v = r ? versaoAtual(r) : null;
                     const opcoes = dados.regras.filter((x) => x.tipo === t.k && (x.situacao !== "inativa" || x.id === rid));
                     return (
-                        <div key={t.k} className={`flex flex-col gap-2 rounded-xl border p-3 ${!rid && t.obrigatoria ? "border-[#F4B4AC] dark:border-[#FF9C92]/40" : "border-[#E3E8F0] dark:border-white/[0.1]"}`}>
+                        <div key={t.k} className={`flex flex-col gap-2 rounded-xl border p-3 ${!rid && t.obrigatoria && p.situacao === "vende" ? "border-[#F4B4AC] dark:border-[#FF9C92]/40" : "border-[#E3E8F0] dark:border-white/[0.1]"}`}>
                             <div className="flex items-center gap-2">
                                 <b className="text-[14.5px]">{t.nome}</b>
                                 <span className={`${SELO} ${t.obrigatoria ? "bg-[#E9EFF6] text-[#2E5277] dark:bg-[#3D6A99]/25 dark:text-[#C9D8EA]" : S_MUDO}`}>{t.obrigatoria ? "Obrigatória" : "Opcional"}</span>
