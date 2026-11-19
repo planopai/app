@@ -180,7 +180,17 @@ export default function Page() {
                             {n}
                         </button>
                     ))}
-                    <Link href="/messenger-propostas" className="min-h-11 px-3.5 py-2.5 text-[15px] font-extrabold text-[#5B6478] hover:underline dark:text-[#AEB9CF]">
+                    <Link
+                        href="/messenger-propostas"
+                        onClick={(e) => {
+                            // 19/11/2026: dentro das abas do computador, abre (ou vai para) a aba da tela em vez de trocar esta aba
+                            if (window.parent !== window) {
+                                e.preventDefault();
+                                window.parent.postMessage({ pai: "abrir", path: "/messenger-propostas" }, window.location.origin);
+                            }
+                        }}
+                        className="min-h-11 px-3.5 py-2.5 text-[15px] font-extrabold text-[#5B6478] hover:underline dark:text-[#AEB9CF]"
+                    >
                         Propostas de Adesão ↗
                     </Link>
                     {base?.pode.bairros && base.bairros_pedidos ? (
