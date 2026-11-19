@@ -104,7 +104,7 @@ export default function OneSignalInit() {
             navigator.serviceWorker.register = function (url: any, opts: any) {
                 const fixedUrl = normalizeUrl(url);
                 const fixedOpts = normalizeScope(opts);
-                console.log("[SW register call] original:", url, "-> fixed:", fixedUrl, fixedOpts);
+                console.debug("[SW register call] original:", url, "-> fixed:", fixedUrl, fixedOpts);
                 return orig(fixedUrl, fixedOpts);
             };
         })();
@@ -155,7 +155,7 @@ export default function OneSignalInit() {
             }
 
             await registerDevice(playerId, externalId || undefined);
-            console.log("[OneSignal] device registrado:", playerId);
+            console.debug("[OneSignal] device registrado:", playerId);
         });
 
         // Injeta o SDK v16

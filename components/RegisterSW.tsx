@@ -338,6 +338,9 @@ async function prepareOfflineRoutes(
     try {
     await esperarOcioso();
     if (!isOnlineNow() || emTelaPublica()) return;
+    // 19/11/2026: página aberta sem o Service Worker no controle (ex.: Ctrl+Shift+R) não consegue guardar nada;
+    // antes tentava as 8 telas e mostrava "0 ok, 8 falharam". A próxima abertura normal prepara as telas.
+    if (!navigator.serviceWorker?.controller) return;
     const ROTAS = rotasParaPreparar();
 
     const previous =
@@ -410,7 +413,8 @@ async function prepareOfflineRoutes(
         writeWarmupState();
     }
 
-    console.log(
+    // 19/11/2026: mensagens do app só aparecem no Console em "Detalhado" (Verbose), para não poluir.
+    console.debug(
         `[PWA] Rotas offline preparadas: ${successCount} ok, ${failureCount} falharam.`
     );
     } finally {
@@ -536,7 +540,7 @@ async function runOperationalSyncNow(reason: string): Promise<void> {
             summary.requiresAttention > 0 ||
             summary.blockedAuth
         ) {
-            console.log(
+            console.debug(
                 `[OFFLINE] Sincronização global (${reason}):`,
                 summary
             );
@@ -736,7 +740,7 @@ export default function RegisterSW() {
 
                 if (cancelled) return;
 
-                console.log(
+                console.debug(
                     "[PWA] Service Worker registrado:",
                     registration.scope
                 );
