@@ -82,7 +82,7 @@ function SyncBadge({ registro }: { registro: Registro }) {
     return null;
 }
 
-export default function TabelaAtendimentos({
+function TabelaAtendimentos({
     registros,
     onAcao,
     onCompartilhar,
@@ -248,3 +248,6 @@ export default function TabelaAtendimentos({
         </div>
     );
 }
+
+/* Desempenho (19/11/2026): só redesenha quando a lista ou o que a tabela usa mudou (não a cada mudança da página). */
+export default React.memo(TabelaAtendimentos);

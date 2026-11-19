@@ -1,6 +1,7 @@
 // FASE12 CORPO PRONTO - CHECKPOINT ÚNICO DE BAIXA DE ESTOQUE
 "use client";
 
+import dynamic from "next/dynamic";
 import React, {
   useCallback,
   useEffect,
@@ -34,7 +35,10 @@ import {
 } from "./components/helpers";
 
 import TabelaAtendimentos from "./components/TabelaAtendimentos";
-import OSDoAtendimento from "@/app/os/components/OSDoAtendimento";
+/* Desempenho (19/11/2026): as janelas grandes saem do pacote inicial da tela. A lista aparece primeiro e
+   o código delas é baixado logo em seguida, em segundo plano (continuam montadas como antes, então
+   também ficam guardadas para uso sem internet). "Registrar ação", fotos e telemetria seguem no pacote inicial. */
+const OSDoAtendimento = dynamic(() => import("@/app/os/components/OSDoAtendimento"), { ssr: false });
 import { BotoesTopoAtendimentos } from "@/components/atendimentos/BotoesAtendimento";
 import { BotaoAtendimentosCancelados } from "@/components/correcoes/CorrecoesAtendimento";
 import {
@@ -56,20 +60,21 @@ import Visita, {
   type VisitaStatus,
 } from "./components/visita";
 
-import Wizard, { type CampoFaltando, type TravaItens } from "./components/Wizard";
+import type { CampoFaltando, TravaItens } from "./components/Wizard";
+const Wizard = dynamic(() => import("./components/Wizard"), { ssr: false });
 import { RevisarCorrecaoItens, listarMudancasCorrecao, type CorrecaoAntes, type PedidoRevisao } from "./components/CorrecaoItens";
 import BuscaBeneficiarioPAI, { dataISO } from "./components/BuscaBeneficiarioPAI";
 // Orçamento → Novo registro (13/10/2026): as ferramentas ficam na pasta do Orçamento.
 import { camposDoOrcamento, marcarOrcamentoConvertido } from "@/app/orcamento/components/paraAtendimento";
-import MateriaisModal from "./components/MateriaisModal";
-import ArrumacaoModal from "./components/ArrumacaoModal";
+const MateriaisModal = dynamic(() => import("./components/MateriaisModal"), { ssr: false });
+const ArrumacaoModal = dynamic(() => import("./components/ArrumacaoModal"), { ssr: false });
 import AcaoModal, {
   type EstoqueInsuficienteAlerta,
   type EstoqueInsuficienteItem,
 } from "./components/AcaoModal";
-import InfoModal from "./components/InfoModal";
-import SignatureModal from "./components/SignatureModal";
-import CompartilharModal from "./components/CompartilharModal";
+const InfoModal = dynamic(() => import("./components/InfoModal"), { ssr: false });
+const SignatureModal = dynamic(() => import("./components/SignatureModal"), { ssr: false });
+const CompartilharModal = dynamic(() => import("./components/CompartilharModal"), { ssr: false });
 import TelemetriaModal, {
   TipoTele,
   TelemetriaHandle,
@@ -78,10 +83,11 @@ import TelemetriaModal, {
 import FotoAcaoModal, { FotoAcaoTipo } from "./components/FotoAcaoModal";
 
 // ✅ modal de conferência antes do fase11
-import MateriaisConferenciaModal, {
+import type {
   MatCheckItem,
   MateriaisConferenciaResult,
 } from "./components/MateriaisConferenciaModal";
+const MateriaisConferenciaModal = dynamic(() => import("./components/MateriaisConferenciaModal"), { ssr: false });
 
 import {
   loadCachedRegistros,
@@ -678,6 +684,8 @@ export default function AcompanhamentoPage() {
   const ultimaListaRef = useRef<{ lista: Registro[] | null; json: string; snapshot: string }>({ lista: null, json: "", snapshot: "" });
   // Confere o login (whoami) no máximo a cada 5 min, e não em toda consulta da lista.
   const sessaoConferidaEmRef = useRef(0);
+  // A primeira abertura da tela já mostrou a lista guardada no aparelho?
+  const primeiraCargaRef = useRef(false);
 
   // Avisos
   const [avisos, setAvisos] = useState<Aviso[]>([]);
@@ -937,6 +945,34 @@ export default function AcompanhamentoPage() {
   const fetchRegistros = useCallback(async () => {
     let session = null as Awaited<ReturnType<typeof getCurrentOfflineSession>>;
 
+    // Desempenho (19/11/2026): a lista do servidor é pedida JÁ, junto com a conferência do login (antes era um depois do outro).
+    const urlLista = `${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`;
+    const listaPromise: Promise<Response> | null = isOnlineNow()
+      ? fetch(urlLista, { cache: "no-store", credentials: "include" })
+      : null;
+    listaPromise?.catch(() => {}); // o erro é tratado mais abaixo
+
+    // Primeira abertura: mostra na hora a lista guardada no aparelho; a do servidor substitui quando chegar.
+    if (!primeiraCargaRef.current) {
+      primeiraCargaRef.current = true;
+      try {
+        const guardada = await getCurrentOfflineSession({ refreshIfOnline: false, allowCachedOnNetworkFailure: true });
+        const loginAtual = typeof document !== "undefined"
+          ? decodeURIComponent((document.cookie.match(/(?:^|;\s*)pai_user=([^;]*)/) || [])[1] || "")
+          : "";
+        // Só usa a cópia se for do mesmo usuário que está logado agora.
+        if (guardada && (!loginAtual || !guardada.login || guardada.login === loginAtual)) {
+          const cached = await loadCachedRegistros<Registro>(guardada.userId);
+          if (cached.length && registrosAtuaisRef.current.length === 0) {
+            const comLocais = mergeLocalAttendancesWithRecords(cached, guardada.userId);
+            setRegistros(await applyPendingActionsToRegistros(comLocais, guardada.userId));
+          }
+        }
+      } catch {
+        // sem cópia guardada: espera a lista do servidor, como antes
+      }
+    }
+
     try {
       // 19/11/2026: antes conferia o login no servidor a cada 10 s; agora a cada 5 min (ou quando não há sessão guardada).
       const conferir = isOnlineNow() && Date.now() - sessaoConferidaEmRef.current > 5 * 60 * 1000;
@@ -986,13 +1022,7 @@ export default function AcompanhamentoPage() {
     }
 
     try {
-      const r = await fetch(
-        `${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`,
-        {
-          cache: "no-store",
-          credentials: "include",
-        },
-      );
+      const r = await (listaPromise ?? fetch(urlLista, { cache: "no-store", credentials: "include" }));
 
       if (r.status === 401) {
         sessaoConferidaEmRef.current = 0; // confere o login de novo na próxima vez
@@ -4170,6 +4200,11 @@ export default function AcompanhamentoPage() {
     [registros],
   );
 
+  // Desempenho (19/11/2026): função estável, para a tabela não redesenhar sem a lista mudar.
+  const verOSDoAtendimento = useCallback((id: Registro["id"]) => {
+    if (id != null && !isLocalAttendanceId(id)) setOsDoAtendimentoId(id);
+  }, []);
+
   const abrirCompartilharPorId = useCallback((id: Registro["id"]) => {
     setShareId(id != null ? String(id) : null);
     setShareOpen(true);
@@ -4512,10 +4547,10 @@ export default function AcompanhamentoPage() {
       <TabelaAtendimentos
         selecionadoId={acaoOpen ? acaoId : null}
         registros={registros}
-        onAcao={(id) => abrirPopupAcaoPorId(id)}
+        onAcao={abrirPopupAcaoPorId}
         onEditar={editarPorId}
-        onCompartilhar={(id) => abrirCompartilharPorId(id)}
-        onVerOS={(id) => id != null && !isLocalAttendanceId(id) && setOsDoAtendimentoId(id)}
+        onCompartilhar={abrirCompartilharPorId}
+        onVerOS={verOSDoAtendimento}
         visitaPermitida={visitaPermitida}
         visitaStatusById={visitaStatusById}
         onVisita={abrirVisitaPorId}
