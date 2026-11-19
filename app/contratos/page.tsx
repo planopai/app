@@ -2,14 +2,13 @@
 
 /**
  * Contratos (/contratos, chave contratos) · módulo Contratos, fase 2 — prévia aprovada em 19/11/2026 (versão 10).
- * Back-end: ct_contratos.php. Abas: Contratos (lista + ficha) e Novo contrato. Propostas de Adesão continuam na tela
- * de sempre (/messenger-propostas); o "Efetivar" de lá abre o Novo contrato numa próxima entrega.
+ * Back-end: ct_contratos.php. Abas: Contratos (lista + ficha) e Novo contrato. Propostas de Adesão ficam na tela própria
+ * (/messenger-propostas), fora de Contratos (decisão de 19/11/2026; o módulo dela será definido com o ambiente de vendas).
  * Até a virada, contratos reais continuam na Unymos: aqui só contratos de teste (número a partir de 900001).
  * Lista: busca, filtros por lista com busca, Colunas (37 campos, salvas por usuário), Exportar (CSV) e ordenação por coluna
  * (OrdenarTabelas, no app-shell).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { IconFileText } from "@tabler/icons-react";
 import { TopoPagina } from "@/components/shell/ModuloHub";
 import { api, BTN_PEQ, BTN_PEQ_PRI, BTN_PRI, BTN_SEC, CAMPO_P, CARTAO, ERRO, Janela, mensagemErro, NOTA, SELO, SUB, useAviso } from "../contas-pagar/components/fin";
@@ -180,19 +179,6 @@ export default function Page() {
                             {n}
                         </button>
                     ))}
-                    <Link
-                        href="/messenger-propostas"
-                        onClick={(e) => {
-                            // 19/11/2026: dentro das abas do computador, abre (ou vai para) a aba da tela em vez de trocar esta aba
-                            if (window.parent !== window) {
-                                e.preventDefault();
-                                window.parent.postMessage({ pai: "abrir", path: "/messenger-propostas" }, window.location.origin);
-                            }
-                        }}
-                        className="min-h-11 px-3.5 py-2.5 text-[15px] font-extrabold text-[#5B6478] hover:underline dark:text-[#AEB9CF]"
-                    >
-                        Propostas de Adesão ↗
-                    </Link>
                     {base?.pode.bairros && base.bairros_pedidos ? (
                         <button type="button" className={`${BTN_PEQ} ml-auto`} onClick={() => setVerBairros(true)}>
                             {base.bairros_pedidos} bairro(s) para conferir
