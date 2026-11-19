@@ -24,6 +24,13 @@ type ThemeContextType = {
   setActiveTheme: (theme: string) => void;
 };
 
+function lerTemaDoCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(/(?:^|;\s*)active_theme=([^;]*)/);
+  const v = m ? decodeURIComponent(m[1]) : "";
+  return /^[a-z0-9-]+$/i.test(v) ? v : null;
+}
+
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ActiveThemeProvider({
@@ -33,8 +40,9 @@ export function ActiveThemeProvider({
   children: ReactNode;
   initialTheme?: string;
 }) {
+  // 19/11/2026: o layout não lê mais o cookie no servidor; o tema guardado é lido aqui, no aparelho.
   const [activeTheme, setActiveTheme] = useState<string>(
-    () => initialTheme || DEFAULT_THEME
+    () => initialTheme || lerTemaDoCookie() || DEFAULT_THEME
   );
 
   useEffect(() => {

@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { cookies } from "next/headers";
 import { Nunito } from "next/font/google";
 
 import "./globals.css";
@@ -10,8 +9,7 @@ import AppShell from "@/components/app-shell";
 import OneSignalInit from "@/components/OneSignalInit";
 import RegisterSW from "@/components/RegisterSW";
 
-import { PermsProvider } from "./_perms/PermsProvider";
-import { getInitialPerms } from "./_perms/getPermsServer";
+import { PermsDoUsuario } from "./_perms/PermsDoUsuario";
 
 /* ===========================
    ✅ Fonte Nunito (GLOBAL)
@@ -27,8 +25,11 @@ const nunito = Nunito({
    Config Next
 =========================== */
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+/* Desempenho (19/11/2026): o layout não lê mais cookies no servidor. Assim as telas ficam prontas na rede
+   da Vercel (estáticas) e a troca de telas não precisa montar a página a cada clique. O login e as
+   permissões continuam conferidos pelo middleware.ts antes de qualquer tela abrir.
+   - tema (active_theme) e usuário (pai_uid) agora são lidos no aparelho (SCRIPT_TEMA + PermsDoUsuario);
+   - getInitialPerms saiu: ele sempre devolvia [] (fetch com endereço relativo no servidor falhava). */
 
 /* Tela do celular (22/10/2026): sem zoom — nem por pinça (Android), nem automático ao tocar num campo (iPhone).
    O Next.js pede a viewport e a cor do tema aqui, fora do metadata. */
@@ -117,16 +118,12 @@ window.addEventListener("load",function(){setTimeout(conferir,6000);});
 setTimeout(conferir,25000);
 }catch(e){}})();`;
 
-export default async function RootLayout({
+/* Tema da tela (active_theme), aplicado no corpo antes de desenhar (antes vinha do servidor). */
+const SCRIPT_TEMA = `(function(){try{var m=document.cookie.match(/(?:^|;\\s*)active_theme=([^;]*)/);if(!m)return;var t=decodeURIComponent(m[1]);if(!/^[a-z0-9-]+$/i.test(t))return;document.body.classList.add("theme-"+t);if(/-scaled$/.test(t))document.body.classList.add("theme-scaled");}catch(e){}})();`;
+
+export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const cookieStore = await cookies();
-  const activeThemeValue = cookieStore.get("active_theme")?.value;
-  const isScaled = Boolean(activeThemeValue?.endsWith("-scaled"));
-
-  const uidCookie = cookieStore.get("pai_uid")?.value || null;
-
-  const initialPerms = await getInitialPerms();
 
   return (
     <html
@@ -150,12 +147,12 @@ export default async function RootLayout({
       </head>
 
       <body
+        suppressHydrationWarning
         className={cn(
           "bg-background overscroll-none antialiased touch-manipulation font-[var(--font-nunito)]", // ✅ NUNITO GLOBAL · touch-manipulation: sem zoom por dois toques
-          activeThemeValue ? `theme-${activeThemeValue}` : "",
-          isScaled ? "theme-scaled" : ""
         )}
       >
+        <script dangerouslySetInnerHTML={{ __html: SCRIPT_TEMA }} />
         <RegisterSW />
         <OneSignalInit />
 
@@ -166,16 +163,12 @@ export default async function RootLayout({
           disableTransitionOnChange
           enableColorScheme
         >
-          <ActiveThemeProvider initialTheme={activeThemeValue}>
-            <PermsProvider
-              key={uidCookie ?? "nouid"}
-              userKey={uidCookie}
-              initialPerms={initialPerms}
-            >
+          <ActiveThemeProvider>
+            <PermsDoUsuario>
               <AppShell hideOnRoutes={["/login"]}>
                 {children}
               </AppShell>
-            </PermsProvider>
+            </PermsDoUsuario>
           </ActiveThemeProvider>
         </ThemeProvider>
       </body>
