@@ -381,7 +381,8 @@ async function baixarItensCorpoProntoQuadro(payload: BaixaCorpoProntoPayload): P
 }
 
 async function carregarRegistrosAtuaisQuadro(): Promise<Registro[]> {
-    const url = `${API_PHP}/informativo.php?listar=1&_ts=${Date.now()}`;
+    // 19/11/2026: &ativos=1 → só os atendimentos em andamento (mesma regra do quadro), em vez do histórico inteiro.
+    const url = `${API_PHP}/informativo.php?listar=1&ativos=1&_ts=${Date.now()}`;
     const json = await fetchJsonFast<any>(url, {
         ttlMs: 0,
         timeoutMs: 12_000,
@@ -2759,7 +2760,8 @@ export default function QuadroAtendimentoPage() {
 
     useEffect(() => {
         let alive = true;
-        const BASE_INFO = `${API_PHP}/informativo.php?listar=1`;
+        // 19/11/2026: &ativos=1 → o servidor manda só os em andamento (antes: ~830 atendimentos, 4 MB, a cada atualização).
+        const BASE_INFO = `${API_PHP}/informativo.php?listar=1&ativos=1`;
 
         async function load() {
             try {
