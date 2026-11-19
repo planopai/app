@@ -2540,6 +2540,12 @@ export default function QuadroAtendimentoPage() {
 
     const [registros, setRegistros] = useState<Registro[]>(() => readLS<Registro[]>("qa_registros") ?? []);
     const [avisos, setAvisos] = useState<Aviso[]>(() => readLS<Aviso[]>("qa_avisos") ?? []);
+    /* Desempenho (19/11/2026): a consulta periódica só redesenha o quadro quando a lista mudou de verdade.
+       registrosAtuaisRef = o que está na tela; ultimaListaRef = o que a consulta colocou por último. */
+    const registrosAtuaisRef = useRef<Registro[]>(registros);
+    registrosAtuaisRef.current = registros;
+    const ultimaListaRef = useRef<{ lista: Registro[] | null; json: string }>({ lista: null, json: "" });
+    const ultimosAvisosJsonRef = useRef("");
 
     const [open, setOpen] = useState(false);
     const [detail, setDetail] = useState<Registro | null>(null);
@@ -2599,14 +2605,16 @@ export default function QuadroAtendimentoPage() {
     const [qaDensity, setQaDensity] = useState<QaDensity>("normal");
     const dashboardContentRef = useRef<HTMLElement | null>(null);
 
+    // Desempenho (19/11/2026): o relógio com segundos fica nos componentes RelogioHora/RelogioData (só eles
+    // redesenham a cada segundo). Aqui o "agora" dos tempos e atrasos muda uma vez por minuto (são contados em minutos).
     useEffect(() => {
         const update = () => {
             const now = new Date();
-            setNowMs(now.getTime());
+            const minuto = Math.floor(now.getTime() / 60000) * 60000;
+            setNowMs((anterior) => (Math.floor(anterior / 60000) * 60000 === minuto ? anterior : now.getTime()));
             const h = now.getHours().toString().padStart(2, "0");
             const m = now.getMinutes().toString().padStart(2, "0");
-            const s = now.getSeconds().toString().padStart(2, "0");
-            setClockTime(`${h}:${m}:${s}`);
+            setClockTime(`${h}:${m}`);
 
             const dd = now.getDate().toString().padStart(2, "0");
             const mm = (now.getMonth() + 1).toString().padStart(2, "0");
@@ -2614,7 +2622,7 @@ export default function QuadroAtendimentoPage() {
             setClockDate(`${DIAS[now.getDay()]}, ${dd}/${mm}/${yyyy}`);
         };
         update();
-        const id = setInterval(update, 1000);
+        const id = setInterval(update, 5000);
         return () => clearInterval(id);
     }, []);
 
@@ -2640,6 +2648,11 @@ export default function QuadroAtendimentoPage() {
                 }
 
                 const arr = j as Registro[];
+                // Desempenho (19/11/2026): nada mudou e ninguém mexeu na tela → não redesenha nem regrava o cache.
+                const json = JSON.stringify(arr);
+                const ult = ultimaListaRef.current;
+                if (json === ult.json && ult.lista !== null && registrosAtuaisRef.current === ult.lista) return;
+                ultimaListaRef.current = { lista: arr, json };
                 setRegistros(arr);
                 writeLS("qa_registros", arr);
             } catch (err) {
@@ -2651,9 +2664,10 @@ export default function QuadroAtendimentoPage() {
 
         void load();
 
+        // Desempenho (19/11/2026): a cada 15 s (era 8 s), só com a tela visível.
         const id = window.setInterval(() => {
             if (!document.hidden) void load();
-        }, 8000);
+        }, 15000);
 
         const refreshWhenActive = () => {
             if (!document.hidden) void load();
@@ -2771,24 +2785,24 @@ export default function QuadroAtendimentoPage() {
 
                 const arr: Aviso[] = Array.isArray(j) ? j : [];
 
+                // Desempenho (19/11/2026): só atualiza quando os avisos mudaram.
+                const json = JSON.stringify(arr);
+                if (json === ultimosAvisosJsonRef.current) return;
+                ultimosAvisosJsonRef.current = json;
                 setAvisos(arr);
                 writeLS("qa_avisos", arr);
             } catch (err) {
+                // Falha de rede: mantém os avisos que já estão na tela (não apaga o letreiro da TV).
                 console.error("Erro ao carregar avisos:", err);
-
-                if (!alive) return;
-
-                // mantém a UI estável e limpa o cache persistido
-                setAvisos([]);
-                writeLS("qa_avisos", []);
             }
         }
 
         load();
 
+        // Desempenho (19/11/2026): a cada 20 s (era 10 s), só com a tela visível.
         const id = window.setInterval(() => {
-            void load();
-        }, 10000);
+            if (!document.hidden) void load();
+        }, 20000);
 
         return () => {
             alive = false;
@@ -5621,6 +5635,21 @@ function tvDataHora(ts: number): string {
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/** Relógio HH:MM:SS (19/11/2026): só este pedaço redesenha a cada segundo, não o quadro inteiro. */
+function RelogioHora() {
+    const [texto, setTexto] = useState("");
+    useEffect(() => {
+        const tique = () => {
+            const d = new Date();
+            setTexto(`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`);
+        };
+        tique();
+        const id = window.setInterval(tique, 1000);
+        return () => window.clearInterval(id);
+    }, []);
+    return <>{texto}</>;
+}
+
 function tvDuracaoTexto(ms: number): string {
     const min = Math.max(0, Math.floor(ms / 60000));
     const h = Math.floor(min / 60);
@@ -6048,7 +6077,7 @@ function QuadroTv({
                         <div className="tv-ctr"><b>{totalCoroas}</b><span>coroas em confecção</span></div>
                     </div>
                     <div className="tv-clock">
-                        <div className="tv-h">{clockTime}</div>
+                        <div className="tv-h"><RelogioHora /></div>
                         <div className="tv-d">{clockDate}</div>
                     </div>
                 </header>
@@ -6663,7 +6692,7 @@ function QuadroMobile({
                     <div className="qm-live"><i />Atualizado em tempo real</div>
                 </div>
                 <div className="qm-clk">
-                    <b>{clockTime}</b>
+                    <b><RelogioHora /></b>
                     <small>{clockDate}</small>
                 </div>
                 <div className="qm-kpis">
@@ -7730,7 +7759,7 @@ function QuadroDesktop({
                             Modo TV
                         </a>
                         <BotaoTema tema={tema} onClick={alternarTema} className="qd-btn qd-ib" />
-                        <div className="qd-clock"><b>{clockTime}</b><small>{clockDate}</small></div>
+                        <div className="qd-clock"><b><RelogioHora /></b><small>{clockDate}</small></div>
                     </div>
                 </header>
 

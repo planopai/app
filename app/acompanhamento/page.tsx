@@ -671,9 +671,17 @@ function scrubRoupaNoEditar(payload: any, original: RoupaSnapshot | null) {
 export default function AcompanhamentoPage() {
   // Tabela
   const [registros, setRegistros] = useState<Registro[]>([]);
+  /* Desempenho (19/11/2026): a consulta periódica só atualiza a tela quando a lista mudou de verdade.
+     registrosAtuaisRef acompanha o que está na tela; ultimaListaRef guarda o que a consulta colocou por último. */
+  const registrosAtuaisRef = useRef<Registro[]>(registros);
+  registrosAtuaisRef.current = registros;
+  const ultimaListaRef = useRef<{ lista: Registro[] | null; json: string; snapshot: string }>({ lista: null, json: "", snapshot: "" });
+  // Confere o login (whoami) no máximo a cada 5 min, e não em toda consulta da lista.
+  const sessaoConferidaEmRef = useRef(0);
 
   // Avisos
   const [avisos, setAvisos] = useState<Aviso[]>([]);
+  const ultimosAvisosJsonRef = useRef("");
   const [avisoMsg, setAvisoMsg] = useState<{
     text: string;
     ok: boolean;
@@ -930,10 +938,18 @@ export default function AcompanhamentoPage() {
     let session = null as Awaited<ReturnType<typeof getCurrentOfflineSession>>;
 
     try {
+      // 19/11/2026: antes conferia o login no servidor a cada 10 s; agora a cada 5 min (ou quando não há sessão guardada).
+      const conferir = isOnlineNow() && Date.now() - sessaoConferidaEmRef.current > 5 * 60 * 1000;
       session = await getCurrentOfflineSession({
-        refreshIfOnline: isOnlineNow(),
+        refreshIfOnline: conferir,
         allowCachedOnNetworkFailure: true,
       });
+      if (!session && !conferir && isOnlineNow()) {
+        session = await getCurrentOfflineSession({ refreshIfOnline: true, allowCachedOnNetworkFailure: true });
+        if (session) sessaoConferidaEmRef.current = Date.now();
+      } else if (conferir && session) {
+        sessaoConferidaEmRef.current = Date.now();
+      }
     } catch (e: any) {
       // 401/403 online não deve trocar silenciosamente de identidade.
       console.warn("[OFFLINE] Não foi possível confirmar o usuário:", e?.message || e);
@@ -979,6 +995,7 @@ export default function AcompanhamentoPage() {
       );
 
       if (r.status === 401) {
+        sessaoConferidaEmRef.current = 0; // confere o login de novo na próxima vez
         await showCached();
         return;
       }
@@ -1089,10 +1106,15 @@ export default function AcompanhamentoPage() {
         : [];
 
       if (session) {
-        await saveRegistrosSnapshot(
-          sane,
-          session.userId,
-        );
+        // 19/11/2026: só regrava a cópia do aparelho quando a lista do servidor mudou.
+        const jsonServidor = JSON.stringify(sane);
+        if (jsonServidor !== ultimaListaRef.current.snapshot) {
+          await saveRegistrosSnapshot(
+            sane,
+            session.userId,
+          );
+          ultimaListaRef.current.snapshot = jsonServidor;
+        }
 
         const withLocal =
           mergeLocalAttendancesWithRecords(
@@ -1106,6 +1128,13 @@ export default function AcompanhamentoPage() {
             session.userId,
           );
 
+        // Nada mudou e ninguém mexeu na tela desde a última consulta: não redesenha a página.
+        const jsonTela = JSON.stringify(merged);
+        const ult = ultimaListaRef.current;
+        if (jsonTela === ult.json && ult.lista !== null && registrosAtuaisRef.current === ult.lista) {
+          return;
+        }
+        ultimaListaRef.current = { ...ult, lista: merged, json: jsonTela };
         setRegistros(merged);
       } else {
         setRegistros(sane);
@@ -1362,9 +1391,14 @@ export default function AcompanhamentoPage() {
       if (r.status === 401) return;
       const data = await r.json().catch(() => null);
       if (data?.need_login) return;
-      setAvisos(Array.isArray(data) ? data : []);
+      // 19/11/2026: só atualiza a tela quando os avisos mudaram.
+      const lista = Array.isArray(data) ? data : [];
+      const json = JSON.stringify(lista);
+      if (json === ultimosAvisosJsonRef.current) return;
+      ultimosAvisosJsonRef.current = json;
+      setAvisos(lista);
     } catch {
-      setAvisos([]);
+      // Falha de rede: mantém os avisos que já estão na tela.
     }
   }, []);
 
@@ -1533,13 +1567,20 @@ export default function AcompanhamentoPage() {
   }, [fetchRegistros, fetchAvisos, flushOfflineQueue]);
 
   useEffect(() => {
-    const intReg = setInterval(fetchRegistros, 10000);
-    const intAv = setInterval(fetchAvisos, 3000);
+    // Desempenho (19/11/2026): lista a cada 20 s (era 10 s) e avisos a cada 15 s (era 3 s), só com a tela visível.
+    // Ao voltar para a tela, atualiza na hora.
+    const intReg = setInterval(() => {
+      if (!document.hidden) fetchRegistros();
+    }, 20000);
+    const intAv = setInterval(() => {
+      if (!document.hidden) fetchAvisos();
+    }, 15000);
     const intFlush = setInterval(() => flushOfflineQueue(), 20000);
 
     const onVis = () => {
       if (!document.hidden) {
         fetchRegistros();
+        fetchAvisos();
         flushOfflineQueue();
       }
     };

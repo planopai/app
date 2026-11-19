@@ -55,6 +55,9 @@ async function getJson<T>(url: string, signal: AbortSignal): Promise<T | null> {
 }
 
 function publicar(parcial: Partial<Contadores>) {
+    // Desempenho (19/11/2026): número igual ao que já está na tela não redesenha menu, barra e Início.
+    const mudou = (Object.keys(parcial) as (keyof Contadores)[]).some((k) => estado[k] !== parcial[k]);
+    if (!mudou) return;
     estado = { ...estado, ...parcial };
     ouvintes.forEach((f) => f());
 }
