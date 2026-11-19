@@ -1640,7 +1640,10 @@ export default function AcompanhamentoPage() {
     window.addEventListener("pai-offline-sync-complete", onSyncComplete);
 
     if (browserSaysOnline()) {
-      void syncOperationalQueue().then(() => fetchRegistros());
+      // Desempenho (19/11/2026): a tela já busca a lista ao abrir; só busca de novo se algo foi enviado.
+      void syncOperationalQueue().then((s) => {
+        if (s.attempted > 0 || s.synced > 0) void fetchRegistros();
+      });
     }
 
     return () => {

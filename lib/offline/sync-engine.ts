@@ -35,8 +35,45 @@ import {
 } from "./signatures";
 import {
   browserSaysOnline,
+  getActiveOfflineUserId,
+  getCachedOfflineSession,
   refreshOfflineSession,
 } from "./session";
+
+/*
+ * Desempenho (19/11/2026): a sincronização roda a cada troca de tela, foco e volta ao app. Antes ela sempre
+ * perguntava ao servidor "quem sou" (informativo.php?me=1), mesmo com a fila vazia: ~1 consulta por clique.
+ * Agora, se a fila e as assinaturas estão vazias no aparelho, o usuário do cookie é o mesmo da sessão guardada
+ * e essa sessão foi conferida há menos de 10 min, não consulta nada. Com qualquer pendência, faz tudo como antes.
+ */
+const SESSAO_CONFERIDA_VALE_MS = 10 * 60_000;
+
+function uidDoCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(/(?:^|;\s*)pai_uid=([^;]*)/);
+  const v = m ? decodeURIComponent(m[1]).trim() : "";
+  return v || null;
+}
+
+/** Devolve o id do usuário quando dá para pular a consulta ao servidor; null = sincroniza normalmente. */
+async function nadaParaSincronizar(): Promise<string | null> {
+  try {
+    const uid = uidDoCookie();
+    if (!uid) return null;
+    const ativo = await getActiveOfflineUserId();
+    if (!ativo || String(ativo) !== uid) return null;
+    const guardada = await getCachedOfflineSession(uid);
+    if (!guardada || String(guardada.userId) !== uid) return null;
+    if (Date.now() - Number(guardada.lastSeenAt || 0) > SESSAO_CONFERIDA_VALE_MS) return null;
+    const [acoes, assinaturas] = await Promise.all([
+      getActionsForUser(uid, ["pending", "sending", "blocked_auth"]),
+      getSignaturesForUser(uid, ["pending", "sending", "blocked_auth"]),
+    ]);
+    return acoes.length || assinaturas.length ? null : uid;
+  } catch {
+    return null;
+  }
+}
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 
@@ -392,6 +429,13 @@ async function runSync(): Promise<SyncSummary> {
 
   if (!browserSaysOnline()) {
     await requestOperationalBackgroundSync();
+    return summary;
+  }
+
+  // Fila vazia e sessão conferida há pouco: nada a enviar, nenhuma consulta (ver nadaParaSincronizar).
+  const semPendencias = await nadaParaSincronizar();
+  if (semPendencias) {
+    await registrarSincronizacaoCompleta(semPendencias);
     return summary;
   }
 

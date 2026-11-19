@@ -24,6 +24,18 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const INTERVALO_MS = 15_000; // igual à home antiga; só consulta com a aba visível e com rede
 const ESTOQUE_INTERVALO_MS = 5 * 60_000;
 let estoqueConsultadoEm = 0;
+// Desempenho (19/11/2026): o nome do usuário não muda a cada 15 s. Pergunta "quem sou" ao abrir, a cada 10 min
+// e quando o usuário do cookie muda (outro login sem recarregar a página).
+const NOME_INTERVALO_MS = 10 * 60_000;
+let nomeConferidoEm = 0;
+let nomeDoUid: string | null = null;
+
+function uidDoCookie(): string | null {
+    if (typeof document === "undefined") return null;
+    const m = document.cookie.match(/(?:^|;\s*)pai_uid=([^;]*)/);
+    const v = m ? decodeURIComponent(m[1]).trim() : "";
+    return v || null;
+}
 
 export type Contadores = {
     nome: string;
@@ -143,11 +155,19 @@ async function atualizar() {
     const t = Date.now();
 
     // Quem sou e o Quadro: o "aguardando sua ação" precisa dos dois; o resto não depende de ninguém.
-    const pWho = getJson<{ nome?: string }>(`${ENDPOINT}/pai_api.php?action=whoami&_=${t}`, sig).then((who) => {
-        const completo = String(who?.nome || "").trim();
-        if (completo) publicar({ nome: completo });
-        return completo;
-    });
+    const uidAgora = uidDoCookie();
+    const precisaNome = !estado.nome || uidAgora !== nomeDoUid || Date.now() - nomeConferidoEm > NOME_INTERVALO_MS;
+    const pWho: Promise<string> = precisaNome
+        ? getJson<{ nome?: string }>(`${ENDPOINT}/pai_api.php?action=whoami&_=${t}`, sig).then((who) => {
+              const completo = String(who?.nome || "").trim();
+              if (completo) {
+                  publicar({ nome: completo });
+                  nomeConferidoEm = Date.now();
+                  nomeDoUid = uidAgora;
+              }
+              return completo;
+          })
+        : Promise.resolve(estado.nome);
 
     // Quadro e Minhas OS são de todos: os números de atendimento também.
     const pQuadro = getJson<RegistroRegra[]>(`${ENDPOINT}/informativo.php?listar=1&ativos=1&_=${t}`, sig).then((lista) => {
