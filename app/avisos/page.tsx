@@ -27,6 +27,7 @@ import {
 
 import type { Aviso, Registro } from "../acompanhamento/components/types";
 import { jsonWith401, normalizarStatus } from "../acompanhamento/components/helpers";
+import { FaixaAtualizando, gravarCacheTela, lerCacheTela, travaToques } from "@/lib/cacheTela";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const LIMITE = 255;
@@ -516,6 +517,23 @@ export default function AvisosPage() {
     const [avisos, setAvisos] = useState<Aviso[]>([]);
     const [registros, setRegistros] = useState<Registro[]>([]);
     const [carregado, setCarregado] = useState(false);
+    // 19/11/2026: true enquanto a tela mostra a cópia da última visita e espera os dados novos.
+    const [desatualizado, setDesatualizado] = useState(false);
+    const novosRef = React.useRef({ avisos: false, registros: false });
+    const marcarNovo = (k: "avisos" | "registros") => {
+        novosRef.current[k] = true;
+        if (novosRef.current.avisos && novosRef.current.registros) setDesatualizado(false);
+    };
+    useEffect(() => {
+        const av = lerCacheTela<Aviso[]>("avisos_lista");
+        const rg = lerCacheTela<Registro[]>("avisos_atendimentos");
+        if (av || rg) {
+            if (av) setAvisos(av);
+            if (rg) setRegistros(rg);
+            setCarregado(true);
+            setDesatualizado(true);
+        }
+    }, []);
 
     const [aviso, setAviso] = useState<Aviso_UI>(null);
     const [filtro, setFiltro] = useState<Filtro>("todos");
@@ -562,18 +580,23 @@ export default function AvisosPage() {
             const data = await r.json().catch(() => null);
             if (data?.need_login) return;
 
-            setAvisos(Array.isArray(data) ? data : []);
+            const lista = Array.isArray(data) ? data : [];
+            setAvisos(lista);
+            gravarCacheTela("avisos_lista", lista);
         } catch {
-            setAvisos([]);
+            // Falha de rede: mantém os avisos que já estão na tela.
         } finally {
+            marcarNovo("avisos"); // com ou sem resposta, libera a tela (sem internet não fica travada)
             setCarregado(true);
             setAgora(Date.now());
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const fetchRegistros = useCallback(async () => {
         try {
-            const r = await fetch(`${ENDPOINT}/informativo.php?listar=1&_nocache=${Date.now()}`, {
+            // 19/11/2026: &ativos=1 → só os atendimentos em andamento (a tela só mostra esses).
+            const r = await fetch(`${ENDPOINT}/informativo.php?listar=1&ativos=1&_nocache=${Date.now()}`, {
                 credentials: "include",
                 cache: "no-store",
             });
@@ -595,9 +618,13 @@ export default function AvisosPage() {
                 : [];
 
             setRegistros(sane);
+            gravarCacheTela("avisos_atendimentos", sane);
         } catch {
-            setRegistros([]);
+            // Falha de rede: mantém a lista que já está na tela.
+        } finally {
+            marcarNovo("registros");
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
@@ -606,12 +633,13 @@ export default function AvisosPage() {
     }, [fetchAvisos, fetchRegistros]);
 
     useEffect(() => {
+        // 19/11/2026: avisos a cada 15 s (eram 3 s) e lista a cada 20 s (eram 10 s), como em Atendimentos.
         const intAv = setInterval(() => {
             if (!document.hidden) fetchAvisos();
-        }, 3000);
+        }, 15000);
         const intReg = setInterval(() => {
             if (!document.hidden) fetchRegistros();
-        }, 10000);
+        }, 20000);
 
         const onVis = () => {
             if (!document.hidden) {
@@ -892,7 +920,8 @@ export default function AvisosPage() {
 
     return (
         <div className="min-h-screen bg-[#F6F8FB] text-[#313C55] dark:bg-[#1C2334] dark:text-white">
-            <div className="w-full space-y-4 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+            <FaixaAtualizando ativo={desatualizado} />
+            <div className="w-full space-y-4 px-4 py-6 sm:px-6 lg:px-8 lg:py-8" style={travaToques(desatualizado)}>
                 {/* Cabeçalho */}
                 <header className="flex flex-wrap items-end justify-between gap-3">
                     <div className="min-w-0">

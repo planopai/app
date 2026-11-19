@@ -5,6 +5,7 @@ import { apiGet } from "./api";
 import { clampInt } from "./formato";
 import type { Categoria, Classificacao, CustoMedioMovelProduto, Deposito, Fabricante, InitResp, Me, Produto, Saldo, UiTab, Usuario } from "./tipos";
 import { markAndCleanNewBuild } from "./versao";
+import { gravarCacheTela, lerCacheTela } from "@/lib/cacheTela";
 
 // Dados comuns do Estoque: usuário, depósitos, produtos, saldos, custos médios, alertas e qual tela está aberta.
 
@@ -12,6 +13,8 @@ export function useEstoqueDados() {
     const [tab, setTab] = useState<UiTab>("MENU");
 
     const [loading, setLoading] = useState(true);
+    // 19/11/2026: true enquanto a tela mostra os dados da última visita (cópia do aparelho) e espera os novos.
+    const [desatualizado, setDesatualizado] = useState(false);
     const [initErr, setInitErr] = useState<string>("");
 
     const [me, setMe] = useState<Me | null>(null);
@@ -66,12 +69,26 @@ export function useEstoqueDados() {
     }, []);
 
 
+    function aplicarInit(j: InitResp) {
+            setMe(j.me);
+            setUsuarios(j.usuarios || []);
+            setDepositos(j.depositos || []);
+
+            setCategorias((j.categorias || []).filter((c) => Number(c.ativo) === 1));
+            setFabricantes((j.fabricantes || []).filter((f) => Number(f.ativo) === 1));
+            setProdutos(j.produtos || []);
+            setClassificacoes((j.classificacoes || []).filter((c) => Number(c.ativo) === 1));
+
+            setSaldos(j.saldos || []);
+    }
+
     async function refreshInit() {
         setLoading(true);
         setInitErr("");
         try {
             const j = await apiGet<InitResp>({ init: 1, _ts: Date.now() });
             if (!j.ok) throw new Error(j.msg || "Falha no init");
+            gravarCacheTela("estoque_init", j); // próxima abertura da tela mostra estes dados na hora
 
             setMe(j.me);
             setUsuarios(j.usuarios || []);
@@ -95,10 +112,17 @@ export function useEstoqueDados() {
             setInitErr(e?.message || "Erro ao carregar.");
         } finally {
             setLoading(false);
+            setDesatualizado(false);
         }
     }
 
     useEffect(() => {
+        // 19/11/2026: mostra na hora a cópia da última visita; os dados novos chegam em seguida.
+        const guardado = lerCacheTela<InitResp>("estoque_init");
+        if (guardado?.ok) {
+            aplicarInit(guardado);
+            setDesatualizado(true);
+        }
         refreshInit();
 
         const onFocus = () => refreshInit();
@@ -158,6 +182,7 @@ export function useEstoqueDados() {
         setTab,
         loading,
         setLoading,
+        desatualizado,
         initErr,
         setInitErr,
         me,

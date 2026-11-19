@@ -11,6 +11,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { Ic, type NomeIcone } from "./components/ui/Icones";
 import { forceFreshReload, APP_BUILD_LABEL } from "./components/versao";
 import { useEstoqueDados } from "./components/useEstoqueDados";
+import { FaixaAtualizando, travaToques } from "@/lib/cacheTela";
 import { useListaProdutos } from "./components/produtos/useListaProdutos";
 import { useExportarCSV } from "./components/produtos/exportar/useExportarCSV";
 import { useExportarExcel } from "./components/produtos/exportar/useExportarExcel";
@@ -127,7 +128,8 @@ export default function Page() {
     ) : null;
 
     const conteudo = (
-        <>
+        // 19/11/2026: com os dados da última visita na tela, os toques ficam bloqueados até chegarem os novos.
+        <div style={{ display: "contents", ...travaToques(n.desatualizado) }}>
             {erroInicial}
             {mensagem}
             {loading && !n.produtos.length ? <div className="sm">Carregando…</div> : null}
@@ -136,11 +138,12 @@ export default function Page() {
             {aba === "conf" && <AbaConferencia v={conf} m={m} />}
             {aba === "hist" && <AbaHistorico v={hist} m={m} />}
             {aba === "cad" && <AbaCadastros v={ac} m={m} />}
-        </>
+        </div>
     );
 
     return (
         <main className={m ? "estq m" : "estq"} style={{ minHeight: "100dvh", background: "var(--page)" }} data-build={APP_BUILD_LABEL}>
+            <FaixaAtualizando ativo={n.desatualizado} />
             {m ? (
                 <>
                     <div style={{ padding: "16px 16px 8px", display: "flex", alignItems: "center", gap: "8px" }}>

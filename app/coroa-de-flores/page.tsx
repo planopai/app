@@ -32,6 +32,7 @@ import { useOpcoesConvenio } from "@/app/acompanhamento/components/OsAtendimento
 import { JanelaOSPorId } from "@/app/os/components/OSDoAtendimento";
 import { BotaoCancelarPedidoCoroa } from "@/components/correcoes/CancelarPedidoCoroa";
 import { BotaoCorrecoesPedidoCoroa } from "@/components/correcoes/CorrecoesPedidoCoroa";
+import { FaixaAtualizando, gravarCacheTela, lerCacheTela, travaToques } from "@/lib/cacheTela";
 import { classeOpcaoSimNao, MarcaSimNao } from "@/app/acompanhamento/components/simNaoCores";
 import { atendimentoDeveFicarNoQuadro, aguardandoRecolhimento } from "@/components/atendimentos/regrasQuadro";
 import {
@@ -67,7 +68,8 @@ function NoCorpo({ children }: { children: React.ReactNode }) {
    CONFIGURAÇÃO
    ========================================================= */
 const COROAS_API = "https://api.planoassistencialintegrado.com.br/coroas.php";
-const ATENDIMENTOS_API = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1";
+// 19/11/2026: &ativos=1 → só os atendimentos em andamento (a tela já filtrava com a mesma regra do Quadro).
+const ATENDIMENTOS_API = "https://api.planoassistencialintegrado.com.br/informativo.php?listar=1&ativos=1";
 const USUARIO_ATUAL_API = "https://api.planoassistencialintegrado.com.br/informativo.php?me=1";
 const MATERIAIS_API = "https://api.planoassistencialintegrado.com.br/materiais_gerais.php";
 const API_PUBLIC_BASE = "https://api.planoassistencialintegrado.com.br";
@@ -2069,6 +2071,8 @@ export default function Page() {
     const confeccaoPerPage = 30;
     const [confeccaoTotal, setConfeccaoTotal] = React.useState(0);
     const [confeccaoTotalPages, setConfeccaoTotalPages] = React.useState(1);
+    // 19/11/2026: true enquanto a fila mostra a cópia da última visita e espera os dados novos.
+    const [confeccaoDesatualizada, setConfeccaoDesatualizada] = React.useState(false);
 
     // Pedidos Manuais: histórico somente após confirmação de entrega.
     const [manualHistoricoOrders, setManualHistoricoOrders] = React.useState<ManualOrder[]>([]);
@@ -2202,6 +2206,14 @@ export default function Page() {
             );
             setConfeccaoTotal(Math.max(0, Number(json.meta?.total || 0)));
             setConfeccaoTotalPages(Math.max(1, Number(json.meta?.total_pages || 1)));
+            // Guarda a fila padrão (1ª página, sem busca e sem filtro) para a próxima abertura da tela.
+            if (confeccaoPage === 1 && !confeccaoAppliedQ.trim() && confeccaoAppliedStatus === "todos") {
+                gravarCacheTela("coroas_confeccao", {
+                    dados: json.dados,
+                    total: Number(json.meta?.total || 0),
+                    paginas: Number(json.meta?.total_pages || 1),
+                });
+            }
         } catch (e: any) {
             if (e?.name === "AbortError") return;
             setConfeccaoError(e?.message || "Erro ao carregar pedidos em confecção.");
@@ -2209,6 +2221,7 @@ export default function Page() {
             if (confeccaoAbortRef.current === controller) {
                 confeccaoAbortRef.current = null;
                 setConfeccaoLoading(false);
+                setConfeccaoDesatualizada(false);
             }
         }
     }, [
@@ -2299,6 +2312,17 @@ export default function Page() {
             await fetchHistoricoOrders(forceFresh);
         }
     }, [tab, fetchConfeccaoOrders, fetchHistoricoOrders]);
+
+    // 19/11/2026: ao abrir a tela, mostra na hora a fila da última visita; a atualizada chega em seguida.
+    React.useEffect(() => {
+        const guardada = lerCacheTela<{ dados: ManualOrder[]; total: number; paginas: number }>("coroas_confeccao");
+        if (!guardada || !Array.isArray(guardada.dados)) return;
+        setConfeccaoOrders(separarPedidosPorCoroa(guardada.dados).filter((o) => o.status !== "entregue"));
+        setConfeccaoTotal(Math.max(0, Number(guardada.total || 0)));
+        setConfeccaoTotalPages(Math.max(1, Number(guardada.paginas || 1)));
+        setConfeccaoDesatualizada(true);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     React.useEffect(() => {
         if (tab !== "confeccao") return;
@@ -3436,6 +3460,7 @@ export default function Page() {
                 {/* =====================================================
                 CONFECÇÃO — somente pedidos ainda em produção
                 ===================================================== */}
+                <FaixaAtualizando ativo={tab === "confeccao" && confeccaoDesatualizada} />
                 {tab === "confeccao" && (
                     <>
                         <form
@@ -3514,7 +3539,7 @@ export default function Page() {
 
                         {/* Confecção mobile */}
                         <div className="px-4 pb-6 md:hidden lg:px-6">
-                            <div className="space-y-3">
+                            <div className="space-y-3" style={travaToques(confeccaoDesatualizada)}>
                                 {(!isDesktop ? confeccaoOrders : []).map((o) => (
                                     <div key={o._chave ?? o.id} className="rounded-lg border bg-card p-3">
                                         <div className="flex items-start justify-between gap-2">
@@ -3574,7 +3599,7 @@ export default function Page() {
 
                         {/* Confecção desktop */}
                         <div className="hidden flex-1 overflow-auto px-4 pb-6 md:block lg:px-6">
-                            <div className="overflow-hidden rounded-lg border bg-card">
+                            <div className="overflow-hidden rounded-lg border bg-card" style={travaToques(confeccaoDesatualizada)}>
                                 <div className="overflow-x-auto">
                                     <table className="min-w-full text-sm">
                                         <thead className="bg-muted/50 text-left">

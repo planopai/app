@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { IconRefresh, IconX } from "@tabler/icons-react";
 
 import ItensTabela from "@/components/requisicoes/ItensTabela";
+import { FaixaAtualizando, gravarCacheTela, lerCacheTela, travaToques } from "@/lib/cacheTela";
 
 
 
@@ -1442,6 +1443,11 @@ export default function OperarRequisicoesPage() {
 
     const [loading, setLoading] = useState(true);
 
+    // 19/11/2026: true enquanto a tela mostra a cópia da última visita e espera os dados novos.
+    const [desatualizado, setDesatualizado] = useState(false);
+
+    const mostrandoCopiaRef = React.useRef(false);
+
     const [busy, setBusy] = useState(false);
 
     const [error, setError] = useState("");
@@ -1620,6 +1626,8 @@ export default function OperarRequisicoesPage() {
 
         setSaldos(data.saldos || []);
 
+        gravarCacheTela("requisicoes_init", data);
+
     }, []);
 
 
@@ -1656,6 +1664,8 @@ export default function OperarRequisicoesPage() {
 
         setRows(data.rows || []);
 
+        gravarCacheTela("requisicoes_fila", data.rows || []);
+
     }, []);
 
 
@@ -1674,7 +1684,8 @@ export default function OperarRequisicoesPage() {
 
     const refreshAll = useCallback(async () => {
 
-        setLoading(true);
+        // Com a cópia da última visita na tela, atualiza por trás (sem trocar a lista por "Carregando...").
+        if (!mostrandoCopiaRef.current) setLoading(true);
 
         setError("");
 
@@ -1694,6 +1705,10 @@ export default function OperarRequisicoesPage() {
 
             setLoading(false);
 
+            setDesatualizado(false);
+
+            mostrandoCopiaRef.current = false;
+
         }
 
     }, [loadInit, loadRows]);
@@ -1707,6 +1722,19 @@ export default function OperarRequisicoesPage() {
      */
 
     useEffect(() => {
+
+        // 19/11/2026: mostra na hora a cópia da última visita (se houver); os dados novos chegam em seguida.
+        const ini = lerCacheTela<InitResp>("requisicoes_init");
+        const fila = lerCacheTela<ReqListRow[]>("requisicoes_fila");
+        if (ini?.ok && Array.isArray(fila)) {
+            setMe(ini.me || null);
+            setDepositos(ini.depositos || []);
+            setSaldos(ini.saldos || []);
+            setRows(fila);
+            setLoading(false);
+            setDesatualizado(true);
+            mostrandoCopiaRef.current = true;
+        }
 
         void refreshAll();
 
@@ -2222,7 +2250,9 @@ export default function OperarRequisicoesPage() {
 
         <main className="min-h-[100dvh] bg-[#F6F8FB] text-[#313C55] dark:bg-[#161C2A] dark:text-white">
 
-            <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3 px-4 pb-5 pt-4 lg:gap-4 lg:px-10 lg:pb-12 lg:pt-8">
+            <FaixaAtualizando ativo={desatualizado} />
+
+            <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-3 px-4 pb-5 pt-4 lg:gap-4 lg:px-10 lg:pb-12 lg:pt-8" style={travaToques(desatualizado)}>
 
                 <header className="flex items-start gap-3 lg:mb-2 lg:gap-4">
 
