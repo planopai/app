@@ -118,11 +118,8 @@ window.addEventListener("load",function(){setTimeout(conferir,6000);});
 setTimeout(conferir,25000);
 }catch(e){}})();`;
 
-/* Tema da tela (active_theme), aplicado no corpo antes de desenhar (antes vinha do servidor).
- * 19/11/2026: depois dele, um diagnóstico do erro #418 do React: se algo de fora (extensão, script de terceiro)
- * colocar um elemento no começo da página antes de o app terminar de abrir, avisa no Console o que foi. */
-const SCRIPT_TEMA = `(function(){try{var m=document.cookie.match(/(?:^|;\\s*)active_theme=([^;]*)/);if(!m)return;var t=decodeURIComponent(m[1]);if(!/^[a-z0-9-]+$/i.test(t))return;document.body.classList.add("theme-"+t);if(/-scaled$/.test(t))document.body.classList.add("theme-scaled");}catch(e){}})();
-(function(){try{var avisou=false,b=document.body,mo=new MutationObserver(function(ms){ms.forEach(function(m){m.addedNodes.forEach(function(n){if(!avisou&&n.nodeType===1&&n.tagName!=="SCRIPT"&&n.parentNode===b&&!n.previousElementSibling){avisou=true;console.warn("[PAI] Algo entrou no começo da página antes de o app abrir (causa do erro #418): "+n.tagName+(n.id?"#"+n.id:"")+" "+String(n.getAttribute("class")||"").slice(0,80),n);}});});});mo.observe(b,{childList:true});window.addEventListener("load",function(){setTimeout(function(){mo.disconnect();},4000);});}catch(e){}})();`;
+/* Tema da tela (active_theme), aplicado no corpo antes de desenhar (antes vinha do servidor). */
+const SCRIPT_TEMA = `(function(){try{var m=document.cookie.match(/(?:^|;\\s*)active_theme=([^;]*)/);if(!m)return;var t=decodeURIComponent(m[1]);if(!/^[a-z0-9-]+$/i.test(t))return;document.body.classList.add("theme-"+t);if(/-scaled$/.test(t))document.body.classList.add("theme-scaled");}catch(e){}})();`;
 
 export default function RootLayout({
   children,

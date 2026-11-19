@@ -17,7 +17,7 @@
  * Chat: hoje o Chat é a Aurora e não tem contador de não lidas; o selo do Chat só existirá quando houver chat interno.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { aguardaAcaoDe, aguardandoRecolhimento, atendimentoDeveFicarNoQuadro, type RegistroRegra } from "@/components/atendimentos/regrasQuadro";
 
 const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
@@ -281,8 +281,23 @@ async function atualizar() {
 }
 
 /** perms = o valor de usePerms().perms (null enquanto carrega); has = usePerms().has. */
+/*
+ * 19/11/2026: os números ficam numa "loja" fora do React. Ao abrir o app, o menu já tinha posto nela os números
+ * guardados da última visita quando o React ainda montava o Início; o Início saía diferente do HTML que veio do
+ * servidor e o React refazia a tela inteira (erro #418 no Console, abertura mais lenta). Com useSyncExternalStore,
+ * durante a montagem todos usam a versão do servidor (vazia) e os números entram logo em seguida.
+ */
+function assinar(f: () => void): () => void {
+    ouvintes.add(f);
+    return () => {
+        ouvintes.delete(f);
+    };
+}
+const lerEstado = (): Contadores => estado;
+const lerEstadoDoServidor = (): Contadores => VAZIO;
+
 export function useContadores(perms: unknown, has: (slug: string) => boolean): Contadores {
-    const [, forcar] = useState(0);
+    const atual = useSyncExternalStore(assinar, lerEstado, lerEstadoDoServidor);
     const pronto = perms != null;
 
     useEffect(() => {
@@ -290,13 +305,9 @@ export function useContadores(perms: unknown, has: (slug: string) => boolean): C
     });
 
     useEffect(() => {
+        const antes = estado;
         aplicarCacheUmaVez();
-        const f = () => forcar((n) => n + 1);
-        f();
-        ouvintes.add(f);
-        return () => {
-            ouvintes.delete(f);
-        };
+        if (estado !== antes) ouvintes.forEach((f) => f());
     }, []);
 
     useEffect(() => {
@@ -320,7 +331,7 @@ export function useContadores(perms: unknown, has: (slug: string) => boolean): C
         };
     }, [pronto]);
 
-    return estado;
+    return atual;
 }
 
 /** Selo no formato do mockup: 2 dígitos; vazio quando 0 ou desconhecido. */

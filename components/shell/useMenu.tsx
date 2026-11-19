@@ -12,7 +12,7 @@
  * Se o servidor não responder ou as tabelas não existirem, vale o padrão do código: o app nunca fica sem menu.
  * Depois de salvar, as telas de organização chamam recarregarMenu() (ou disparam EVENTO_MENU) e tudo se atualiza.
  */
-import { useEffect, useReducer } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { API_BASE, apiJson } from "@/components/messenger/api";
 import { aplicarPreferencias, montarMenu, type ConfigMenu, type PrefsMenu } from "./menuOrganizado";
 import type { ItemModulo, Modulo } from "./modulos";
@@ -89,9 +89,21 @@ function gravarCache(d: RespostaMenu) {
         window.localStorage.setItem(chaveCache(), JSON.stringify(d));
     } catch {}
 }
+/* 19/11/2026: versão do menu guardado; muda a cada atualização (useSyncExternalStore abaixo). */
+let versao = 0;
 function avisar() {
+    versao += 1;
     ouvintes.forEach((f) => f());
 }
+function assinar(f: () => void): () => void {
+    ouvintes.add(f);
+    return () => {
+        ouvintes.delete(f);
+    };
+}
+const lerVersao = () => versao;
+/* Durante a montagem do HTML que veio do servidor vale o menu padrão (-1), igual ao do servidor. */
+const lerVersaoDoServidor = () => -1;
 
 /** Busca de novo no servidor e atualiza todas as telas abertas. */
 export function recarregarMenu(): Promise<void> {
@@ -143,12 +155,26 @@ function calcular() {
     calculadoDe = dados;
     return calculado;
 }
+let calculadoPadrao: { modulos: Modulo[]; fixos: ItemModulo[]; modulosPessoais: Modulo[] } | null = null;
+function calcularPadrao() {
+    if (!calculadoPadrao) {
+        const base = montarMenu(null);
+        calculadoPadrao = { ...base, modulosPessoais: aplicarPreferencias(base.modulos, null) };
+    }
+    return calculadoPadrao;
+}
 
+/*
+ * 19/11/2026: o menu guardado no aparelho entrava enquanto o React ainda montava a tela (o menu lateral monta
+ * primeiro e lê a cópia guardada). O Início saía diferente do HTML do servidor (favoritos, ordem) e o React
+ * refazia a tela inteira (erro #418). Agora, durante a montagem, todos usam o menu padrão, como o servidor,
+ * e o menu guardado entra logo em seguida.
+ */
 export function useMenu(): MenuPronto {
-    const [, atualizar] = useReducer((x: number) => x + 1, 0);
+    const v = useSyncExternalStore(assinar, lerVersao, lerVersaoDoServidor);
+    const montando = v === -1;
 
     useEffect(() => {
-        ouvintes.add(atualizar);
         if (!ouvindoEvento) {
             ouvindoEvento = true;
             window.addEventListener(EVENTO_MENU, () => void recarregarMenu());
@@ -161,23 +187,21 @@ export function useMenu(): MenuPronto {
             }
         }
         if (!carregado && !buscando) void recarregarMenu();
-        return () => {
-            ouvintes.delete(atualizar);
-        };
     }, []);
 
-    const c = calcular();
+    const d = montando ? null : dados;
+    const c = montando ? calcularPadrao() : calcular();
     return {
-        carregado,
+        carregado: montando ? false : carregado,
         modulos: c.modulos,
         modulosPessoais: c.modulosPessoais,
         fixos: c.fixos,
-        organizacao: dados?.organizacao ?? null,
-        preferencias: dados?.preferencias ?? null,
-        podeOrganizar: !!dados?.pode_organizar,
-        tabelasProntas: dados?.tabelas !== false,
+        organizacao: d?.organizacao ?? null,
+        preferencias: d?.preferencias ?? null,
+        podeOrganizar: !!d?.pode_organizar,
+        tabelasProntas: d?.tabelas !== false,
         recarregar: recarregarMenu,
-        favoritos: Array.isArray(dados?.preferencias?.favoritos) ? dados!.preferencias!.favoritos! : [],
+        favoritos: Array.isArray(d?.preferencias?.favoritos) ? d!.preferencias!.favoritos! : [],
         alternarFavorito,
     };
 }
