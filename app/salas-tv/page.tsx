@@ -9,13 +9,17 @@
  *
  * O app não fala com as TVs: grava o pedido em salas_tv.php ({tv} ou {sala}); o agente do PC do
  * Memorial busca, executa na rede local e devolve o andamento/resultado. Esta tela só acompanha:
- * - estado a cada 10 s; 1 s logo depois de um clique e enquanto houver pedido andando;
- *   pausa com a aba escondida;
+ * - 19/11/2026 (teste do tempo real): a tela ouve o canal pai-app:salas-tv (useCanalApp) e só busca o estado
+ *   quando o servidor avisa que algo mudou (pedido criado, recebido, andamento, resultado, estado das TVs).
+ *   Com o tempo real ligado, a consulta fica só de segurança, a cada 30 s (cobre o Memorial ficar offline).
+ * - sem o tempo real (Ably fora ou não configurada): como antes, estado a cada 10 s; 1 s logo depois de um
+ *   clique e enquanto houver pedido andando; pausa com a aba escondida;
  * - "Memorial online/offline" pelo último sinal do agente (botões desativados offline).
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useCanalApp } from "@/lib/tempo-real/useCanalApp";
 import {
     IconAlertTriangle,
     IconCheck,
@@ -366,19 +370,24 @@ export default function SalasTvPage() {
         }
     }, []);
 
+    // Tempo real (19/11/2026): o servidor avisa quando algo muda; a tela busca o estado só nessa hora.
+    const { conectado: aoVivo } = useCanalApp({ tokenUrl: `${API}?action=tempo_real`, onAviso: () => void carregar() });
+
     const temAndamento = !!estado?.tvs?.some((t) => andando(t.ultimo_pedido)) || Object.values(enviando).some(Boolean);
     useEffect(() => {
         carregar();
+        // Ao vivo: só a consulta de segurança (30 s). Sem o tempo real: como antes (1 s com pedido andando, 10 s parado).
+        const intervalo = aoVivo ? 30000 : rapido || temAndamento ? 1000 : 10000;
         const id = window.setInterval(() => {
             if (document.visibilityState === "visible") carregar();
-        }, rapido || temAndamento ? 1000 : 10000);
+        }, intervalo);
         const voltou = () => document.visibilityState === "visible" && carregar();
         document.addEventListener("visibilitychange", voltou);
         return () => {
             window.clearInterval(id);
             document.removeEventListener("visibilitychange", voltou);
         };
-    }, [carregar, temAndamento, rapido]);
+    }, [carregar, temAndamento, rapido, aoVivo]);
 
     const pedir = useCallback(
         async (alvo: Alvo, acao: Acao, valor?: number) => {
@@ -420,6 +429,10 @@ export default function SalasTvPage() {
                         <h1 className="text-[24px] font-extrabold text-[#313C55] dark:text-white lg:text-[28px]">Salas do Memorial</h1>
                         <p className="mt-1 text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">
                             As 6 TVs: o painel de fora e a TV de dentro de cada sala.
+                        </p>
+                        {/* Teste do tempo real (19/11/2026): mostra como a tela está se atualizando. */}
+                        <p className="mt-0.5 text-[12px] text-[#5B6478] dark:text-[#AEB9CF]">
+                            {aoVivo ? "Atualização ao vivo" : "Atualização a cada 10 s"}
                         </p>
                     </div>
                     {estado && (

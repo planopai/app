@@ -23,6 +23,7 @@ import { useMenu } from "@/components/shell/useMenu";
 import { caminhoDaTela } from "@/components/shell/menuOrganizado"; // 17/11/2026: caminho da tela
 import { formatarSelo, useContadores } from "@/components/shell/useContadores";
 import { BlocoTela, CartaoInfo, GRADE_BLOCOS, GRADE_CARTOES, ROTULO_SECAO, TOM_DO_MODULO } from "@/components/shell/ModuloHub";
+import { IconChevronDown } from "@tabler/icons-react"; // 19/11/2026: módulos expansíveis no computador
 
 /**
  * Tela inicial (rota "/"): junta o visual aprovado da repaginada com o que a home anterior já tinha.
@@ -374,8 +375,73 @@ export default function HomePage() {
                             </div>
                         )}
                         </div>
+                        {/* 19/11/2026: no computador, abaixo dos Favoritos, todos os módulos que a pessoa vê, abrindo as telas ali mesmo */}
+                        {pronto && modulos.length ? <ModulosNoComputador modulos={modulos} has={has} /> : null}
                     </>
                 )}
+            </div>
+        </div>
+    );
+}
+
+/**
+ * 19/11/2026: módulos no Início do computador (lg+). Cada cartão abre, ali mesmo, as telas do módulo que a pessoa pode ver,
+ * separadas por seção (como no menu lateral). Um módulo aberto por vez; o aberto ocupa a linha inteira. No celular nada muda.
+ */
+function ModulosNoComputador({ modulos, has }: { modulos: ReturnType<typeof useMenu>["modulosPessoais"]; has: (s: string) => boolean }) {
+    const [aberto, setAberto] = useState<string | null>(null);
+    return (
+        <div className="hidden lg:block">
+            <h2 className={`mb-4 mt-8 ${ROTULO_SECAO}`}>Módulos</h2>
+            <div className="grid grid-flow-dense grid-cols-3 gap-3.5 xl:grid-cols-4">
+                {modulos.map((m) => {
+                    const Icon = m.icone;
+                    const itens = itensVisiveisDe(m.itens, has);
+                    const abre = aberto === m.id;
+                    const secoes: { secao: string; itens: typeof itens }[] = [];
+                    for (const i of itens) {
+                        const s = i.secao || "";
+                        const g = secoes.find((x) => x.secao === s);
+                        if (g) g.itens.push(i);
+                        else secoes.push({ secao: s, itens: [i] });
+                    }
+                    const tom = TOM_DO_MODULO[m.id] || "azul";
+                    return (
+                        <div key={m.id} className={[CARD, abre ? "col-span-full !border-[#313C55] dark:!border-white/50" : ""].join(" ")}>
+                            <button type="button" aria-expanded={abre} onClick={() => setAberto(abre ? null : m.id)} className="flex w-full items-center gap-3.5 p-4 text-left">
+                                <span className={["grid size-11 shrink-0 place-items-center rounded-[14px] text-[#313C55] dark:text-white", CHIP[TOM_MODULO[m.id] || "azul"]].join(" ")}>
+                                    <Icon size={22} />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block text-[15px] font-extrabold">{m.titulo}</span>
+                                    <span className="line-clamp-2 break-words text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                        {itens.length} {itens.length === 1 ? "tela" : "telas"}
+                                        {m.desc ? ` · ${m.desc}` : ""}
+                                    </span>
+                                </span>
+                                {abre ? <IconChevronDown size={18} className="shrink-0 text-[#7A8396]" /> : <IconChevronRight size={18} className="shrink-0 text-[#7A8396]" />}
+                            </button>
+                            {abre ? (
+                                <div className="flex flex-col gap-4 border-t border-[#E3E8F0] px-4 pb-4 pt-3.5 dark:border-white/[0.1]">
+                                    {secoes.map((s) => (
+                                        <div key={s.secao || "-"}>
+                                            {s.secao ? <div className={`mb-2.5 ${ROTULO_SECAO}`}>{s.secao}</div> : null}
+                                            <div className={GRADE_BLOCOS}>
+                                                {s.itens.map((i) => (
+                                                    <BlocoTela key={i.id} titulo={i.titulo} href={hrefDoItem(i, has)} Icone={i.icone} tom={tom} dica={i.desc} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {!itens.length ? <div className="text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Nenhuma tela liberada neste módulo.</div> : null}
+                                    <Link href={destinoDoModulo(m, has)} className="inline-flex min-h-10 items-center gap-1 self-start text-[14px] font-extrabold text-[#313C55] hover:underline dark:text-white">
+                                        Abrir a página do módulo <IconChevronRight size={16} />
+                                    </Link>
+                                </div>
+                            ) : null}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
