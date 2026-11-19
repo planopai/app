@@ -177,6 +177,7 @@ export default function MenuCelularHost() {
         if (item.selo === "avisos") return formatarSelo(numeros.avisos);
         if (item.selo === "coroas") return formatarSelo(numeros.coroas);
         if (item.selo === "estoque") return formatarSelo(numeros.estoque);
+        if (item.selo === "propostas") return formatarSelo(numeros.propostas); // 19/11/2026: ambiente de vendas
         return "";
     };
 

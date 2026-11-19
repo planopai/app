@@ -56,6 +56,11 @@ const CARTOES: Record<string, Cartao[]> = {
         { rotulo: "Minhas solicitações", chave: "minhasRequisicoes", sub: "em aberto", href: "/minhas-solicitacoes" },
     ],
     estoque: [{ rotulo: "Abaixo do mínimo", chave: "estoque", sub: "produtos", href: "/estoque", estilo: "alerta" }],
+    // 19/11/2026: ambiente de vendas — propostas em qualquer etapa antes de gerar o contrato
+    administrativo: [
+        { rotulo: "Propostas de Adesão", chave: "propostas", sub: "em andamento", href: "/propostas-adesao", estilo: "escuro" },
+        { rotulo: "Propostas paradas", chave: "propostasAtrasadas", sub: "há mais de 1 dia útil", href: "/propostas-adesao", estilo: "alerta" },
+    ],
 };
 // 17/11/2026: Requisições e Estoque viraram um módulo só (id "estoque"): mostra os cartões dos dois.
 CARTOES.estoque = [...CARTOES.requisicoes, ...CARTOES.estoque];
@@ -137,6 +142,7 @@ function seloDoItem(i: ItemModulo, n: Contadores): number {
     if (i.selo === "coroas") return n.coroas ?? 0;
     if (i.selo === "estoque") return n.estoque ?? 0;
     if (i.selo === "avisos") return n.avisos ?? 0;
+    if (i.selo === "propostas") return n.propostas ?? 0; // 19/11/2026: ambiente de vendas
     return 0;
 }
 

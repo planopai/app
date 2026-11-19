@@ -2,15 +2,20 @@
 
 /**
  * Novo contrato (assistente) — Contratos fase 2, prévia aprovada em 19/11/2026.
- * 1. Titular e plano · 2. Beneficiários (sucessor marcado aqui) · 3. Aditivos · 4. Cobrança · 5. Resumo → "Salvar pré-cadastro".
- * Os valores vêm do servidor (ct_contratos.php?action=simular), pela tabela de preço vigente. Vira Ativo quando a adesão é paga.
+ * 1. Titular e plano · 2. Beneficiários (sucessor marcado aqui) · 3. Aditivos · 4. Cobrança · 5. Resumo.
+ * Os valores vêm do servidor (action=simular), pela tabela de preço vigente.
+ * Ambiente de vendas (19/11/2026): o assistente não cria mais o contrato. A venda vai para as Propostas de Adesão (sem número);
+ * o contrato sai lá, com a adesão paga. Usado em 3 lugares (modo):
+ *  - contratos: aba Novo contrato → ct_propostas.php criar (vendedor e origem escolhidos aqui);
+ *  - vendas: Vender plano (Comercial) → ct_vendas.php enviar (dono da venda definido pelo servidor: canal ou venda direta);
+ *  - conferir: Propostas de Adesão → ct_propostas.php salvar (origem e vendedor ficam os da proposta).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconPencil, IconTrash } from "@tabler/icons-react";
 import { api, BTN_PEQ, BTN_PRI, BTN_SEC, CARTAO, mensagemErro, NOTA, ROTULO, SUB } from "../../contas-pagar/components/fin";
-import { type Base, brl, CampoCpf, Combo, cpfValido, dataValidar, PORTES, soDigitos, TIPO_VENDA, URL_CT } from "./ct";
+import { type Base, brl, CampoCpf, Combo, cpfMascara, cpfValido, dataValidar, isoParaBR, PORTES, soDigitos, TIPO_VENDA, URL_CT, URL_PROP } from "./ct";
 import { type BenefForm, benefParaEnvio, benefVazio, JanelaBenef } from "./Benef";
-import { CamposTitular, type TitularForm, titularParaEnvio, titularProblemas, titularVazio } from "./Titular";
+import { CamposTitular, titularDeDados, type TitularForm, titularParaEnvio, titularProblemas, titularVazio } from "./Titular";
 
 const PASSOS = ["Titular e plano", "Beneficiários", "Aditivos", "Cobrança", "Resumo"];
 
@@ -36,26 +41,84 @@ type Calculo = {
     total_mensal: number;
 };
 
-export default function Novo({ base, recarregarBase, avisar, onCriado }: { base: Base; recarregarBase: () => Promise<unknown>; avisar: (m: string) => void; onCriado: (id: number) => void }) {
+/** Venda gravada na proposta (ct_proposta.dados): o mesmo formato que o assistente envia. */
+export type DadosVenda = {
+    titular?: Record<string, any>;
+    plano_id?: number | null;
+    beneficiarios?: Record<string, any>[];
+    aditivos?: number[];
+    cobranca?: Record<string, any>;
+    original?: Record<string, any>;
+};
+
+export type ModoNovo = "contratos" | "vendas" | "conferir";
+
+function cobrancaDe(c: Record<string, any> | undefined, euId: number | null): Cobranca {
+    return {
+        tipo_venda: c?.tipo_venda || "nova",
+        forma_cobranca: c?.forma_cobranca || "bolepix",
+        dia_pagamento: Number(c?.dia_pagamento) || 10,
+        adiar_dias: Number(c?.adiar_dias) || 0,
+        vendedor_usuario_id: c ? (c.vendedor_usuario_id ?? null) : euId,
+        origem: c?.origem ?? null,
+        indicador: c?.indicador_contrato_id ?? null,
+        responsavel: c?.responsavel_cpf ? "outro" : "titular",
+        responsavel_cpf: c?.responsavel_cpf ? cpfMascara(String(c.responsavel_cpf)) : "",
+        responsavel_nome: c?.responsavel_nome || "",
+    };
+}
+
+function benefDe(b: Record<string, any>): BenefForm {
+    return {
+        ...benefVazio(b.tipo === "pet"),
+        tipo: b.tipo === "pet" || b.tipo === "agregado" ? b.tipo : "dependente",
+        nome: b.nome || "",
+        cpf: b.cpf ? cpfMascara(String(b.cpf)) : "",
+        nascimento: isoParaBR(b.nascimento),
+        sexo: b.sexo ?? null,
+        parentesco: b.parentesco ?? null,
+        pet_especie: b.pet_especie ?? null,
+        pet_porte: b.pet_porte ?? null,
+        pago: !!b.pago,
+        sucessor: !!b.sucessor,
+    };
+}
+
+export default function Novo({
+    base,
+    recarregarBase,
+    avisar,
+    onCriado,
+    modo = "contratos",
+    url = URL_CT,
+    salvarEm = { url: URL_PROP, acao: "criar" },
+    inicial,
+    rotuloSalvar,
+    cabecalho,
+}: {
+    base: Base;
+    recarregarBase: () => Promise<unknown>;
+    avisar: (m: string) => void;
+    onCriado: (id: number) => void;
+    modo?: ModoNovo;
+    /** PHP das consultas (simular, indicadores, CPF, cidade, bairro). */
+    url?: string;
+    /** Onde grava: ação e campos a mais (funil_id, id da proposta). */
+    salvarEm?: { url: string; acao: string; extra?: Record<string, unknown> };
+    inicial?: DadosVenda | null;
+    rotuloSalvar?: string;
+    cabecalho?: React.ReactNode;
+}) {
     const [passo, setPasso] = useState(0);
-    const [t, setT] = useState<TitularForm>(titularVazio());
+    const [t, setT] = useState<TitularForm>(() => (inicial?.titular ? { ...titularVazio(), ...titularDeDados(inicial.titular) } : titularVazio()));
     const setTit = useCallback((p: Partial<TitularForm>) => setT((x) => ({ ...x, ...p })), []);
-    const [planoId, setPlanoId] = useState<number | null>(null);
-    const [benef, setBenef] = useState<BenefForm[]>([]);
+    const [planoId, setPlanoId] = useState<number | null>(inicial?.plano_id ?? null);
+    const [benef, setBenef] = useState<BenefForm[]>(() => (inicial?.beneficiarios || []).map(benefDe));
     const [editando, setEditando] = useState<BenefForm | null>(null);
-    const [aditivos, setAditivos] = useState<number[]>([]);
-    const [cob, setCob] = useState<Cobranca>({
-        tipo_venda: "nova",
-        forma_cobranca: "bolepix",
-        dia_pagamento: 10,
-        adiar_dias: 0,
-        vendedor_usuario_id: base.eu_id || null,
-        origem: null,
-        indicador: null,
-        responsavel: "titular",
-        responsavel_cpf: "",
-        responsavel_nome: "",
-    });
+    const [aditivos, setAditivos] = useState<number[]>(inicial?.aditivos || []);
+    const [cob, setCob] = useState<Cobranca>(() => cobrancaDe(inicial?.cobranca, base.eu_id || null));
+    // vendas: o servidor define o dono da venda; conferir: valem a origem e o vendedor da proposta
+    const escolheDono = modo === "contratos";
     const [indicadores, setIndicadores] = useState<{ v: number; t: string; s?: string }[]>([]);
     const [calc, setCalc] = useState<Calculo | null>(null);
     const [erroCalc, setErroCalc] = useState("");
@@ -71,7 +134,7 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
 
     // aditivos que o plano não oferece saem da escolha
     useEffect(() => {
-        if (!plano) return;
+        if (!plano || !base.planos.some((p) => p.id === planoId)) return;
         setAditivos((a) => a.filter((id) => plano.aditivos.some((x) => x.id === id && x.nome !== "Sucessor do contrato")));
         if (!aceitaPet) setBenef((l) => l.filter((b) => b.tipo !== "pet"));
         if (!extraItem) setBenef((l) => l.map((b) => ({ ...b, pago: false })));
@@ -87,7 +150,7 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
         const minha = ++vez.current;
         const tm = setTimeout(async () => {
             try {
-                const j = await api(URL_CT, "simular", { titular_nascimento: nascTitular, plano_id: plano.id, beneficiarios: benef.map((b) => benefParaEnvio(b, base.hoje)), aditivos });
+                const j = await api(url, "simular", { titular_nascimento: nascTitular, plano_id: plano.id, beneficiarios: benef.map((b) => benefParaEnvio(b, base.hoje)), aditivos });
                 if (minha === vez.current) {
                     setCalc(j.dados);
                     setErroCalc("");
@@ -108,7 +171,7 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
         if (q.trim().length < 2) return;
         buscaIndicador.current = setTimeout(async () => {
             try {
-                const j = await api(URL_CT, "indicadores", undefined, `&q=${encodeURIComponent(q.trim())}`);
+                const j = await api(url, "indicadores", undefined, `&q=${encodeURIComponent(q.trim())}`);
                 setIndicadores((j.dados || []).map((r: any) => ({ v: r.id, t: r.nome, s: "contrato " + r.numero })));
             } catch {
                 /* segue sem sugestões */
@@ -124,8 +187,8 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
         [
             ...(cob.responsavel === "outro" && !cpfValido(soDigitos(cob.responsavel_cpf)) ? ["CPF do responsável pelo pagamento"] : []),
             ...(cob.responsavel === "outro" && !cob.responsavel_nome.trim() ? ["nome do responsável pelo pagamento"] : []),
-            ...(!cob.vendedor_usuario_id ? ["vendedor"] : []),
-            ...(!cob.origem ? ["origem da venda"] : []),
+            ...(escolheDono && !cob.vendedor_usuario_id ? ["vendedor"] : []),
+            ...(escolheDono && !cob.origem ? ["origem da venda"] : []),
         ],
         [],
     ];
@@ -138,7 +201,8 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
         }
         setSalvando(true);
         try {
-            const j = await api(URL_CT, "novo", {
+            const j = await api(salvarEm.url, salvarEm.acao, {
+                ...(salvarEm.extra || {}),
                 titular: titularParaEnvio(t, base.hoje),
                 plano_id: planoId,
                 beneficiarios: benef.map((b) => benefParaEnvio(b, base.hoje)),
@@ -156,9 +220,9 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
                 },
             });
             avisar(j.msg);
-            onCriado(j.dados.id);
+            onCriado(j.dados?.id ?? 0);
         } catch (e: any) {
-            const m = mensagemErro(e, "Não foi possível salvar o pré-cadastro.");
+            const m = mensagemErro(e, "Não foi possível salvar a venda.");
             if (m) avisar(m);
         } finally {
             setSalvando(false);
@@ -213,6 +277,7 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
 
     return (
         <div className={`${CARTAO} flex flex-col gap-4 p-4 sm:p-5`}>
+            {cabecalho}
             <div className="flex flex-wrap gap-2">
                 {PASSOS.map((n, i) => (
                     <button
@@ -235,7 +300,7 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
 
             {passo === 0 ? (
                 <>
-                    <CamposTitular t={t} set={setTit} base={base} recarregarBase={recarregarBase} avisar={avisar} />
+                    <CamposTitular t={t} set={setTit} base={base} recarregarBase={recarregarBase} avisar={avisar} url={url} />
                     <div>
                         <h3 className="mb-2 text-[13px] font-extrabold uppercase tracking-[0.06em] text-[#5B6478] dark:text-[#AEB9CF]">Plano</h3>
                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -409,6 +474,8 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
                                 onChange={(v) => setCob((c) => ({ ...c, adiar_dias: v ?? 0 }))}
                             />
                         </div>
+                        {escolheDono ? (
+                        <>
                         <div>
                             <span className={ROTULO}>Vendedor</span>
                             <Combo rotulo="Vendedor" placeholder="Digite o nome do colaborador" opcoes={base.colaboradores.map((u) => ({ v: u.id, t: u.nome }))} valor={cob.vendedor_usuario_id} onChange={(v) => setCob((c) => ({ ...c, vendedor_usuario_id: v }))} />
@@ -418,6 +485,22 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
                             <span className={ROTULO}>Origem da venda</span>
                             <Combo rotulo="Origem da venda" opcoes={Object.entries(base.listas.origens).map(([v, t]) => ({ v, t }))} valor={cob.origem} onChange={(v) => setCob((c) => ({ ...c, origem: v }))} />
                         </div>
+                        </>
+                        ) : (
+                        <div>
+                            <span className={ROTULO}>Dono da venda</span>
+                            <div className="flex min-h-12 items-center rounded-xl bg-[#F1F4F8] px-3.5 text-[15px] font-bold dark:bg-[#1C2334]">
+                                {modo === "vendas"
+                                    ? "Definido pela oportunidade"
+                                    : cob.origem === "venda_direta"
+                                      ? `Venda direta · ${base.colaboradores.find((u) => u.id === cob.vendedor_usuario_id)?.nome || "colaborador"}`
+                                      : base.listas.origens[cob.origem || ""] || "Canal"}
+                            </div>
+                            <span className="mt-1 block text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                {modo === "vendas" ? "Cliente que você foi buscar: a comissão da adesão é sua. Cliente que veio pelos canais (Aurora, site): sem comissão." : "Vem da proposta e não muda aqui."}
+                            </span>
+                        </div>
+                        )}
                         <div>
                             <span className={ROTULO}>Indicado por (opcional)</span>
                             <Combo rotulo="Indicado por" placeholder="Nome do titular ou nº do contrato" opcoes={indicadores} valor={cob.indicador} onChange={(v) => setCob((c) => ({ ...c, indicador: v }))} onTexto={procurarIndicador} vazio="Ninguém" />
@@ -472,7 +555,11 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
                         </div>
                     ) : null}
                     <div className={NOTA}>
-                        <span>&quot;Salvar pré-cadastro&quot; grava o contrato e o número (até a virada, números de teste a partir de 900001). Ele vira <b>Ativo</b> quando a adesão é paga, e a carência conta dessa data.</span>
+                        <span>
+                            {modo === "conferir"
+                                ? "Salva o cadastro da proposta. O contrato é gerado nas Propostas de Adesão, com a adesão paga."
+                                : "A venda vai para as Propostas de Adesão (Administrativo), sem número. O número do contrato sai quando a adesão for paga; a carência conta dessa data."}
+                        </span>
                     </div>
                 </>
             ) : null}
@@ -491,7 +578,7 @@ export default function Novo({ base, recarregarBase, avisar, onCriado }: { base:
                     </button>
                 ) : (
                     <button type="button" className={BTN_PRI} disabled={salvando} onClick={() => void salvar()}>
-                        {salvando ? "Salvando…" : "Salvar pré-cadastro"}
+                        {salvando ? "Salvando…" : rotuloSalvar || (modo === "conferir" ? "Salvar cadastro" : "Enviar para as Propostas")}
                     </button>
                 )}
             </div>

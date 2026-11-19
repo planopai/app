@@ -126,6 +126,7 @@ export function CamposTitular({
     avisar,
     cpfFixo,
     aoAcharCpf,
+    url = URL_CT,
 }: {
     t: TitularForm;
     set: (p: Partial<TitularForm>) => void;
@@ -134,6 +135,8 @@ export function CamposTitular({
     avisar: (m: string) => void;
     cpfFixo?: boolean;
     aoAcharCpf?: (contratos: { id: number; numero: string; situacao: string; plano: string }[]) => void;
+    /** PHP das consultas (CPF, cidade, bairro): Contratos, Propostas ou Vendas. */
+    url?: string;
 }) {
     const [buscandoCep, setBuscandoCep] = useState(false);
     const [cpfInfo, setCpfInfo] = useState("");
@@ -145,8 +148,10 @@ export function CamposTitular({
             return;
         }
         try {
-            const j = await api(URL_CT, "cpf", undefined, `&cpf=${d}`);
-            if (j.dados) {
+            const j = await api(url, "cpf", undefined, `&cpf=${d}`);
+            // Vender plano (todos os colaboradores): só o aviso, sem dados pessoais
+            if (j.dados?.aviso) setCpfInfo(j.dados.aviso);
+            else if (j.dados) {
                 set(titularDeDados(j.dados));
                 const n = j.dados.contratos?.length || 0;
                 setCpfInfo(n ? `Já é titular de ${n} contrato(s): ${j.dados.contratos.map((c: any) => c.numero + " (" + c.plano + ")").join(", ")}.` : "Pessoa já está no cadastro único: dados preenchidos.");
@@ -166,7 +171,7 @@ export function CamposTitular({
         let cidade = base.cidades.find((c) => (r.ibge && String(c.ibge) === r.ibge) || (semAcento(c.nome) === semAcento(r.cidade) && c.uf === r.uf));
         if (!cidade && r.cidade) {
             try {
-                const j = await api(URL_CT, "cidade", { nome: r.cidade, uf: r.uf, ibge: r.ibge });
+                const j = await api(url, "cidade", { nome: r.cidade, uf: r.uf, ibge: r.ibge });
                 await recarregarBase();
                 cidade = j.dados;
             } catch (e: any) {
@@ -184,7 +189,7 @@ export function CamposTitular({
         const n = nome.trim();
         if (!n) return avisar("Escreva o nome do bairro no campo e toque em \"Pedir bairro novo\".");
         try {
-            const j = await api(URL_CT, "bairro", { cidade_id: t.cidade_id, nome: n });
+            const j = await api(url, "bairro", { cidade_id: t.cidade_id, nome: n });
             avisar(j.msg);
             await recarregarBase();
             if (j.dados?.id) set({ bairro_id: j.dados.id });

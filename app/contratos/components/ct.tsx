@@ -9,6 +9,9 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import { api, CAMPO, mensagemErro } from "../../contas-pagar/components/fin";
 
 export const URL_CT = "https://api.planoassistencialintegrado.com.br/ct_contratos.php";
+/** Propostas de Adesão (Administrativo) e Vendas (Comercial) — ambiente de vendas, 19/11/2026. */
+export const URL_PROP = "https://api.planoassistencialintegrado.com.br/ct_propostas.php";
+export const URL_VD = "https://api.planoassistencialintegrado.com.br/ct_vendas.php";
 
 /* ============================== tipos ============================== */
 
@@ -181,19 +184,19 @@ export type Ficha = {
 
 /* ============================== dados ============================== */
 
-export function useBase() {
+export function useBase(url: string = URL_CT) {
     const [base, setBase] = useState<Base | null>(null);
     const [erro, setErro] = useState("");
     const recarregar = useCallback(async () => {
         try {
-            const j = await api(URL_CT, "base");
+            const j = await api(url, "base");
             setBase(j.dados);
             setErro("");
         } catch (e: any) {
-            const m = mensagemErro(e, "Não foi possível carregar os contratos.");
+            const m = mensagemErro(e, "Não foi possível carregar os dados.");
             if (m) setErro(m);
         }
-    }, []);
+    }, [url]);
     useEffect(() => {
         void recarregar();
     }, [recarregar]);

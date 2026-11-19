@@ -86,7 +86,7 @@ export type ItemModulo = {
     /** Quando a mesma tela tem duas chaves/rotas (ex.: geral e estoque), a rota segue a chave que o usuário tem. */
     alternativas?: { slug: string; href: string }[];
     /** Chave do contador (useContadores) mostrado como selo. */
-    selo?: "aguardando" | "coroas" | "estoque" | "avisos" | "messenger";
+    selo?: "aguardando" | "coroas" | "estoque" | "avisos" | "messenger" | "propostas";
     /** Seção dentro do módulo (ex.: "Pessoas e acesso"). Telas da mesma seção ficam juntas. */
     secao?: string;
     /** 17/11/2026: módulo (e seção) onde a tela nova entra quando a organização salva ainda não a conhece. */
@@ -237,6 +237,9 @@ export const MODULOS: Modulo[] = [
             { id: "messenger-ocorrencias", titulo: "Ocorrências", desc: "Problemas levantados pela Aurora", href: "/messenger-ocorrencias", slugs: ["messenger-ocorrencias"], icone: IconAlertTriangle },
             { id: "messenger-funil", titulo: "Funil de vendas", desc: "Leads do WhatsApp até o contrato", href: "/messenger-funil", slugs: ["messenger-funil"], icone: IconUserPlus },
             { id: "messenger-disparos", titulo: "Monitor de disparos", desc: "Campanhas e lembretes pelo WhatsApp", href: "/messenger-disparos", slugs: ["messenger-disparos"], icone: IconBell },
+            // 19/11/2026: ambiente de vendas (autorizado). Vendas vai para o módulo Comercial pelo Organizar menu.
+            { id: "propostas-adesao", titulo: "Propostas de Adesão", desc: "Sala de espera dos contratos novos", href: "/propostas-adesao", slugs: ["propostas-adesao"], icone: IconClipboardPlus, selo: "propostas" },
+            { id: "comercial-vendas", titulo: "Vendas", desc: "Funil, vender plano e minhas vendas", href: "/comercial-vendas", slugs: ["*"], icone: IconChartFunnel },
         ],
     },
     {

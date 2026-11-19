@@ -166,6 +166,7 @@ export function AppSidebar(
     if (href === "/avisos") return numeros.avisos ?? 0;
     if (href === "/coroa-de-flores") return numeros.coroas ?? 0;
     if (href === "/estoque" || href === "/geral") return numeros.estoque ?? 0;
+    if (href === "/propostas-adesao") return numeros.propostas ?? 0; // 19/11/2026: ambiente de vendas
     return 0;
   };
 

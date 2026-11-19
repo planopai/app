@@ -2,8 +2,8 @@
 
 /**
  * Contratos (/contratos, chave contratos) · módulo Contratos, fase 2 — prévia aprovada em 19/11/2026 (versão 10).
- * Back-end: ct_contratos.php. Abas: Contratos (lista + ficha) e Novo contrato. Propostas de Adesão ficam na tela própria
- * (/messenger-propostas), fora de Contratos (decisão de 19/11/2026; o módulo dela será definido com o ambiente de vendas).
+ * Back-end: ct_contratos.php. Abas: Contratos (lista + ficha) e Novo contrato. Ambiente de vendas (19/11/2026): Novo contrato
+ * manda a venda para as Propostas de Adesão (/propostas-adesao, Administrativo), sem número; o contrato sai lá, com a adesão paga.
  * Até a virada, contratos reais continuam na Unymos: aqui só contratos de teste (número a partir de 900001).
  * Lista: busca, filtros por lista com busca, Colunas (37 campos, salvas por usuário), Exportar (CSV) e ordenação por coluna
  * (OrdenarTabelas, no app-shell).
@@ -193,10 +193,9 @@ export default function Page() {
                         base={base}
                         recarregarBase={recarregar}
                         avisar={avisar}
-                        onCriado={(id) => {
+                        onCriado={() => {
+                            // a venda foi para as Propostas de Adesão (Administrativo): o contrato sai lá, com a adesão paga
                             setAba("lista");
-                            setAberto(id);
-                            void carregar(1);
                         }}
                     />
                 ) : aberto ? (
@@ -250,7 +249,7 @@ export default function Page() {
                                     ) : !linhas.length ? (
                                         <tr>
                                             <td colSpan={visiveis.length} className="px-3 py-6 text-center text-[#5B6478]">
-                                                Nenhum contrato encontrado. Os contratos de teste aparecem aqui depois do &quot;Salvar pré-cadastro&quot;.
+                                                Nenhum contrato encontrado. Os contratos de teste aparecem aqui quando a proposta gera o contrato (Propostas de Adesão).
                                             </td>
                                         </tr>
                                     ) : (

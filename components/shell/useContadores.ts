@@ -13,6 +13,8 @@
  *  - estoque: materiais_gerais.php?init=1 (produtos no mínimo ou abaixo)
  *  - avisos: avisos.php?listar=1 (os que ainda não foram finalizados), com o MESMO filtro da tela Avisos (28/10/2026):
  *    aviso de atendimento ("Atendimento: NOME: ...") só conta enquanto o atendimento estiver no Quadro
+ *  - propostas / propostasAtrasadas: ct_propostas.php?action=contador (Propostas de Adesão em qualquer etapa antes de gerar o
+ *    contrato; atrasadas = paradas há mais de 24 horas úteis), a cada 1 min — ambiente de vendas, 19/11/2026
  *
  * Chat: hoje o Chat é a Aurora e não tem contador de não lidas; o selo do Chat só existirá quando houver chat interno.
  */
@@ -24,6 +26,8 @@ const ENDPOINT = "https://api.planoassistencialintegrado.com.br";
 const INTERVALO_MS = 15_000; // igual à home antiga; só consulta com a aba visível e com rede
 const ESTOQUE_INTERVALO_MS = 5 * 60_000;
 let estoqueConsultadoEm = 0;
+const PROPOSTAS_INTERVALO_MS = 60_000; // ambiente de vendas (19/11/2026)
+let propostasConsultadasEm = 0;
 // Desempenho (19/11/2026): o nome do usuário não muda a cada 15 s. Pergunta "quem sou" ao abrir, a cada 10 min
 // e quando o usuário do cookie muda (outro login sem recarregar a página).
 const NOME_INTERVALO_MS = 10 * 60_000;
@@ -47,9 +51,11 @@ export type Contadores = {
     minhasRequisicoes: number | null;
     estoque: number | null;
     avisos: number | null;
+    propostas: number | null;
+    propostasAtrasadas: number | null;
 };
 
-const VAZIO: Contadores = { nome: "", servicos: null, recolher: null, aguardando: null, coroas: null, requisicoes: null, minhasRequisicoes: null, estoque: null, avisos: null };
+const VAZIO: Contadores = { nome: "", servicos: null, recolher: null, aguardando: null, coroas: null, requisicoes: null, minhasRequisicoes: null, estoque: null, avisos: null, propostas: null, propostasAtrasadas: null };
 
 let estado: Contadores = { ...VAZIO };
 const ouvintes = new Set<() => void>();
@@ -268,6 +274,16 @@ async function atualizar() {
                     }
                     publicar({ estoque: baixos.size });
                 }
+            }),
+        );
+    }
+
+    // Propostas de Adesão (19/11/2026): selo no menu e cartão no Administrativo enquanto houver proposta antes de gerar o contrato.
+    if (has("propostas-adesao") && Date.now() - propostasConsultadasEm > PROPOSTAS_INTERVALO_MS) {
+        propostasConsultadasEm = Date.now();
+        tarefas.push(
+            getJson<{ erro?: boolean; dados?: { total?: number; atrasadas?: number } }>(`${ENDPOINT}/ct_propostas.php?action=contador&_=${t}`, sig).then((j) => {
+                if (j && !j.erro && j.dados) publicar({ propostas: Number(j.dados.total) || 0, propostasAtrasadas: Number(j.dados.atrasadas) || 0 });
             }),
         );
     }
