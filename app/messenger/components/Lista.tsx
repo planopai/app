@@ -228,7 +228,7 @@ export function SeletorLista({ rotulo, resumo, destaque, itens, compacto = false
 }
 
 /** Tipos de conversa (Tudo · Clientes · Grupos · Equipe) em lista que abre; "não lidas" fica dentro de cada tipo (23/11/2026). */
-export function Abas({ aba, soNaoLidas, totais, naoLidas, detalhes, destaque, aoEscolher, compacto = false }: { aba: Aba; soNaoLidas: boolean; totais: Record<Aba, number>; naoLidas: Record<Aba, number>; detalhes?: Partial<Record<Aba, string>>; destaque?: number; aoEscolher: (a: Aba, soNaoLidas: boolean) => void; compacto?: boolean }) {
+export function Abas({ aba, soNaoLidas, naoLidas, detalhes, destaque, aoEscolher, compacto = false }: { aba: Aba; soNaoLidas: boolean; totais?: Record<Aba, number>; naoLidas: Record<Aba, number>; detalhes?: Partial<Record<Aba, string>>; destaque?: number; aoEscolher: (a: Aba, soNaoLidas: boolean) => void; compacto?: boolean }) {
     const itens: { id: Aba; rotulo: string }[] = [
         { id: "tudo", rotulo: "Tudo" },
         { id: "clientes", rotulo: "Clientes" },
@@ -246,7 +246,7 @@ export function Abas({ aba, soNaoLidas, totais, naoLidas, detalhes, destaque, ao
                 id: i.id,
                 nome: i.rotulo,
                 detalhe: detalhes?.[i.id],
-                qtd: totais[i.id],
+                // 23/11/2026: o número de cada tipo é o de não lidas (no selo "n não lidas"), não o total de conversas
                 naoLidas: naoLidas[i.id],
                 ativo: aba === i.id,
                 ativoNaoLidas: aba === i.id && soNaoLidas,
