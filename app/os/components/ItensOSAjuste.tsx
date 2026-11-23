@@ -414,20 +414,20 @@ export default function ItensOSAjuste({
                         Valor bruto {brl(res.bruto)} · descontos nos itens {res.desconto_itens ? `− ${brl(res.desconto_itens)}` : brl(0)} · base do desconto geral {brl(baseGeral)}
                     </div>
                     <div className="mt-3 flex gap-2">
-                        <div role="group" aria-label="Tipo do desconto" className="inline-flex overflow-hidden rounded-xl border-[1.5px] border-[#C9D1DE] dark:border-white/25">
+                        <div role="group" aria-label="Tipo do desconto" className="inline-flex shrink-0 overflow-hidden rounded-xl border-[1.5px] border-[#C9D1DE] dark:border-white/25">
                             {(["%", "R$"] as const).map((m) => (
                                 <button
                                     key={m}
                                     type="button"
                                     aria-pressed={gModo === m}
                                     onClick={() => setGModo(m)}
-                                    className={`h-11 min-w-[52px] px-3 text-sm font-extrabold ${gModo === m ? "bg-[#313C55] text-white dark:bg-[#3D6A99] dark:text-white" : "bg-white text-[#313C55] dark:bg-transparent dark:text-white"}`}
+                                    className={`h-11 min-w-[52px] shrink-0 px-3 text-sm font-extrabold ${gModo === m ? "bg-[#313C55] text-white dark:bg-[#3D6A99] dark:text-white" : "bg-white text-[#313C55] dark:bg-transparent dark:text-white"}`}
                                 >
                                     {m}
                                 </button>
                             ))}
                         </div>
-                        <input inputMode="decimal" aria-label="Valor do desconto geral" placeholder="0" className={CAMPO} value={gVal} onChange={(e) => setGVal(e.target.value)} />
+                        <input inputMode="decimal" aria-label="Valor do desconto geral" placeholder="0" className={`${CAMPO} min-w-0 flex-1`} value={gVal} onChange={(e) => setGVal(e.target.value)} />
                     </div>
                     <div className="mt-3 rounded-xl bg-[#F6F8FB] px-3 py-2 text-sm font-bold dark:bg-[#1C2334]">
                         Desconto geral {pGeral.dg ? `− ${brl(pGeral.dg)}` : brl(0)} · Total {brl(pGeral.total)}
