@@ -492,7 +492,8 @@ function DetalheOS({
     const [versaoItens, setVersaoItens] = useState(0);
     /** OS cobrada da família (Particular, diferenças e coroa): valores ajustáveis. */
     const ehDaFamilia = ["PRT", "DIF_SOC", "DIF_PRF", "COR"].includes(linha.tipo);
-    const podeReabrir = ehDaFamilia && statusAtual === "FECHADA";
+    // 23/11/2026: a OS da Prefeitura também reabre (ex.: pacote ou coroa lançados errado), com motivo, pelo mesmo "reabrir".
+    const podeReabrir = (ehDaFamilia || linha.tipo === "PRF") && statusAtual === "FECHADA";
 
     const carregar = useCallback(async () => {
         setErro("");
@@ -803,7 +804,9 @@ function DetalheOS({
                 {reabrir && (
                     <Modal titulo={`Reabrir ${linha.numero_os}`} onFechar={() => setReabrir(false)}>
                         <div className="text-sm text-[#313C55]">
-                            A assinatura e a nota promissória desta OS deixam de valer. Depois de alterar, o responsável assina de novo.
+                            {linha.tipo === "PRF"
+                                ? "A OS volta a ficar aberta. Corrija o registro do atendimento ou o pedido de coroa e feche a OS de novo."
+                                : "A assinatura e a nota promissória desta OS deixam de valer. Depois de alterar, o responsável assina de novo."}
                         </div>
                         <label className="mt-3 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">Motivo *</label>
                         <textarea

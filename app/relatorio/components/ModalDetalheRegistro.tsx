@@ -59,6 +59,7 @@ import {
     type StatusAvaliacoesItem,
 } from "./Api";
 import BotaoExportarPdf from "./BotaoExportarPdf";
+import { usePodeCorrigir } from "@/components/correcoes/CorrecoesAtendimento";
 import TermoVelorioOnlineModal from "@/app/acompanhamento/components/TermoVelorioOnlineModal";
 import { situacaoTermoVelorio } from "@/app/acompanhamento/components/termoVelorioOnline";
 import { montarResumoFinalDoLog } from "./Normalizadores";
@@ -760,6 +761,8 @@ export default function ModalDetalheRegistro({
     ).trim();
 
     const registroId = registro ? getRegistroId(registro) : "";
+    // 23/11/2026: a Gestão abre o Editar registro também de atendimento finalizado (fora do Quadro).
+    const podeCorrigir = usePodeCorrigir();
 
     const dados = useMemo(
         () =>
@@ -1136,6 +1139,17 @@ export default function ModalDetalheRegistro({
                                         >
                                             <IconePos />
                                         </button>
+                                    ) : null}
+
+                                    {podeCorrigir.gestao && registroId && !cancelado ? (
+                                        <a
+                                            href={`/acompanhamento?editar=${encodeURIComponent(registroId)}`}
+                                            className={`${BTN_ICONE} bg-[#F2CB3F] text-[#313C55] no-underline hover:bg-[#E4BC30]`}
+                                            title="Editar registro"
+                                            aria-label="Editar registro"
+                                        >
+                                            <IconPencil size={20} stroke={2} />
+                                        </a>
                                     ) : null}
 
                                     <button

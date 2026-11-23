@@ -387,7 +387,10 @@ function JanelaCorrecoesCoroa({ pedidoId, falecido, onFechar, onFeito }: { pedid
 
                             {item.os && modeloNovo && modeloNovo.id !== item.produto_id ? (
                                 item.os.prefeitura ? (
-                                    <Aviso tom="atencao">OS {item.os.numero_os} (Prefeitura): o item é trocado; o valor segue o contrato.</Aviso>
+                                    <Aviso tom="atencao">
+                                        OS {item.os.numero_os} (Prefeitura): as OS do pedido são refeitas com o modelo novo, com número novo. Modelo fora do pacote gera a diferença
+                                        para a família; dentro do pacote, a diferença sai. Se alguma OS estiver fechada, reabra no Financeiro antes.
+                                    </Aviso>
                                 ) : item.os.aberta ? (
                                     <Aviso tom="atencao">
                                         OS {item.os.numero_os} (aberta): a coroa passa de {brl(item.os.valor_linha)} para {brl(modeloNovo.valor)}
