@@ -154,7 +154,7 @@ export type ItemSeletor = {
  * Filtro em lista que abre e fecha (23/11/2026), no lugar das pílulas com rolagem lateral.
  * A linha escolhe o filtro; o selo "n não lidas" de cada linha mostra só as não lidas dali. Fecha ao escolher ou ao tocar fora.
  */
-export function SeletorLista({ rotulo, resumo, destaque, itens }: { rotulo: string; resumo: React.ReactNode; destaque?: number; itens: ItemSeletor[] }) {
+export function SeletorLista({ rotulo, resumo, destaque, itens, compacto = false }: { rotulo: string; resumo: React.ReactNode; destaque?: number; itens: ItemSeletor[]; compacto?: boolean }) {
     const [aberto, setAberto] = useState(false);
     const caixa = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -170,6 +170,49 @@ export function SeletorLista({ rotulo, resumo, destaque, itens }: { rotulo: stri
         setAberto(false);
     };
     let secao = "";
+    const lista = (cls: string) => (
+        <div role="listbox" aria-label={rotulo} className={cls}>
+            {itens.map((i) => {
+                const cab = i.secao && i.secao !== secao ? i.secao : "";
+                if (cab) secao = cab;
+                const so = !!i.ativoNaoLidas;
+                return (
+                    <React.Fragment key={i.id}>
+                        {cab && <div className="px-2 pb-1 pt-2 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">{cab}</div>}
+                        <div className="flex items-center gap-1.5">
+                            <button type="button" role="option" aria-selected={i.ativo && !so} onClick={() => escolher(i.onEscolher)} className={`flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 text-left ${i.ativo && !so ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "font-bold text-[#1F2638] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10"} ${i.apagado ? "opacity-70" : ""}`}>
+                                {i.cor && <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: i.cor }} aria-hidden="true" />}
+                                <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-[15px]">{i.nome}</span>
+                                    {i.detalhe && <span className="block truncate text-[12.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{i.detalhe}</span>}
+                                </span>
+                                {!!i.qtd && <span className="flex-none text-[14px] font-extrabold text-[#4A5468] dark:text-[#AEB9CF]">{i.qtd}</span>}
+                            </button>
+                            {i.onNaoLidas && ((i.naoLidas || 0) > 0 || so) && (
+                                <button type="button" aria-pressed={so} onClick={() => escolher(i.onNaoLidas!)} className={`flex h-9 flex-none items-center gap-1.5 rounded-full border px-2.5 text-[13px] ${so ? "border-[#4E6B0A] bg-[#4E6B0A] font-extrabold text-white dark:border-[#B3CE52] dark:bg-[#B3CE52] dark:text-[#1F2638]" : "border-[#D8E6A8] font-bold text-[#2F4207] hover:bg-[#F3F8E4] dark:border-[#B3CE52]/40 dark:text-[#DCEBAA] dark:hover:bg-white/10"}`}>
+                                    <span className={`h-2 w-2 rounded-full ${so ? "bg-white dark:bg-[#1F2638]" : "bg-[#4E6B0A] dark:bg-[#B3CE52]"}`} aria-hidden="true" />
+                                    {i.naoLidas || 0} não lida{(i.naoLidas || 0) === 1 ? "" : "s"}
+                                </button>
+                            )}
+                        </div>
+                    </React.Fragment>
+                );
+            })}
+        </div>
+    );
+    if (compacto) {
+        // 23/11/2026: versão em pílula, lado a lado com as outras; a lista abre por cima da área das conversas (largura da linha)
+        return (
+            <div ref={caixa} className="min-w-0 flex-1">
+                <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto} title={rotulo} className={`flex h-9 w-full items-center gap-1 rounded-full border px-3 text-left ${aberto ? "border-[#313C55] bg-[#E9EFF6] dark:border-[#A9BED6] dark:bg-[#3D6A99]/30" : "border-[#E1E5EC] bg-white hover:bg-[#F5F6F8] dark:border-white/15 dark:bg-[#232B3F] dark:hover:bg-white/5"}`}>
+                    <span className="min-w-0 flex-1 truncate text-[14px] font-extrabold text-[#1F2638] dark:text-white">{resumo}</span>
+                    {!!destaque && <span className="flex h-5 min-w-5 flex-none items-center justify-center rounded-full bg-[#B3CE52] px-1 text-[11.5px] font-extrabold text-[#1F2638]">{destaque > 99 ? "99+" : destaque}</span>}
+                    <span className={`flex-none text-[#5B6478] transition-transform dark:text-[#AEB9CF] ${aberto ? "rotate-180" : ""}`}><Icone nome="chevron" className="h-3.5 w-3.5" /></span>
+                </button>
+                {aberto && lista("absolute left-0 right-0 top-full z-30 mt-1 max-h-[60vh] overflow-y-auto rounded-2xl border border-[#E1E5EC] bg-white px-1.5 py-1.5 shadow-xl dark:border-white/12 dark:bg-[#1C2334]")}
+            </div>
+        );
+    }
     return (
         <div ref={caixa} className={`rounded-2xl border ${aberto ? "border-[#C9D1DE] dark:border-white/20" : "border-[#E1E5EC] dark:border-white/12"} bg-white dark:bg-[#232B3F]`}>
             <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto} className="flex h-11 w-full items-center gap-2 rounded-2xl px-3 text-left hover:bg-[#F5F6F8] dark:hover:bg-white/5">
@@ -178,42 +221,13 @@ export function SeletorLista({ rotulo, resumo, destaque, itens }: { rotulo: stri
                 <Badge n={destaque || 0} />
                 <span className={`flex-none text-[#5B6478] transition-transform dark:text-[#AEB9CF] ${aberto ? "rotate-180" : ""}`}><Icone nome="chevron" className="h-4 w-4" /></span>
             </button>
-            {aberto && (
-                <div role="listbox" aria-label={rotulo} className="max-h-[55vh] overflow-y-auto border-t border-[#EEF0F3] px-1.5 py-1.5 dark:border-white/10">
-                    {itens.map((i) => {
-                        const cab = i.secao && i.secao !== secao ? i.secao : "";
-                        if (cab) secao = cab;
-                        const so = !!i.ativoNaoLidas;
-                        return (
-                            <React.Fragment key={i.id}>
-                                {cab && <div className="px-2 pb-1 pt-2 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">{cab}</div>}
-                                <div className="flex items-center gap-1.5">
-                                    <button type="button" role="option" aria-selected={i.ativo && !so} onClick={() => escolher(i.onEscolher)} className={`flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 text-left ${i.ativo && !so ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "font-bold text-[#1F2638] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10"} ${i.apagado ? "opacity-70" : ""}`}>
-                                        {i.cor && <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: i.cor }} aria-hidden="true" />}
-                                        <span className="min-w-0 flex-1">
-                                            <span className="block truncate text-[15px]">{i.nome}</span>
-                                            {i.detalhe && <span className="block truncate text-[12.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{i.detalhe}</span>}
-                                        </span>
-                                        {!!i.qtd && <span className="flex-none text-[14px] font-extrabold text-[#4A5468] dark:text-[#AEB9CF]">{i.qtd}</span>}
-                                    </button>
-                                    {i.onNaoLidas && ((i.naoLidas || 0) > 0 || so) && (
-                                        <button type="button" aria-pressed={so} onClick={() => escolher(i.onNaoLidas!)} className={`flex h-9 flex-none items-center gap-1.5 rounded-full border px-2.5 text-[13px] ${so ? "border-[#4E6B0A] bg-[#4E6B0A] font-extrabold text-white dark:border-[#B3CE52] dark:bg-[#B3CE52] dark:text-[#1F2638]" : "border-[#D8E6A8] font-bold text-[#2F4207] hover:bg-[#F3F8E4] dark:border-[#B3CE52]/40 dark:text-[#DCEBAA] dark:hover:bg-white/10"}`}>
-                                            <span className={`h-2 w-2 rounded-full ${so ? "bg-white dark:bg-[#1F2638]" : "bg-[#4E6B0A] dark:bg-[#B3CE52]"}`} aria-hidden="true" />
-                                            {i.naoLidas || 0} não lida{(i.naoLidas || 0) === 1 ? "" : "s"}
-                                        </button>
-                                    )}
-                                </div>
-                            </React.Fragment>
-                        );
-                    })}
-                </div>
-            )}
+            {aberto && lista("max-h-[55vh] overflow-y-auto border-t border-[#EEF0F3] px-1.5 py-1.5 dark:border-white/10")}
         </div>
     );
 }
 
 /** Tipos de conversa (Tudo · Clientes · Grupos · Equipe) em lista que abre; "não lidas" fica dentro de cada tipo (23/11/2026). */
-export function Abas({ aba, soNaoLidas, totais, naoLidas, detalhes, destaque, aoEscolher }: { aba: Aba; soNaoLidas: boolean; totais: Record<Aba, number>; naoLidas: Record<Aba, number>; detalhes?: Partial<Record<Aba, string>>; destaque?: number; aoEscolher: (a: Aba, soNaoLidas: boolean) => void }) {
+export function Abas({ aba, soNaoLidas, totais, naoLidas, detalhes, destaque, aoEscolher, compacto = false }: { aba: Aba; soNaoLidas: boolean; totais: Record<Aba, number>; naoLidas: Record<Aba, number>; detalhes?: Partial<Record<Aba, string>>; destaque?: number; aoEscolher: (a: Aba, soNaoLidas: boolean) => void; compacto?: boolean }) {
     const itens: { id: Aba; rotulo: string }[] = [
         { id: "tudo", rotulo: "Tudo" },
         { id: "clientes", rotulo: "Clientes" },
@@ -224,7 +238,8 @@ export function Abas({ aba, soNaoLidas, totais, naoLidas, detalhes, destaque, ao
     return (
         <SeletorLista
             rotulo="Ver"
-            resumo={<>{atual}{soNaoLidas && <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]"> · só não lidas</span>}</>}
+            compacto={compacto}
+            resumo={<>{atual}{soNaoLidas && <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{compacto ? " · não lidas" : " · só não lidas"}</span>}</>}
             destaque={destaque}
             itens={itens.map((i) => ({
                 id: i.id,

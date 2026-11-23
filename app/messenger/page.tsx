@@ -751,51 +751,57 @@ export default function MessengerPage() {
                         <button type="button" onClick={() => setVerHistorico(true)} className="flex h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10" aria-label="Histórico de clientes" title="Histórico de clientes"><Icone nome="clock" className="h-[22px] w-[22px]" /></button>
                         <button type="button" onClick={alternarTelaCheia} aria-pressed={telaCheia} className="hidden h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5] md:flex dark:text-white dark:hover:bg-white/10" aria-label={telaCheia ? "Sair da tela cheia" : "Tela cheia"} title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}><Icone nome={telaCheia ? "recolher" : "expandir"} className="h-[20px] w-[20px]" /></button>
                     </div>
-                    <div className="flex flex-col gap-2.5 px-4 pb-2.5 pt-1">
-                        <label className="flex h-[52px] items-center gap-3 rounded-full bg-[#F0F2F5] px-4 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                    <div className="flex flex-col gap-2 px-4 pb-2 pt-1">
+                        <label className="flex h-11 items-center gap-3 rounded-full bg-[#F0F2F5] px-4 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                             <Icone nome="search" />
-                            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar conversa" className="min-w-0 flex-1 bg-transparent text-[18px] text-[#1F2638] outline-none dark:text-white" />
+                            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar conversa" className="min-w-0 flex-1 bg-transparent text-[17px] text-[#1F2638] outline-none dark:text-white" />
                         </label>
-                        {/* 23/11/2026: tipos de conversa e setores em listas que abrem (sem rolagem lateral); "não lidas" dentro de cada tipo */}
-                        <Abas
-                            aba={aba}
-                            soNaoLidas={soNaoLidas}
-                            totais={totaisAba}
-                            naoLidas={naoLidasAba}
-                            detalhes={porAba.fila.length && perfil?.atendente ? { clientes: `${porAba.fila.length} sem atendente`, tudo: `${porAba.fila.length} sem atendente` } : undefined}
-                            destaque={contagem.tudo}
-                            aoEscolher={escolherAba}
-                        />
+                        {/* 23/11/2026: filtros numa linha só (Ver · Setor · Etiqueta em pílulas que abrem uma lista) e as filas com contador */}
+                        <div className="relative flex gap-1.5">
+                            <Abas
+                                compacto
+                                aba={aba}
+                                soNaoLidas={soNaoLidas}
+                                totais={totaisAba}
+                                naoLidas={naoLidasAba}
+                                detalhes={porAba.fila.length && perfil?.atendente ? { clientes: `${porAba.fila.length} sem atendente`, tudo: `${porAba.fila.length} sem atendente` } : undefined}
+                                destaque={contagem.tudo}
+                                aoEscolher={escolherAba}
+                            />
+                            {aba === "clientes" && setores.length > 0 && (!perfil?.atendente || filaCli === "automatico") && (
+                                <SeletorLista
+                                    compacto
+                                    rotulo="Setor"
+                                    resumo={filtroSetor === 0 ? "Setores" : filtroSetor === -1 ? "Sem setor" : setores.find((x) => x.id === filtroSetor)?.nome || "Setores"}
+                                    itens={[
+                                        { id: "s0", nome: "Todos os setores", qtd: fila.length, ativo: filtroSetor === 0, onEscolher: () => setFiltroSetor(0) },
+                                        ...setores.map((x) => ({ id: `s${x.id}`, nome: x.nome, cor: x.cor, detalhe: x.situacao, apagado: !x.aberto, qtd: fila.filter((c) => c.setor_id === x.id).length, ativo: filtroSetor === x.id, onEscolher: () => setFiltroSetor(x.id) })),
+                                        ...(fila.some((c) => !c.setor_id) ? [{ id: "s-1", nome: "Sem setor", qtd: fila.filter((c) => !c.setor_id).length, ativo: filtroSetor === -1, onEscolher: () => setFiltroSetor(-1) }] : []),
+                                    ]}
+                                />
+                            )}
+                            {aba === "clientes" && (etiquetasEmUso.length > 0 || tiposEmUso.length > 0) && (
+                                <SeletorLista
+                                    compacto
+                                    rotulo="Etiqueta"
+                                    resumo={[filtroTipo ? TIPO_CONTATO_SELO[filtroTipo]?.[0] : "", filtroEtiqueta ? etiquetasEmUso.find((e) => e.id === filtroEtiqueta)?.nome : ""].filter(Boolean).join(" · ") || "Etiquetas"}
+                                    itens={[
+                                        { id: "e0", nome: "Todas", ativo: !filtroTipo && !filtroEtiqueta, onEscolher: () => { setFiltroTipo(""); setFiltroEtiqueta(0); } },
+                                        ...tiposEmUso.map((t) => ({ id: `t${t}`, secao: "Tipo de contato", nome: TIPO_CONTATO_SELO[t][0], cor: TIPO_CONTATO_SELO[t][1], ativo: filtroTipo === t, onEscolher: () => setFiltroTipo(filtroTipo === t ? "" : t) })),
+                                        ...etiquetasEmUso.map((e) => ({ id: `e${e.id}`, secao: "Etiquetas", nome: e.nome, cor: e.cor, ativo: filtroEtiqueta === e.id, onEscolher: () => setFiltroEtiqueta(filtroEtiqueta === e.id ? 0 : e.id) })),
+                                    ]}
+                                />
+                            )}
+                        </div>
                         {aba === "clientes" && perfil?.atendente && (
                             <div className="grid grid-cols-2 gap-1 rounded-full bg-[#F0F2F5] p-1 dark:bg-[#1C2334]" role="group" aria-label="Fila de clientes">
-                                {([["automatico", "Automático", fila.length], ["assumidas", "Assumidas", porAba.clientes.filter((c) => c.status_atendimento === "em_atendimento").length]] as const).map(([id, rotulo, qtd]) => (
-                                    <button key={id} type="button" aria-pressed={filaCli === id} onClick={() => setFilaCli(id)} className={`h-9 rounded-full text-[14.5px] ${filaCli === id ? "bg-white font-extrabold text-[#1F2638] shadow-sm dark:bg-[#3D6A99] dark:text-white" : "font-bold text-[#4A5468] dark:text-[#AEB9CF]"}`}>
-                                        {rotulo}{qtd ? ` · ${qtd}` : ""}
+                                {([["automatico", "Automático", fila.length], ["assumidas", "Assumidas", porAba.clientes.filter((c) => c.status_atendimento === "em_atendimento").length + (perfil?.gestao ? porAba.daEquipe.length : 0)]] as const).map(([id, rotulo, qtd]) => (
+                                    <button key={id} type="button" aria-pressed={filaCli === id} onClick={() => setFilaCli(id)} className={`flex h-8 items-center justify-center gap-1.5 rounded-full text-[14px] ${filaCli === id ? "bg-white font-extrabold text-[#1F2638] shadow-sm dark:bg-[#3D6A99] dark:text-white" : "font-bold text-[#4A5468] dark:text-[#AEB9CF]"}`}>
+                                        {rotulo}
+                                        <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[12px] font-extrabold ${qtd ? "bg-[#313C55] text-white dark:bg-white dark:text-[#1F2638]" : "bg-[#DDE1E7] text-[#4A5468] dark:bg-white/15 dark:text-[#AEB9CF]"}`}>{qtd}</span>
                                     </button>
                                 ))}
                             </div>
-                        )}
-                        {aba === "clientes" && setores.length > 0 && (
-                            <SeletorLista
-                                rotulo="Setor"
-                                resumo={filtroSetor === 0 ? "Todos os setores" : filtroSetor === -1 ? "Sem setor" : setores.find((x) => x.id === filtroSetor)?.nome || "Todos os setores"}
-                                itens={[
-                                    { id: "s0", nome: "Todos os setores", qtd: fila.length, ativo: filtroSetor === 0, onEscolher: () => setFiltroSetor(0) },
-                                    ...setores.map((x) => ({ id: `s${x.id}`, nome: x.nome, cor: x.cor, detalhe: x.situacao, apagado: !x.aberto, qtd: fila.filter((c) => c.setor_id === x.id).length, ativo: filtroSetor === x.id, onEscolher: () => setFiltroSetor(x.id) })),
-                                    ...(fila.some((c) => !c.setor_id) ? [{ id: "s-1", nome: "Sem setor", qtd: fila.filter((c) => !c.setor_id).length, ativo: filtroSetor === -1, onEscolher: () => setFiltroSetor(-1) }] : []),
-                                ]}
-                            />
-                        )}
-                        {aba === "clientes" && (etiquetasEmUso.length > 0 || tiposEmUso.length > 0) && (
-                            <SeletorLista
-                                rotulo="Etiqueta"
-                                resumo={[filtroTipo ? TIPO_CONTATO_SELO[filtroTipo]?.[0] : "", filtroEtiqueta ? etiquetasEmUso.find((e) => e.id === filtroEtiqueta)?.nome : ""].filter(Boolean).join(" · ") || "Todas"}
-                                itens={[
-                                    { id: "e0", nome: "Todas", ativo: !filtroTipo && !filtroEtiqueta, onEscolher: () => { setFiltroTipo(""); setFiltroEtiqueta(0); } },
-                                    ...tiposEmUso.map((t) => ({ id: `t${t}`, secao: "Tipo de contato", nome: TIPO_CONTATO_SELO[t][0], cor: TIPO_CONTATO_SELO[t][1], ativo: filtroTipo === t, onEscolher: () => setFiltroTipo(filtroTipo === t ? "" : t) })),
-                                    ...etiquetasEmUso.map((e) => ({ id: `e${e.id}`, secao: "Etiquetas", nome: e.nome, cor: e.cor, ativo: filtroEtiqueta === e.id, onEscolher: () => setFiltroEtiqueta(filtroEtiqueta === e.id ? 0 : e.id) })),
-                                ]}
-                            />
                         )}
                     </div>
                     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-24 md:pb-3">
