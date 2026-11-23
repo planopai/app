@@ -41,7 +41,7 @@ export type Membro = { usuario_id: number; nome: string; papel: "membro" | "admi
 export type Conversa = {
     id: number;
     tipo: "individual" | "grupo" | "externo";
-    canal: "interno" | "whatsapp";
+    canal: "interno" | "whatsapp" | "site" | "facebook" | "instagram"; // site, facebook e instagram desde 16/11/2026 (aurora_13 e aurora_14)
     titulo: string;
     outro_usuario_id: number | null;
     membros: Membro[];
@@ -74,6 +74,9 @@ export type Conversa = {
     fixada_em?: string | null;
     /** marcada por mim como "não lida" (bolinha verde sem número) */
     marcada_nao_lida?: boolean;
+    /** 23/11/2026: aguardando — conversando com a Aurora, ou na fila esperando um atendente (pediu atendente, aceitou a proposta ou veio do menu) */
+    com_aurora?: boolean;
+    aguardando_atendente?: boolean;
 };
 
 export type Perfil = {

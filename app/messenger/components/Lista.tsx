@@ -135,7 +135,7 @@ function Badge({ n }: { n: number }) {
 }
 
 /** Filtros em pílula, como no WhatsApp: Tudo · Equipe · Grupos · Clientes (com contador). */
-export function Abas({ aba, setAba, contagem }: { aba: Aba; setAba: (a: Aba) => void; contagem: Record<Aba, number> }) {
+export function Abas({ aba, setAba, contagem, soNaoLidas, setSoNaoLidas }: { aba: Aba; setAba: (a: Aba) => void; contagem: Record<Aba, number>; soNaoLidas?: boolean; setSoNaoLidas?: (v: boolean) => void }) {
     const itens: { id: Aba; rotulo: string }[] = [
         { id: "tudo", rotulo: "Tudo" },
         { id: "clientes", rotulo: "Clientes" },
@@ -156,11 +156,25 @@ export function Abas({ aba, setAba, contagem }: { aba: Aba; setAba: (a: Aba) => 
                     {i.id !== "tudo" && contagem[i.id] > 0 && <span className="text-[14px] font-extrabold">{contagem[i.id]}</span>}
                 </button>
             ))}
+            {setSoNaoLidas && (
+                // 23/11/2026: filtro só das conversas com mensagem não lida (vale para a aba aberta)
+                <button type="button" aria-pressed={!!soNaoLidas} onClick={() => setSoNaoLidas(!soNaoLidas)} className={`flex h-[38px] flex-none items-center gap-1.5 rounded-full border px-4 text-[15.5px] md:h-9 md:px-3 md:text-[14px] ${soNaoLidas ? "border-[#4E6B0A] bg-[#4E6B0A] font-extrabold text-white dark:border-[#B3CE52] dark:bg-[#B3CE52] dark:text-[#1F2638]" : "border-[#E1E5EC] font-bold text-[#4A5468] hover:bg-[#F0F2F5] dark:border-white/15 dark:text-[#AEB9CF] dark:hover:bg-white/10"}`}>
+                    <span className={`h-2 w-2 rounded-full ${soNaoLidas ? "bg-white dark:bg-[#1F2638]" : "bg-[#4E6B0A] dark:bg-[#B3CE52]"}`} aria-hidden="true" />Não lidas
+                </button>
+            )}
         </div>
     );
 }
 
 /** Selo com a cor do setor ou da etiqueta (fundo claro, texto escuro; no modo escuro, fundo translúcido). */
+/** Canal do cliente além do WhatsApp (16/11/2026): chat do site, Messenger da Página e Direct do Instagram. */
+export const CANAIS_CLIENTE: Record<string, [string, string]> = { site: ["🌐 Site", "#3D6A99"], facebook: ["Facebook", "#1877F2"], instagram: ["Instagram", "#C13584"] };
+
+export function SeloCanal({ canal }: { canal?: string }) {
+    const c = canal ? CANAIS_CLIENTE[canal] : undefined;
+    return c ? <SeloCor nome={c[0]} cor={c[1]} pequeno /> : null;
+}
+
 export function SeloCor({ nome, cor, ponto = false, pequeno = false }: { nome: string; cor: string; ponto?: boolean; pequeno?: boolean }) {
     const t = tonsDaCor(cor);
     return (
@@ -281,6 +295,9 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
                         </div>
                         <div className="mt-1 flex min-w-0 items-center gap-1.5 overflow-hidden">
                             {etiqueta}
+                            {c.tipo === "externo" && <SeloCanal canal={c.canal} />}
+                            {c.com_aurora && <SeloCor nome="Com a Aurora" cor="#6D4FC2" pequeno />}
+                            {c.aguardando_atendente && <SeloCor nome="Aguardando atendente" cor="#C2410C" pequeno />}
                             {c.tipo === "externo" && c.contato?.tipo && TIPO_CONTATO_SELO[c.contato.tipo] && <SeloCor nome={TIPO_CONTATO_SELO[c.contato.tipo][0]} cor={TIPO_CONTATO_SELO[c.contato.tipo][1]} pequeno />}
                             {c.setor && c.status_atendimento === "aguardando" && <SeloCor nome={c.setor.nome} cor={c.setor.cor} ponto pequeno />}
                             <SelosEtiquetas etiquetas={c.etiquetas} />

@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { API_BASE, apiJson, msgGet, msgPost } from "@/components/messenger/api";
 import { formatoAudio, GravadorMp3 } from "@/components/messenger/compressao";
 import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@/components/messenger/tipos";
-import { Avatar, Icone, previa, SeloCor, SelosEtiquetas } from "./Lista";
+import { Avatar, CANAIS_CLIENTE, Icone, previa, SeloCor, SelosEtiquetas } from "./Lista";
 import { BarraBusca, MenuAnexar, MenuMensagem, Reacoes, SugestoesRespostas } from "./Acoes";
 import { SeloUnymos } from "./PainelCliente";
 import ModeloCampos from "@/components/messenger/ModeloCampos";
@@ -804,6 +804,9 @@ export default function JanelaConversa(props: {
     }, [c.id]);
 
     const externo = c.tipo === "externo";
+    // 16/11/2026: cliente pelo chat do site, pelo Facebook ou pelo Instagram (sem modelos aprovados; no site, sem janela de 24 h)
+    const canalNovo = externo && c.canal !== "whatsapp" ? CANAIS_CLIENTE[c.canal] : undefined;
+    const nomeCanal = c.canal === "site" ? "chat do site" : canalNovo ? canalNovo[0] : "WhatsApp";
     const janelaFechada = externo && !c.janela_aberta;
     const enviar = () => {
         const t = texto.trim();
@@ -869,7 +872,8 @@ export default function JanelaConversa(props: {
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                         <span className="min-w-0 truncate text-[19px] font-extrabold text-[#1F2638] md:text-[17px] dark:text-white" title={c.titulo}>{c.titulo}</span>
-                        {externo && <span title="Cliente do WhatsApp" aria-label="WhatsApp" className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/15 dark:text-[#DCEBAA]"><Icone nome="phone" className="h-3 w-3" /></span>}
+                        {externo && !canalNovo && <span title="Cliente do WhatsApp" aria-label="WhatsApp" className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/15 dark:text-[#DCEBAA]"><Icone nome="phone" className="h-3 w-3" /></span>}
+                        {canalNovo && <SeloCor nome={canalNovo[0]} cor={canalNovo[1]} pequeno />}
                     </div>
                     <div className="truncate text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{props.digitando ? <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span> : subtitulo}</div>
                 </div>
@@ -962,14 +966,14 @@ export default function JanelaConversa(props: {
                     onFechar={() => { setBuscando(false); setTermo(""); }}
                 />
             )}
-            {externo && c.status_atendimento !== "aguardando" && (janelaRecolhida ? (
+            {externo && c.canal !== "site" && c.status_atendimento !== "aguardando" && (janelaRecolhida ? (
                 <button type="button" onClick={() => recolherJanela(false)} className={`mx-3 mt-1.5 flex items-center gap-1.5 self-end rounded-full px-2.5 py-1 text-[12.5px] font-bold shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${c.janela_aberta ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/15" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15"}`} aria-label="Mostrar a janela de 24 horas do WhatsApp">
                     <Icone nome="clock" className="h-4 w-4" />{c.janela_aberta ? "24 h" : "Janela fechada"}<Icone nome="chevron" className="h-3.5 w-3.5" />
                 </button>
             ) : (
                 <div className={`flex items-center gap-2 border-b border-[#E3E8F0] py-1.5 pl-4 pr-1.5 text-[13.5px] font-bold dark:border-white/12 ${c.janela_aberta ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/15" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15"}`} role="status">
                     <Icone nome="clock" className="h-[18px] w-[18px] flex-none" />
-                    <span className="min-w-0 flex-1">{c.janela_aberta ? `Janela de 24 h aberta até ${new Date(c.janela_ate || "").toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "Janela de 24 h fechada: só modelos aprovados pela Meta"}</span>
+                    <span className="min-w-0 flex-1">{c.janela_aberta ? `Janela de 24 h aberta até ${new Date(c.janela_ate || "").toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : canalNovo ? `Prazo para responder pelo ${canalNovo[0]} terminou: continue pelo WhatsApp (Nova conversa) se a pessoa informou o celular` : "Janela de 24 h fechada: só modelos aprovados pela Meta"}</span>
                     <button type="button" onClick={() => recolherJanela(true)} className="flex h-9 w-9 flex-none items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10" aria-label="Recolher aviso da janela de 24 horas" title="Recolher"><Icone nome="x" className="h-4 w-4" /></button>
                 </div>
             ))}
@@ -991,7 +995,11 @@ export default function JanelaConversa(props: {
                 </div>
             ) : janelaFechada && !modoNota ? (
                 <div className="border-t border-[#E3E8F0] bg-white p-3 dark:border-white/12 dark:bg-[#232B3F]">
-                    <EscolherModelo onEnviar={props.onEnviarModelo} conversaId={c.id} />
+                    {canalNovo ? (
+                        <div className="flex items-center gap-2 text-sm font-bold text-[#4A5468] dark:text-[#AEB9CF]"><Icone nome="lock" className="h-[18px] w-[18px] flex-none" />O prazo para responder pelo {nomeCanal} terminou. Se a pessoa informou o celular, continue pelo WhatsApp (Nova conversa).</div>
+                    ) : (
+                        <EscolherModelo onEnviar={props.onEnviarModelo} conversaId={c.id} />
+                    )}
                     {props.onEnviarNota && <button type="button" onClick={() => setModoNota(true)} className="mt-2 flex h-9 items-center gap-1.5 rounded-xl bg-[#FFF4C2] px-3 text-[13px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]"><Icone nome="nota" className="h-4 w-4" />Escrever nota interna</button>}
                 </div>
             ) : (
@@ -1048,7 +1056,7 @@ export default function JanelaConversa(props: {
                                         }}
                                         onChange={(e) => aoDigitar(e.target.value)}
                                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); enviar(); } }}
-                                        placeholder={modoNota ? "Nota interna" : externo ? "Responder pelo WhatsApp" : "Mensagem"}
+                                        placeholder={modoNota ? "Nota interna" : externo ? `Responder pelo ${nomeCanal}` : "Mensagem"}
                                         aria-label="Mensagem"
                                         className="max-h-40 min-w-0 flex-1 resize-none bg-transparent py-[13px] text-[18px] leading-7 text-[#1F2638] outline-none dark:text-white"
                                     />

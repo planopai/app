@@ -35,7 +35,7 @@ export type Membro = { usuario_id: number; nome: string; papel: "membro" | "admi
 export type Conversa = {
     id: number;
     tipo: "individual" | "grupo" | "externo";
-    canal: "interno" | "whatsapp";
+    canal: "interno" | "whatsapp" | "site" | "facebook" | "instagram"; // site, facebook e instagram desde 16/11/2026 (aurora_13 e aurora_14)
     titulo: string;
     outro_usuario_id: number | null;
     membros: Membro[];
