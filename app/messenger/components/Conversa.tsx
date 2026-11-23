@@ -422,7 +422,9 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
     if (m.autor_tipo === "sistema" && !automatica) {
         return <div className="my-1 self-center rounded-lg bg-white/90 px-3 py-1 text-center text-[14px] font-bold text-[#4A5468] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F] dark:text-[#AEB9CF]">{m.texto}</div>;
     }
-    const minha = (m.autor_tipo === "usuario" && m.autor_usuario_id === eu) || automatica;
+    // 23/11/2026: na conversa com cliente, toda a equipe fica à direita (junto com a Aurora) e o cliente à esquerda
+    const daEquipe = conversa.tipo === "externo" && m.autor_tipo === "usuario" && m.autor_usuario_id !== eu;
+    const minha = (m.autor_tipo === "usuario" && m.autor_usuario_id === eu) || automatica || daEquipe;
     const hora = new Date(m.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     let leitura: React.ReactNode = null;
     if (minha && !m.apagada) {
@@ -507,7 +509,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                         <Icone nome="chevron" className="h-4 w-4" />
                     </button>
                 )}
-                {!minha && conversa.tipo !== "individual" && primeiraDoBloco && <div className="mb-0.5 text-[14.5px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{m.autor_nome || "—"}</div>}
+                {(!minha || daEquipe) && conversa.tipo !== "individual" && primeiraDoBloco && <div className="mb-0.5 text-[14.5px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{m.autor_nome || "—"}</div>}
                 {m.apagada ? (
                     <span className="italic text-[#6B7488] dark:text-[#C9D1DE]">Mensagem apagada</span>
                 ) : (
