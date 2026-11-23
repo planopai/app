@@ -180,6 +180,7 @@ export type Ficha = {
     vendas: Venda[];
     bonificacoes: Bonificacao[];
     historico: { criado_em: string; acao: string; descricao: string; usuario: string | null }[];
+    obitos?: import("./Obitos").Obito[];
 };
 
 /* ============================== dados ============================== */

@@ -12,9 +12,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { IconFileText } from "@tabler/icons-react";
 import { TopoPagina } from "@/components/shell/ModuloHub";
 import { api, BTN_PEQ, BTN_PEQ_PRI, BTN_PRI, BTN_SEC, CAMPO_P, CARTAO, ERRO, Janela, mensagemErro, NOTA, SELO, SUB, useAviso } from "../contas-pagar/components/fin";
-import { brl, Combo, isoParaBR, type Linha, SIT_SELO, URL_CT, useBase } from "./components/ct";
+import { brl, Combo, isoParaBR, type Linha, SIT_SELO, URL_CT, useBase, useGravar } from "./components/ct";
 import FichaContrato from "./components/FichaContrato";
 import Novo from "./components/Novo";
+import { AvisoObitos, type Obito } from "./components/Obitos";
 
 type Aba = "lista" | "novo";
 type Coluna = { k: string; nome: string; grupo: string; num?: boolean; v: (l: Linha) => React.ReactNode; csv?: (l: Linha) => string | number | null };
@@ -114,6 +115,25 @@ export default function Page() {
         return () => clearTimeout(t);
     }, [carregar, q]);
 
+    // Falecimentos a confirmar (atendimentos do PAI, 23/11/2026)
+    const [obitos, setObitos] = useState<Obito[]>([]);
+    const carregarObitos = useCallback(async () => {
+        try {
+            const j = await api(URL_CT, "obitos");
+            setObitos(j.dados.obitos || []);
+        } catch {
+            setObitos([]);
+        }
+    }, []);
+    useEffect(() => {
+        if (aba === "lista" && !aberto) void carregarObitos();
+    }, [aba, aberto, carregarObitos]);
+    const depoisObito = useCallback(async () => {
+        await carregarObitos();
+        await carregar(1);
+    }, [carregarObitos, carregar]);
+    const gravarObito = useGravar(avisar, depoisObito);
+
     const visiveis = COLUNAS.filter((c) => cols.includes(c.k)).sort((a, b) => cols.indexOf(a.k) - cols.indexOf(b.k));
 
     const salvarCols = async (novas: string[]) => {
@@ -186,6 +206,7 @@ export default function Page() {
                     ) : null}
                 </div>
 
+                {base && aba === "lista" && !aberto ? <AvisoObitos obitos={obitos} hoje={base.hoje} gravar={gravarObito} onAbrirContrato={setAberto} /> : null}
                 {!base ? (
                     erro ? null : <div className={`${CARTAO} p-6 text-[#5B6478]`}>Carregando…</div>
                 ) : aba === "novo" ? (

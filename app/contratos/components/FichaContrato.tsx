@@ -10,6 +10,7 @@ import { api, BTN_PEQ, BTN_PEQ_PRI, BTN_PRI, BTN_SEC, CAMPO, CARTAO, hojeISO, Ja
 import { type Base, type Beneficiario, type Bonificacao, brl, CampoData, Combo, dataValidar, type Ficha, isoParaBR, mesBRCurto, PORTES, SIT_SELO, TIPO_VENDA_REG, URL_CT, useGravar } from "./ct";
 import { benefParaEnvio, benefVazio, JanelaBenef } from "./Benef";
 import { CamposTitular, type TitularForm, titularDeDados, titularParaEnvio, titularProblemas, titularVazio } from "./Titular";
+import { AvisoObitos } from "./Obitos";
 
 type Sub = "contrato" | "benef" | "vendas" | "fin" | "transp" | "hist";
 const SUBS: [Sub, string][] = [
@@ -110,6 +111,7 @@ export default function FichaContrato({ id, base, recarregarBase, avisar, onVolt
                 <span className={`${SELO} ${SIT_SELO[c.situacao]}`}>{c.situacao_nome}</span>
                 {c.bon_pendentes ? <span className={`${SELO} ${S_BON.pendente[1]}`}>Bonificação aguardando a Gestão</span> : null}
             </div>
+            {aberto ? <AvisoObitos obitos={f.obitos || []} hoje={base.hoje} gravar={gravar} /> : null}
             <div className={`${CARTAO} flex flex-col gap-4 p-4 sm:p-5`}>
                 <div role="tablist" className="flex flex-wrap gap-2">
                     {SUBS.map(([k, n]) => (
@@ -200,7 +202,14 @@ export default function FichaContrato({ id, base, recarregarBase, avisar, onVolt
                                             <td className={`${TD} text-right`}>{b.idade ?? "—"}</td>
                                             <td className={`${TD} text-right`}>{b.valor_mensal ? brl(b.valor_mensal) : "—"}</td>
                                             <td className={TD}>{b.carencia_ate ? (b.carencia_ate <= base.hoje ? "Cumprida" : `Até ${isoParaBR(b.carencia_ate)}`) : "Conta da adesão"}</td>
-                                            <td className={TD}>{b.situacao === "ativo" ? "Ativo" : b.situacao === "falecido" ? `Falecido em ${isoParaBR(b.falecido_em)}` : `Excluído em ${isoParaBR(b.excluido_em)}`}</td>
+                                            <td className={TD}>
+                                                {b.situacao === "ativo" ? "Ativo" : b.situacao === "falecido" ? `Falecido em ${isoParaBR(b.falecido_em)}` : `Excluído em ${isoParaBR(b.excluido_em)}`}
+                                                {b.atendimento_id ? (
+                                                    <a className="block text-[12.5px] font-bold underline" href={`/acompanhamento?editar=${b.atendimento_id}`} target="_blank" rel="noreferrer">
+                                                        Atendimento nº {b.atendimento_id}
+                                                    </a>
+                                                ) : null}
+                                            </td>
                                             <td className={`${TD} whitespace-nowrap`}>
                                                 {aberto && b.situacao === "ativo" ? (
                                                     <div className="flex flex-wrap gap-1.5">
@@ -241,7 +250,7 @@ export default function FichaContrato({ id, base, recarregarBase, avisar, onVolt
                         ) : null}
                         <div className={NOTA}>
                             <span>
-                                <b>Falecimento automático (próxima etapa):</b> quando um atendimento funerário for aberto para um integrante do plano, o beneficiário já ficará marcado como falecido, com a data e o link para a OS. &quot;Registrar falecimento&quot; fica para os casos sem atendimento do PAI.
+                                <b>Falecimento com atendimento do PAI:</b> quando a OS do atendimento é montada com o número deste contrato, aparece em &quot;Falecimentos a confirmar&quot; (acima), com a sugestão pelo nome e nascimento. Ao confirmar, a pessoa sai do contrato com a data e o número do atendimento. &quot;Registrar falecimento&quot; fica para os casos sem atendimento do PAI.
                             </span>
                         </div>
                         <div className={NOTA}>
@@ -506,7 +515,7 @@ function JanelaSair({ b, motivo, base, onFechar, onSalvar }: { b: Beneficiario; 
                 {motivo === "falecido"
                     ? b.tipo === "titular"
                         ? "Titular falecido: o sucessor tem 30 dias para aceitar o contrato (cláusula 7.1). Use só quando o atendimento não foi do PAI."
-                        : "Use só quando o atendimento não foi do PAI; com atendimento do PAI isso será feito sozinho."
+                        : "Use só quando o atendimento não foi do PAI; com atendimento do PAI, confirme em \"Falecimentos a confirmar\"."
                     : "A exclusão encerra o valor do extra (se for pago) e fica no histórico."}
             </div>
         </Janela>
