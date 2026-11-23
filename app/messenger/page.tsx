@@ -684,7 +684,8 @@ export default function MessengerPage() {
     // 23/11/2026: aba Finalizadas e "Retomar atendimento" (abre um atendimento novo já com quem pediu)
     const carregarFinalizadas = useCallback(async () => {
         try {
-            setFinalizadas(await msgGet<Conversa[]>("finalizadas"));
+            // sem contador de não lidas: o atendimento já terminou (o número parecia mensagem sem resposta)
+            setFinalizadas((await msgGet<Conversa[]>("finalizadas")).map((c) => ({ ...c, nao_lidas: 0, marcada_nao_lida: false })));
         } catch (e: any) {
             setErro(e.message);
         }
