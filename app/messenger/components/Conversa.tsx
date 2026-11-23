@@ -1053,22 +1053,26 @@ export default function JanelaConversa(props: {
             </div>
 
             {/* campo de envio */}
-            {externo && !c.posso_responder && !modoNota ? (
+            {externo && c.status_atendimento === "encerrado" && !modoNota ? (
+                // 23/11/2026: conversa finalizada — aviso e "Retomar atendimento" centralizados
+                <div className="flex flex-col items-center gap-2 bg-[#F0F2F5] px-4 py-3 text-center text-sm font-bold text-[#4A5468] dark:bg-[#232B3F] dark:text-[#AEB9CF]">
+                    <span className="flex items-center gap-2"><Icone nome="lock" className="h-[18px] w-[18px] flex-none" />Atendimento finalizado.</span>
+                    {props.onRetomar && (
+                        <button type="button" onClick={props.onRetomar} className="flex h-10 items-center gap-2 rounded-xl bg-[#313C55] px-5 text-[14px] font-extrabold text-white hover:bg-[#262F45] dark:bg-[#3D6A99] dark:hover:bg-[#4A7AAB]"><Icone nome="transf" className="h-[18px] w-[18px]" />Retomar atendimento</button>
+                    )}
+                </div>
+            ) : externo && !c.posso_responder && !modoNota ? (
                 <div className="flex items-center gap-2 bg-[#F0F2F5] px-4 py-2 text-sm font-bold text-[#4A5468] dark:bg-[#232B3F] dark:text-[#AEB9CF]">
                     <Icone nome="lock" className="h-[18px] w-[18px] flex-none" />
                     {(() => {
                         // 23/11/2026: aviso em uma linha só (o texto inteiro fica no "title")
-                        const [curto, longo] = c.status_atendimento === "encerrado" ? ["Atendimento finalizado.", "Este atendimento foi finalizado. Para falar de novo com o cliente, retome o atendimento."]
-                            : c.status_atendimento === "aguardando" ? ["Assuma o atendimento para responder.", "Assuma o atendimento para responder ao cliente."]
+                        const [curto, longo] = c.status_atendimento === "aguardando" ? ["Assuma o atendimento para responder.", "Assuma o atendimento para responder ao cliente."]
                             : c.gestao_acompanha ? ["Gestão: transferir ou encerrar, sem responder.", "Você vê esta conversa como Gestão: pode transferir ou encerrar, sem responder."]
                             : c.meu_papel === "observador" ? ["Você acompanha: para responder, peça a transferência.", "Você acompanha esta conversa. Para responder, ela precisa ser transferida para você."]
                             : ["Só o responsável responde ao cliente.", "Só o responsável pelo atendimento responde ao cliente."];
                         return <span className="min-w-0 flex-1 truncate" title={longo}>{curto}</span>;
                     })()}
-                    {c.status_atendimento === "encerrado" && props.onRetomar && (
-                        <button type="button" onClick={props.onRetomar} className="flex h-9 flex-none items-center gap-1.5 rounded-xl bg-[#313C55] px-3 text-[13px] font-extrabold text-white dark:bg-[#3D6A99]"><Icone nome="transf" className="h-4 w-4" />Retomar atendimento</button>
-                    )}
-                    {c.status_atendimento !== "aguardando" && c.status_atendimento !== "encerrado" && props.onEnviarNota && (
+                    {c.status_atendimento !== "aguardando" && props.onEnviarNota && (
                         <button type="button" onClick={() => setModoNota(true)} className="flex h-9 flex-none items-center gap-1.5 rounded-xl bg-[#FFF4C2] px-3 text-[13px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]"><Icone nome="nota" className="h-4 w-4" />Nota interna</button>
                     )}
                 </div>
