@@ -188,9 +188,10 @@ export function SeletorLista({ rotulo, resumo, destaque, itens, compacto = false
                                 </span>
                                 {!!i.qtd && <span className="flex-none text-[14px] font-extrabold text-[#4A5468] dark:text-[#AEB9CF]">{i.qtd}</span>}
                             </button>
-                            {i.onNaoLidas && ((i.naoLidas || 0) > 0 || so) && (
-                                <button type="button" aria-pressed={so} onClick={() => escolher(i.onNaoLidas!)} className={`flex h-9 flex-none items-center gap-1.5 rounded-full border px-2.5 text-[13px] ${so ? "border-[#4E6B0A] bg-[#4E6B0A] font-extrabold text-white dark:border-[#B3CE52] dark:bg-[#B3CE52] dark:text-[#1F2638]" : "border-[#D8E6A8] font-bold text-[#2F4207] hover:bg-[#F3F8E4] dark:border-[#B3CE52]/40 dark:text-[#DCEBAA] dark:hover:bg-white/10"}`}>
-                                    <span className={`h-2 w-2 rounded-full ${so ? "bg-white dark:bg-[#1F2638]" : "bg-[#4E6B0A] dark:bg-[#B3CE52]"}`} aria-hidden="true" />
+                            {i.onNaoLidas && (
+                                // 23/11/2026: o botão "não lidas" aparece sempre (com 0 fica apagado, mas dá para escolher)
+                                <button type="button" aria-pressed={so} onClick={() => escolher(i.onNaoLidas!)} className={`flex h-9 flex-none items-center gap-1.5 rounded-full border px-2.5 text-[13px] ${so ? "border-[#4E6B0A] bg-[#4E6B0A] font-extrabold text-white dark:border-[#B3CE52] dark:bg-[#B3CE52] dark:text-[#1F2638]" : (i.naoLidas || 0) > 0 ? "border-[#D8E6A8] font-bold text-[#2F4207] hover:bg-[#F3F8E4] dark:border-[#B3CE52]/40 dark:text-[#DCEBAA] dark:hover:bg-white/10" : "border-[#E1E5EC] font-bold text-[#8A93A6] hover:bg-[#F0F2F5] dark:border-white/12 dark:text-[#7F8AA3] dark:hover:bg-white/10"}`}>
+                                    <span className={`h-2 w-2 rounded-full ${so ? "bg-white dark:bg-[#1F2638]" : (i.naoLidas || 0) > 0 ? "bg-[#4E6B0A] dark:bg-[#B3CE52]" : "bg-[#C9D1DE] dark:bg-white/25"}`} aria-hidden="true" />
                                     {i.naoLidas || 0} não lida{(i.naoLidas || 0) === 1 ? "" : "s"}
                                 </button>
                             )}

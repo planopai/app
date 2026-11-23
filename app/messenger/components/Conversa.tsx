@@ -978,6 +978,8 @@ export default function JanelaConversa(props: {
                         {c.tipo === "grupo" && <button type="button" onClick={props.onDetalhes} className="flex h-11 w-11 items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Detalhes do grupo"><Icone nome="info" /></button>}
                     </>
                 )}
+                {/* 23/11/2026: fecha só a tela da conversa (não encerra o atendimento); no celular quem faz isso é a seta de voltar */}
+                <button type="button" onClick={props.onVoltar} className="hidden h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] md:flex dark:text-white dark:hover:bg-white/10" aria-label="Fechar a conversa (não encerra o atendimento)" title="Fechar (não encerra)"><Icone nome="x" /></button>
             </div>
             {externo && c.orcamento_ia && (
                 <button type="button" onClick={() => setOrcIa(true)} className="flex w-full items-center gap-2 border-b border-[#3D6A99] bg-[#E9EFF6] px-4 py-2 text-left text-[14.5px] font-extrabold text-[#1E3A5C] hover:bg-[#DDE7F3] dark:bg-[#3D6A99]/25 dark:text-[#DDE7F3]">
