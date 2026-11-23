@@ -1152,7 +1152,8 @@ function DetalheOS({
                             <div className="mb-3 rounded-lg bg-[#EEF5D6] px-3 py-2 text-sm text-[#313C55]">
                                 Pagamento confirmado pela loja{pedidoLojaPago ? ` (pedido nº ${pedidoLojaPago})` : ""}. Não é preciso lançar recebimento.
                             </div>
-                            {pedidoLojaPago ? <BotoesReciboLoja pedidoLojaId={pedidoLojaPago} /> : null}
+                            {/* 23/11/2026: no cartão estreito (310 px) os três botões ficavam sobrepostos; aqui ficam um embaixo do outro. */}
+                            {pedidoLojaPago ? (<div className="[&_.grid]:grid-cols-1 [&_button]:min-h-11 [&_button]:whitespace-normal"><BotoesReciboLoja pedidoLojaId={pedidoLojaPago} /></div>) : null}
                         </div>
                     )}
 

@@ -127,7 +127,8 @@ export default function MessengerPage() {
     const [perfil, setPerfil] = useState<Perfil | null>(null);
     const [aba, setAba] = useState<Aba>("tudo");
     const [soNaoLidas, setSoNaoLidas] = useState(false); // 23/11/2026: filtro "Não lidas"
-    const [filaCli, setFilaCli] = useState<"automatico" | "assumidas">("automatico"); // 23/11/2026: filas da aba Clientes
+    const [filaCli, setFilaCli] = useState<"automatico" | "assumidas" | "finalizadas">("automatico"); // 23/11/2026: filas da aba Clientes
+    const [finalizadas, setFinalizadas] = useState<Conversa[]>([]); // 23/11/2026: conversas de clientes finalizadas (mesma regra do Histórico)
     const [conversas, setConversas] = useState<Conversa[]>([]);
     const [fila, setFila] = useState<Conversa[]>([]);
     const [selId, setSelId] = useState<number | null>(null);
@@ -680,6 +681,25 @@ export default function MessengerPage() {
         await abrirConversa(id);
         return r;
     }, "Atendimento assumido.");
+    // 23/11/2026: aba Finalizadas e "Retomar atendimento" (abre um atendimento novo já com quem pediu)
+    const carregarFinalizadas = useCallback(async () => {
+        try {
+            setFinalizadas(await msgGet<Conversa[]>("finalizadas"));
+        } catch (e: any) {
+            setErro(e.message);
+        }
+    }, []);
+    useEffect(() => {
+        if (aba === "clientes" && filaCli === "finalizadas") carregarFinalizadas();
+    }, [aba, filaCli, carregarFinalizadas]);
+    const retomar = (id: number) => executar(async () => {
+        const r = await msgPost("retomar", { conversa_id: id });
+        setFilaCli("assumidas");
+        await carregarListas();
+        await abrirConversa(id);
+        setFinalizadas((fs) => fs.filter((x) => x.id !== id));
+        return r;
+    }, "Atendimento retomado.");
     const encerrar = () => {
         if (!conversaSel || !window.confirm("Encerrar o atendimento? A conversa vai para o histórico e sai da sua lista.")) return;
         executar(async () => {
@@ -727,6 +747,11 @@ export default function MessengerPage() {
     const listaAtual = (aba === "clientes" ? porAba.clientes : aba === "grupos" ? porAba.grupos : aba === "equipe" ? porAba.equipe : porAba.tudo).filter((c) => !soNaoLidas || naoLida(c));
     // 23/11/2026: aba Clientes em duas filas — Automático (ninguém assumiu: na fila esperando atendente ou com a Aurora) e Assumidas
     const verAutomatico = aba === "clientes" && !!perfil?.atendente && filaCli === "automatico";
+    const verFinalizadas = aba === "clientes" && !!perfil?.atendente && filaCli === "finalizadas";
+    const listaFinalizadas = useMemo(() => {
+        const q = busca.trim().toLowerCase();
+        return finalizadas.filter((c) => (!q || c.titulo.toLowerCase().includes(q) || (c.contato?.telefone || "").replace(/\D/g, "").includes(q.replace(/\D/g, "") || "#")) && porEtiqueta(c));
+    }, [finalizadas, busca, filtroEtiqueta, filtroTipo]); // eslint-disable-line react-hooks/exhaustive-deps
     const filaEsperando = porAba.fila.filter((c) => c.aguardando_atendente ?? !c.com_aurora);
     const filaAurora = porAba.fila.filter((c) => !!c.com_aurora);
     const area = useAreaVisivel(selId !== null);
@@ -794,11 +819,11 @@ export default function MessengerPage() {
                             )}
                         </div>
                         {aba === "clientes" && perfil?.atendente && (
-                            <div className="grid grid-cols-2 gap-1 rounded-full bg-[#F0F2F5] p-1 dark:bg-[#1C2334]" role="group" aria-label="Fila de clientes">
-                                {([["automatico", "Automático", fila.length], ["assumidas", "Assumidas", porAba.clientes.filter((c) => c.status_atendimento === "em_atendimento").length + (perfil?.gestao ? porAba.daEquipe.length : 0)]] as const).map(([id, rotulo, qtd]) => (
-                                    <button key={id} type="button" aria-pressed={filaCli === id} onClick={() => setFilaCli(id)} className={`flex h-8 items-center justify-center gap-1.5 rounded-full text-[14px] ${filaCli === id ? "bg-white font-extrabold text-[#1F2638] shadow-sm dark:bg-[#3D6A99] dark:text-white" : "font-bold text-[#4A5468] dark:text-[#AEB9CF]"}`}>
-                                        {rotulo}
-                                        <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[12px] font-extrabold ${qtd ? "bg-[#313C55] text-white dark:bg-white dark:text-[#1F2638]" : "bg-[#DDE1E7] text-[#4A5468] dark:bg-white/15 dark:text-[#AEB9CF]"}`}>{qtd}</span>
+                            <div className="grid grid-cols-3 gap-1 rounded-full bg-[#F0F2F5] p-1 dark:bg-[#1C2334]" role="group" aria-label="Fila de clientes">
+                                {([["automatico", "Automático", fila.length], ["assumidas", "Assumidas", porAba.clientes.filter((c) => c.status_atendimento === "em_atendimento").length + (perfil?.gestao ? porAba.daEquipe.length : 0)], ["finalizadas", "Finalizadas", null]] as const).map(([id, rotulo, qtd]) => (
+                                    <button key={id} type="button" aria-pressed={filaCli === id} onClick={() => setFilaCli(id)} className={`flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-full text-[14px] ${filaCli === id ? "bg-white font-extrabold text-[#1F2638] shadow-sm dark:bg-[#3D6A99] dark:text-white" : "font-bold text-[#4A5468] dark:text-[#AEB9CF]"}`}>
+                                        <span className="truncate">{rotulo}</span>
+                                        {qtd !== null && <span className={`inline-flex h-5 min-w-5 flex-none items-center justify-center rounded-full px-1.5 text-[12px] font-extrabold ${qtd ? "bg-[#313C55] text-white dark:bg-white dark:text-[#1F2638]" : "bg-[#DDE1E7] text-[#4A5468] dark:bg-white/15 dark:text-[#AEB9CF]"}`}>{qtd}</span>}
                                     </button>
                                 ))}
                             </div>
@@ -850,13 +875,22 @@ export default function MessengerPage() {
                                 <div className="px-3 pb-1.5 pt-3 text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Conversas</div>
                             </>
                         )}
-                        {aba === "clientes" && perfil?.atendente && !verAutomatico && (
+                        {verFinalizadas && perfil && (
+                            <>
+                                <div className="px-3 pb-1.5 pt-2 text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Finalizadas · {listaFinalizadas.length}</div>
+                                {listaFinalizadas.map((c) => (
+                                    <LinhaConversa key={`z${c.id}`} c={c} eu={perfil.id} selecionada={selId === c.id} onAbrir={() => abrirConversa(c.id)} />
+                                ))}
+                                {!listaFinalizadas.length && <p className="px-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">{perfil.gestao ? "Nenhuma conversa finalizada." : "Nenhuma conversa finalizada em que você participou."}</p>}
+                            </>
+                        )}
+                        {aba === "clientes" && perfil?.atendente && !verAutomatico && !verFinalizadas && (
                             <div className="px-3 pb-1.5 pt-2 text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Assumidas{soNaoLidas ? " · não lidas" : ""}</div>
                         )}
-                        {perfil && !verAutomatico && listaAtual.map((c) => (
+                        {perfil && !verAutomatico && !verFinalizadas && listaAtual.map((c) => (
                             <LinhaConversa key={c.id} c={c} eu={perfil.id} selecionada={selId === c.id} onAbrir={() => abrirConversa(c.id)} online={c.tipo === "individual" && presenca.online(c.outro_usuario_id)} acoes={c.participo ? { onFixar: () => fixarConversa(c), onMarcar: () => marcarConversa(c) } : undefined} />
                         ))}
-                        {aba === "clientes" && !verAutomatico && perfil?.gestao && porAba.daEquipe.length > 0 && (
+                        {aba === "clientes" && !verAutomatico && !verFinalizadas && perfil?.gestao && porAba.daEquipe.length > 0 && (
                             <>
                                 <button type="button" onClick={() => setPastaEquipeAberta((v) => !v)} aria-expanded={pastaEquipeAberta} className="mx-2 mt-3 flex items-center gap-2 rounded-xl bg-[#F0F2F5] px-3 py-2.5 text-left text-[14px] font-extrabold text-[#313C55] hover:bg-[#E6E9EE] dark:bg-[#1C2334] dark:text-white dark:hover:bg-white/10">
                                     <Icone nome="users" className="h-5 w-5 flex-none" />
@@ -869,7 +903,7 @@ export default function MessengerPage() {
                                 ))}
                             </>
                         )}
-                        {!listaAtual.length && !carregando && !verAutomatico && (
+                        {!listaAtual.length && !carregando && !verAutomatico && !verFinalizadas && (
                             <p className="px-4 py-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
                                 {soNaoLidas ? "Nenhuma conversa com mensagem não lida." : aba === "clientes" ? (perfil?.atendente ? "Nenhum atendimento assumido por você." : "Você não atende clientes do WhatsApp.") : aba === "grupos" ? "Você ainda não participa de grupos." : "Nenhuma conversa ainda. Toque no botão de nova conversa para começar."}
                             </p>
@@ -898,6 +932,7 @@ export default function MessengerPage() {
                             onDigitando={() => msgPost("digitando", { conversa_id: conversaSel.id }).catch(() => {})}
                             onTeclou={teclouNoPacote} onEnviarAgora={() => dispararPacote()} onCancelarEnvio={cancelarPacote}
                             onAssumir={() => assumir(conversaSel.id)} onTransferir={() => setModal("transferir")} onEncerrar={encerrar}
+                            onRetomar={perfil.atendente ? () => retomar(conversaSel.id) : undefined}
                             onSilenciar={silenciar} onDetalhes={() => setModal("detalhes")}
                             onAbrirCliente={() => setPainelCli((v) => !v)} painelClienteAberto={painelCli} textoParaInserir={textoPainel}
                         />
