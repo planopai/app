@@ -2,7 +2,7 @@
 
 /**
  * Cabeçalho do app (mockup "Repaginada do app PAI").
- *  - Computador (72 px): caminho "Módulo > Tela", pesquisa (Ctrl/⌘ K), pílula Online, sino e tema.
+ *  - Computador (72 px): caminho "Módulo > Tela", pesquisa (Ctrl/⌘ K), pílula Online, Messenger, sino e tema.
  *  - Celular (60 px): título da tela, pílula Online, tema e sino. O menu é a barra de baixo; o botão ☰ só aparece
  *    nas telas em que a barra de baixo não está (ex.: Chat da Aurora).
  * Não há mais os botões de Início e de Chat (já estão nos atalhos), a seta de voltar nem o seletor de cores.
@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconBell, IconChevronRight, IconStar, IconStarFilled } from "@tabler/icons-react";
+import { IconBell, IconChevronRight, IconMessages, IconStar, IconStarFilled } from "@tabler/icons-react";
 
 import { usePerms } from "@/app/_perms/PermsProvider";
 import { BotaoMenuCelular, useBarraVisivel } from "@/components/shell/MenuCelular";
@@ -19,6 +19,7 @@ import { acharModuloPorRota, destinoDoModulo } from "@/components/shell/modulos"
 import { rotaExiste } from "@/components/shell/rotas";
 import { useMenu } from "@/components/shell/useMenu";
 import { useContadores } from "@/components/shell/useContadores";
+import { useNaoLidas } from "@/components/messenger/ContadorMenu";
 import { ModeSwitcher } from "./mode-switcher";
 import { MenuUsuario } from "@/components/app-sidebar";
 
@@ -78,6 +79,11 @@ export function SiteHeader() {
   const pronto = perms !== null;
   const temAvisos = pronto && has("avisos") && rotaExiste("/avisos");
   const pendentes = temAvisos ? numeros.avisos ?? 0 : 0;
+  /* 23/11/2026: atalho do Messenger no cabeçalho (computador), ao lado da pílula Online, com as não lidas + fila */
+  const temMessenger = pronto && has("messenger");
+  const naoLidas = useNaoLidas(temMessenger);
+  const contMsg = temMessenger ? naoLidas.total + naoLidas.fila : 0;
+  const noMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
 
   const pilula = [
     "inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 text-[13px] font-bold",
@@ -149,6 +155,25 @@ export function SiteHeader() {
             <span className={`size-2 rounded-full ${isOnline === false ? "bg-[#B42318] dark:bg-[#FF9C92]" : "bg-[#7BA11A]"}`} />
             {isOnline === false ? "Offline" : "Online"}
           </span>
+
+          {temMessenger && (
+            <Link
+              href="/messenger"
+              aria-label={contMsg > 0 ? `Messenger: ${contMsg} novas` : "Messenger"}
+              title="Messenger"
+              aria-current={noMessenger ? "page" : undefined}
+              className={`relative hidden size-11 place-items-center rounded-lg lg:grid ${
+                noMessenger ? "bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/20 dark:text-white" : "hover:bg-accent"
+              }`}
+            >
+              <IconMessages size={20} />
+              {contMsg > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-background bg-[#F2CB3F] px-1 text-[10.5px] font-extrabold leading-none text-[#313C55]">
+                  {contMsg > 99 ? "99+" : contMsg}
+                </span>
+              )}
+            </Link>
+          )}
 
           <span className="[&_button]:size-11 [&_svg]:size-5">
             <ModeSwitcher />

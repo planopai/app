@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { msgGet, msgPost } from "@/components/messenger/api";
+import { API_BASE, apiJson, msgGet, msgPost } from "@/components/messenger/api";
 import { formatoAudio, GravadorMp3 } from "@/components/messenger/compressao";
 import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@/components/messenger/tipos";
 import { Avatar, Icone, previa, SeloCor, SelosEtiquetas } from "./Lista";
@@ -181,6 +181,124 @@ function OrcamentoAurora({ conversaId, onFechar, onUsar }: { conversaId: number;
                         </div>
                     </div>
                 )}
+            </div>
+        </div>
+    );
+}
+
+/** Histórico da Mango (21/11/2026): conversas antigas do escritório e do plantão, só leitura. Servidor: aurora_15.php. */
+type ResumoMango = { atendimentos: number; mensagens: number; de: string | null; ate: string | null };
+type MsgMango = { autor: "cliente" | "equipe" | "automatico"; autor_nome: string | null; tipo: string; texto: string | null; em: string; numero: string };
+type GrupoMango = { chave: string; numero: string; numero_nome: string; setor: string | null; encerrado_por: string | null; inicio: string; fim: string | null; avulsas?: boolean; mensagens: MsgMango[] };
+async function mangoGet<T = any>(acao: string, params: Record<string, any> = {}): Promise<T> {
+    const u = new URL(`${API_BASE}/aurora_15.php`);
+    u.searchParams.set("action", acao);
+    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== null && v !== "" && u.searchParams.set(k, String(v)));
+    u.searchParams.set("_", String(Date.now()));
+    const j = await apiJson(u.toString());
+    return j.dados as T;
+}
+const dataMango = (s: string | null, comHora = true) => {
+    if (!s) return "";
+    const [d, h] = s.split(" ");
+    const [a, m, dia] = d.split("-");
+    return `${dia}/${m}/${a}${comHora && h ? ` ${h.slice(0, 5)}` : ""}`;
+};
+const MIDIA_MANGO: Record<string, string> = { audio: "🎤 Áudio", imagem: "📷 Foto", video: "🎬 Vídeo", documento: "📄 Documento", figurinha: "Figurinha", localizacao: "📍 Localização", contato: "👤 Contato", ligacao: "📞 Ligação" };
+const COR_NUMERO_MANGO: Record<string, string> = { escritorio: "#3D6A99", plantao: "#C2410C", financeiro: "#8A6A00", cobranca: "#6B4FA0", instagram: "#B23A7A" };
+
+function HistoricoMango({ conversaId, resumo, onFechar }: { conversaId: number; resumo: ResumoMango | null; onFechar: () => void }) {
+    const [grupos, setGrupos] = useState<GrupoMango[]>([]);
+    const [etiquetas, setEtiquetas] = useState<{ nome: string; cor: string }[]>([]);
+    const [antes, setAntes] = useState<string | null>(null);
+    const [mais, setMais] = useState(false);
+    const [abertos, setAbertos] = useState<Record<string, boolean>>({});
+    const [carregando, setCarregando] = useState(true);
+    const [erro, setErro] = useState("");
+    const carregar = async (cursor: string | null) => {
+        setCarregando(true);
+        setErro("");
+        try {
+            const d = await mangoGet<{ etiquetas: { nome: string; cor: string }[]; grupos: GrupoMango[]; mais: boolean; antes: string | null }>("historico", { conversa_id: conversaId, antes: cursor, limite: 10 });
+            setEtiquetas(d.etiquetas);
+            setGrupos((g) => (cursor ? [...g, ...d.grupos] : d.grupos));
+            if (!cursor && d.grupos[0]) setAbertos({ [d.grupos[0].chave]: true });
+            setMais(d.mais);
+            setAntes(d.antes);
+        } catch (e: any) {
+            setErro(e.message);
+        } finally {
+            setCarregando(false);
+        }
+    };
+    useEffect(() => { carregar(null); }, [conversaId]); // eslint-disable-line react-hooks/exhaustive-deps
+    return (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40 sm:items-center sm:p-6" onClick={onFechar}>
+            <div role="dialog" aria-modal="true" aria-label="Histórico da Mango" onClick={(e) => e.stopPropagation()} className="flex max-h-[90dvh] w-full max-w-[640px] flex-col overflow-hidden rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] text-[#1F2638] shadow-2xl sm:rounded-3xl dark:bg-[#232B3F] dark:text-white">
+                <div className="flex items-start gap-3 border-b border-[#EEF0F3] bg-[#F4F8FC] px-5 py-4 dark:border-white/10 dark:bg-[#3D6A99]/15">
+                    <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-extrabold uppercase tracking-wider text-[#3D6A99] dark:text-[#A9BED6]">Histórico da Mango · só leitura</div>
+                        {resumo && <div className="mt-1 text-[14.5px] font-bold">{resumo.atendimentos} atendimento(s){resumo.de ? ` · de ${dataMango(resumo.de, false)} a ${dataMango(resumo.ate, false)}` : ""}</div>}
+                        {etiquetas.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{etiquetas.map((e) => <SeloCor key={e.nome} nome={e.nome} cor={e.cor} pequeno />)}</div>}
+                    </div>
+                    <button type="button" onClick={onFechar} className="flex h-10 w-10 flex-none items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10" aria-label="Fechar o histórico da Mango" title="Fechar"><Icone nome="x" /></button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto bg-[#EFEAE2] px-3 py-3 dark:bg-[#1C2334]">
+                    {erro && <p className="my-2 rounded-xl bg-[#FDECEA] px-3 py-2 text-[14px] font-bold text-[#B42318]">{erro}</p>}
+                    {!carregando && !erro && grupos.length === 0 && <p className="py-4 text-center text-[14.5px]">Nenhuma conversa antiga deste contato.</p>}
+                    {grupos.map((g) => {
+                        const aberto = !!abertos[g.chave];
+                        return (
+                            <div key={g.chave} className="mb-2 overflow-hidden rounded-2xl bg-white shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">
+                                <button type="button" onClick={() => setAbertos((a) => ({ ...a, [g.chave]: !aberto }))} aria-expanded={aberto} className="flex w-full items-center gap-2 px-4 py-3 text-left">
+                                    <span className="min-w-0 flex-1">
+                                        <span className="flex flex-wrap items-center gap-1.5">
+                                            <b className="text-[14.5px]">{dataMango(g.inicio, !g.avulsas)}</b>
+                                            <SeloCor nome={g.numero_nome} cor={COR_NUMERO_MANGO[g.numero] || "#3D6A99"} pequeno />
+                                            {g.avulsas && <SeloCor nome="Fora de atendimento" cor="#5B6478" pequeno />}
+                                        </span>
+                                        <span className="block truncate text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                            {[g.setor, g.encerrado_por ? `atendido por ${g.encerrado_por}` : "", `${g.mensagens.length} mensagem(ns)`].filter(Boolean).join(" · ")}
+                                        </span>
+                                    </span>
+                                    <Icone nome={aberto ? "recolher" : "expandir"} className="h-4 w-4 flex-none" />
+                                </button>
+                                {aberto && (
+                                    <div className="flex flex-col gap-1 border-t border-[#F0F2F5] bg-[#F7F4EF] px-3 py-3 dark:border-white/10 dark:bg-[#1C2334]">
+                                        {g.mensagens.length === 0 && <p className="text-center text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">As mensagens deste atendimento entram na próxima importação da Mango.</p>}
+                                        {g.mensagens.map((m, i) => {
+                                            const conteudo = (
+                                                <>
+                                                    {m.tipo !== "texto" && <span className="block font-bold">{MIDIA_MANGO[m.tipo] || m.tipo}</span>}
+                                                    {m.texto && <TextoFormatado texto={m.texto} />}
+                                                </>
+                                            );
+                                            if (m.autor === "automatico") {
+                                                return (
+                                                    <div key={i} className="mx-auto my-1 max-w-[92%] rounded-xl bg-[#E9EDF2] px-3 py-2 text-[13px] text-[#4A5468] dark:bg-white/10 dark:text-[#C9D1DE]">
+                                                        <span className="mb-0.5 block text-[11.5px] font-extrabold uppercase">{m.autor_nome || "Automática"} · {dataMango(m.em).slice(11)}</span>
+                                                        <div className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words">{conteudo}</div>
+                                                    </div>
+                                                );
+                                            }
+                                            const equipe = m.autor === "equipe";
+                                            return (
+                                                <div key={i} className={`max-w-[85%] rounded-xl px-3 py-2 text-[14.5px] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${equipe ? "self-end bg-[#E7F3D2] dark:bg-[#3A4A1E]" : "self-start bg-white dark:bg-[#2C354B]"}`}>
+                                                    {equipe && <span className="block text-[12px] font-extrabold text-[#4E6B0A] dark:text-[#B3CE52]">{m.autor_nome || "Equipe"}</span>}
+                                                    <div className="whitespace-pre-wrap break-words">{conteudo}</div>
+                                                    <span className="mt-0.5 block text-right text-[11.5px] text-[#5B6478] dark:text-[#AEB9CF]">{dataMango(m.em).slice(11)}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                    {carregando && <p className="py-3 text-center text-[14px]">Carregando…</p>}
+                    {mais && !carregando && <button type="button" onClick={() => carregar(antes)} className="mx-auto my-2 block h-11 rounded-xl border border-[#C9D1DE] bg-white px-5 text-[14.5px] font-extrabold text-[#313C55] dark:bg-[#232B3F] dark:text-white">Carregar atendimentos mais antigos</button>}
+                </div>
+                <p className="border-t border-[#E1E5EC] bg-[#F6F8FB] px-5 py-2 text-[12.5px] text-[#5B6478] dark:border-white/12 dark:bg-[#1C2334] dark:text-[#AEB9CF]">Conversas importadas da Mango (escritório, plantão e canais antigos). Fotos, áudios e documentos não foram trazidos.</p>
             </div>
         </div>
     );
@@ -600,6 +718,16 @@ export default function JanelaConversa(props: {
     // pacote 5B: o painel do cliente fica na página (terceira coluna ou por cima); o texto de cobrança volta por aqui
     const abrirCliente = () => props.onAbrirCliente?.();
     const [orcIa, setOrcIa] = useState(false); // orçamento preparado pela Aurora (19/10/2026)
+    const [mango, setMango] = useState<ResumoMango | null>(null); // histórico da Mango (21/11/2026)
+    const [verMango, setVerMango] = useState(false);
+    useEffect(() => {
+        setMango(null);
+        setVerMango(false);
+        if (props.conversa.tipo !== "externo" || props.conversa.canal !== "whatsapp") return;
+        let vivo = true;
+        mangoGet<ResumoMango>("resumo", { conversa_id: props.conversa.id }).then((r) => { if (vivo) setMango(r); }).catch(() => {});
+        return () => { vivo = false; };
+    }, [props.conversa.id]); // eslint-disable-line react-hooks/exhaustive-deps
     useEffect(() => {
         if (props.textoParaInserir?.texto) setTexto(props.textoParaInserir.texto);
     }, [props.textoParaInserir?.n]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -752,6 +880,9 @@ export default function JanelaConversa(props: {
                 {externo && props.onEtiquetas && (
                     <button type="button" onClick={props.onEtiquetas} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Etiquetas da conversa" title="Etiquetas"><Icone nome="tag" /></button>
                 )}
+                {externo && mango && (mango.atendimentos > 0 || mango.mensagens > 0) && (
+                    <button type="button" onClick={() => setVerMango(true)} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Histórico da Mango (conversas antigas)" title="Histórico da Mango"><Icone nome="clock" /></button>
+                )}
                 {externo && props.onSalvarContato && (
                     <button type="button" onClick={props.onSalvarContato} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label={c.contato?.salvo ? "Editar nome do contato" : "Salvar contato"} title={c.contato?.salvo ? "Editar contato" : "Salvar contato"}><Icone nome={c.contato?.salvo ? "editar" : "contato"} /></button>
                 )}
@@ -776,6 +907,7 @@ export default function JanelaConversa(props: {
                     <span className="flex-1">📝 A Aurora preparou um orçamento para esta família — conferir e enviar</span><span aria-hidden="true">›</span>
                 </button>
             )}
+            {verMango && <HistoricoMango conversaId={c.id} resumo={mango} onFechar={() => setVerMango(false)} />}
             {orcIa && <OrcamentoAurora conversaId={c.id} onFechar={() => setOrcIa(false)} onUsar={(t) => { setTexto(t); setOrcIa(false); }} />}
             {externo && (c.setor || (c.etiquetas && c.etiquetas.length > 0) || (c.contato?.contratos || []).length > 0) && (
                 <div className="flex items-center gap-1.5 overflow-x-auto border-b border-[#E6E9EE] bg-white px-3 py-1.5 dark:border-white/12 dark:bg-[#232B3F]">
