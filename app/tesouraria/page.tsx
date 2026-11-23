@@ -288,12 +288,9 @@ export default function TesourariaPage() {
 
                 {d ? (
                     <div className={GRADE_CARTOES}>
-                        {gestao ? (
-                            <>
-                                <Resumo rotulo="Disponível em bancos" valor={r.BANCO ?? 0} sub="contas correntes" escuro />
-                                <Resumo rotulo="Aplicações" valor={r.APLICACAO ?? 0} sub="rendendo nos bancos" />
-                            </>
-                        ) : null}
+                        {/* 23/11/2026: cada cartão aparece só se a pessoa vê alguma conta desse tipo (Quem vê cada conta); a Gestão vê os dois */}
+                        {gestao || r.BANCO !== undefined ? <Resumo rotulo="Disponível em bancos" valor={r.BANCO ?? 0} sub="contas correntes" escuro /> : null}
+                        {gestao || r.APLICACAO !== undefined ? <Resumo rotulo="Aplicações" valor={r.APLICACAO ?? 0} sub="rendendo nos bancos" /> : null}
                         <Resumo rotulo="Dinheiro nos caixas" valor={r.CAIXA ?? 0} sub="só espécie, sem Pix e cartão" />
                         {gestao ? (
                             <button type="button" onClick={() => setAba('conc')} className="flex min-w-0 flex-col gap-1 rounded-[18px] border border-[#E3E8F0] bg-white p-4 text-left dark:border-white/[0.12] dark:bg-[#232B3F] lg:px-5 lg:py-[18px]">

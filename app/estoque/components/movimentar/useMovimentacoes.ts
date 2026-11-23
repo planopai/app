@@ -7,6 +7,8 @@ import { brl } from "../produtos/useAbaProdutos";
 import { useBuscaLista, type OpcaoBusca } from "../ui/BuscaLista";
 import type { ConfeccaoPreviewResp, HistoricoResp, HistoricoRow, ID, Produto } from "../tipos";
 import type { EstoqueDados } from "../useEstoqueDados";
+import { api } from "../../../contas-pagar/components/fin";
+import { notaParaEnvio, notaProblemas, notaVazia, URL_ENT, type NotaEnt } from "../../../contas-pagar/components/entrada";
 
 // Movimentações (repaginada): Transferência, Entrada e Confecção na própria aba, com a confirmação numa janela.
 // A Saída manual saiu da tela (as saídas acontecem pelo atendimento e pelas requisições).
@@ -135,6 +137,11 @@ export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
     const freteTotal = parseBRLToNumber(frete);
     const freteU = unid ? freteTotal / unid : 0;
     const totEntrada = fila.entrada.reduce((a, i) => a + (i.cu + freteU) * i.q, 0);
+    // Nota e pagamento (23/11/2026): total da nota = itens pelo custo base + frete (igual ao fin_entrada.php)
+    const totalNota = Math.round((fila.entrada.reduce((a, i) => a + Math.round(i.cu * i.q * 100) / 100, 0) + freteTotal) * 100) / 100;
+    const [nota, setNota] = useState<NotaEnt>(notaVazia);
+    const [gerarFin, setGerarFin] = useState(true);
+    const [finOk, setFinOk] = useState(false); // quem tem o Contas a pagar (cadastros do financeiro carregados)
 
     const filaRows = filaAtual.map((i) => {
         const fin = i.cu + freteU;
@@ -291,6 +298,10 @@ export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
     const pedirConcluir = () => {
         if (op === "transf" && (!orig || !dest || !sol)) return setErro("Escolha origem, destino e solicitante.");
         if (op === "entrada" && !depE) return setErro("Escolha o local de entrada.");
+        if (op === "entrada" && finOk && gerarFin && filaAtual.length) {
+            const f = notaProblemas(nota, totalNota);
+            if (f.length) return setErro(`Nota e pagamento: falta ${f.join(", ")}.`);
+        }
         if (!podeConcluir) return setErro(op === "confeccao" ? "Escolha o produto, adicione os insumos e informe quantos ficaram prontos." : "Adicione pelo menos um item.");
         setErro("");
         setConfirmar(true);
@@ -333,7 +344,17 @@ export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
                 if (!r.ok) throw new Error(r.msg || "Falha na entrada.");
                 setFila((f) => ({ ...f, entrada: [] }));
                 setFrete("");
-                avisar(`${r.codigo || "Entrada"} registrada.`);
+                if (finOk && gerarFin && r.codigo) {
+                    try {
+                        const j = await api(URL_ENT, "gerar", notaParaEnvio(nota, r.codigo));
+                        avisar(`${r.codigo} registrada. ${j.msg || ""}`.trim());
+                        setNota(notaVazia());
+                    } catch (e: unknown) {
+                        avisar(`${r.codigo} registrada, mas o contas a pagar não foi gerado: ${e instanceof Error ? e.message : "erro"}. Complete no Contas a pagar.`);
+                    }
+                } else {
+                    avisar(`${r.codigo || "Entrada"} registrada.${finOk ? " Sem conta a pagar: o financeiro completa no Contas a pagar." : ""}`);
+                }
             } else {
                 const r = await apiPost<{ ok: boolean; msg?: string; confeccao_id?: number }>({
                     action: "confeccao",
@@ -421,6 +442,15 @@ export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
         temFila: filaAtual.length > 0,
         nFila: `${filaAtual.length} ${filaAtual.length === 1 ? "item" : "itens"}`,
         totEntrada: brl(totEntrada),
+        // nota e pagamento
+        totalNota,
+        nota,
+        setNota,
+        gerarFin,
+        setGerarFin,
+        finOk,
+        setFinOk,
+        avisar,
         limparMov: limpar,
         concluirLbl: `Concluir ${ROTULO[op]}`,
         pedirConcluir,

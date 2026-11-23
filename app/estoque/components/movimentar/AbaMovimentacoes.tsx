@@ -6,6 +6,8 @@ import { Ic, type NomeIcone } from "../ui/Icones";
 import { Janela } from "../ui/Janela";
 import { BarcodeScannerModal } from "../ui/LeitorCodigo";
 import type { MovimentacoesV } from "./useMovimentacoes";
+import { useCadastros } from "../../../contas-pagar/components/fin";
+import { NotaPagamento } from "../../../contas-pagar/components/entrada";
 
 // Aba Movimentações: Transferência, Entrada e Confecção (mockup "Repaginada do app PAI").
 
@@ -17,6 +19,44 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
         <div>
             <p className="flbl">{rotulo}</p>
             {children}
+        </div>
+    );
+}
+
+/**
+ * Nota e pagamento da entrada (23/11/2026): fornecedor, nota e condição de pagamento → títulos no Contas a pagar.
+ * Só aparece para quem tem o Contas a pagar (os cadastros do financeiro carregam); para os outros, a entrada vai
+ * para o quadro "Entradas do estoque sem conta a pagar" e o financeiro completa.
+ */
+function NotaEstoque({ v, m }: { v: MovimentacoesV; m: boolean }) {
+    const { cad, erroCad, recarregar } = useCadastros();
+    const { setFinOk } = v;
+    React.useEffect(() => {
+        setFinOk(!!cad);
+    }, [cad, setFinOk]);
+    if (!cad) {
+        return erroCad ? (
+            <div className="sm" style={{ padding: "12px 14px", borderRadius: "12px", background: "var(--sunk)", fontSize: m ? "13px" : "14px" }}>
+                A nota e o pagamento desta entrada ficam para o financeiro, no Contas a pagar.
+            </div>
+        ) : null;
+    }
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", borderTop: "1px solid var(--line)", paddingTop: "14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <h3 style={{ margin: "0", fontSize: m ? "16px" : "17px", fontWeight: "800" }}>Nota e pagamento</h3>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontWeight: "700", minHeight: "44px", cursor: "pointer" }}>
+                    <input type="checkbox" checked={v.gerarFin} onChange={(e) => v.setGerarFin(e.target.checked)} style={{ width: "20px", height: "20px" }} />
+                    Gerar contas a pagar desta entrada
+                </label>
+            </div>
+            {v.gerarFin ? (
+                <NotaPagamento cad={cad} recarregarCad={recarregar} total={v.totalNota} nota={v.nota} setNota={v.setNota} avisar={v.avisar} />
+            ) : (
+                <div className="sm" style={{ fontSize: "13.5px" }}>
+                    A entrada vai só para o estoque e aparece no Contas a pagar, em &quot;Entradas do estoque sem conta a pagar&quot;.
+                </div>
+            )}
         </div>
     );
 }
@@ -519,6 +559,7 @@ export function AbaMovimentacoes({ v, m }: { v: MovimentacoesV; m: boolean }) {
                                     </div>
                                 )}
                             </div>
+                            {v.isE && v.temFila && <NotaEstoque v={v} m />}
                         </>
                     )}
                     {v.isC && <Confeccao v={v} m />}
@@ -709,6 +750,8 @@ export function AbaMovimentacoes({ v, m }: { v: MovimentacoesV; m: boolean }) {
                         )}
                     </div>
                 )}
+
+                {v.isE && v.temFila && <NotaEstoque v={v} m={false} />}
 
                 <Campo rotulo="Observação (opcional)">
                     <input className="inp" value={v.obs} onChange={v.onObs} placeholder="Ex.: NF 123, motivo" aria-label="Observação" />

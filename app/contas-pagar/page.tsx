@@ -73,6 +73,7 @@ import {
     type LinhaEdicao,
 } from './components/fin';
 import { ModalVale } from './components/vale'; // 17/11/2026: vale e empréstimo nascem no financeiro
+import { EntradasPendentes } from './components/entrada'; // 23/11/2026: entradas do estoque sem conta a pagar
 import { IconCash } from '@tabler/icons-react';
 import { BarraMassa, baixarCsv, ChipsFiltro, JanelaColunas, Paginacao, Planilha, TrocaModo, useColunas, type ColunaPlan } from './components/planilha';
 
@@ -422,6 +423,8 @@ export default function ContasPagarPage() {
 
                 {erro || erroCad ? <div className={ERRO}>{erro || erroCad}</div> : null}
                 {d?.mes_fechado ? <div className={`${NOTA} ${S_AVISO}`}>O mês atual está fechado: lançamentos e pagamentos dele estão travados até a Gestão reabrir.</div> : null}
+
+                {cad ? <EntradasPendentes cad={cad} recarregarCad={recarregarCad} avisar={avisar} onMudou={() => void carregar()} /> : null}
 
                 {d && d.alertas.length ? (
                     <div className={`${CARTAO} overflow-hidden`}>

@@ -14,7 +14,7 @@ import { Icone } from "../messenger/components/Lista";
 import { limparCacheRespostas } from "../messenger/components/Acoes";
 import { aceitaPasta, confirmarPermissao, desligarAutomatico, ligarAutomatico, modoSalvar, nomePasta } from "@/components/messenger/salvarArquivos";
 import { AbaEtiquetas, AbaSetores } from "./SetoresEtiquetas";
-import { AbaAvisosFinanceiro } from "./AvisosFinanceiro"; // 17/11/2026: avisos do financeiro (aurora_18.php)
+import { AbaAvisosCoroa, AbaAvisosFinanceiro } from "./AvisosFinanceiro"; // 17/11/2026: avisos do financeiro (aurora_18.php) · 23/11/2026: avisos de coroa (aurora_19.php)
 
 type Resposta = { id: number; atalho: string; texto: string; pessoal: boolean };
 type Config = { assinatura: "completo" | "primeiro" | "nao"; max_fixadas: number; max_etiquetas?: number; pode_editar: boolean; automaticas?: Record<string, string>; menu_previa?: string; precos?: Record<string, number>; ia?: ConfigIa; kb_departamentos?: { id: number; nome: string }[]; ocioso?: ConfigOcioso };
@@ -28,7 +28,7 @@ const btnPri = "h-11 rounded-xl bg-[#313C55] px-5 text-sm font-extrabold text-wh
 const btnSec = "h-11 rounded-xl border border-[#C9D1DE] bg-white px-4 text-sm font-bold text-[#313C55] dark:border-white/25 dark:bg-[#232B3F] dark:text-white";
 
 export default function MessengerConfigPage() {
-    const [aba, setAba] = useState<"respostas" | "setores" | "etiquetas" | "automaticas" | "geral" | "financeiro">("respostas");
+    const [aba, setAba] = useState<"respostas" | "setores" | "etiquetas" | "automaticas" | "geral" | "financeiro" | "coroa">("respostas");
     const [auto, setAuto] = useState<Record<string, string>>({});
     const [precos, setPrecos] = useState<Record<string, string>>({});
     // setores e etiquetas da empresa para os destinos de comprovante e áudio
@@ -150,7 +150,7 @@ export default function MessengerConfigPage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2" role="tablist" aria-label="Seções">
-                    {([["respostas", "Respostas rápidas"], ["setores", "Setores"], ["etiquetas", "Etiquetas"], ["automaticas", "Mensagens automáticas"], ["geral", "Geral"], ["financeiro", "Avisos do financeiro"]] as const).map(([id, nome]) => (
+                    {([["respostas", "Respostas rápidas"], ["setores", "Setores"], ["etiquetas", "Etiquetas"], ["automaticas", "Mensagens automáticas"], ["geral", "Geral"], ["financeiro", "Avisos do financeiro"], ["coroa", "Avisos de coroa"]] as const).map(([id, nome]) => (
                         <button key={id} type="button" role="tab" aria-selected={aba === id} onClick={() => setAba(id)} className={`h-[40px] rounded-full px-4 text-[15.5px] ${aba === id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "bg-white font-bold text-[#4A5468] dark:bg-[#232B3F] dark:text-[#AEB9CF]"}`}>{nome}</button>
                     ))}
                 </div>
@@ -173,6 +173,7 @@ export default function MessengerConfigPage() {
                 {aba === "setores" && <AbaSetores podeEditar={podeEmpresa} avisar={avisar} />}
                 {aba === "etiquetas" && <AbaEtiquetas podeEditar={podeEmpresa} avisar={avisar} />}
                 {aba === "financeiro" && <AbaAvisosFinanceiro avisar={avisar} />}
+                {aba === "coroa" && <AbaAvisosCoroa avisar={avisar} />}
 
                 {aba === "automaticas" && config && (
                     <section className={`${cartao} flex flex-col gap-5`}>
