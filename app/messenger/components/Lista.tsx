@@ -134,35 +134,110 @@ function Badge({ n }: { n: number }) {
     return <span className="inline-flex h-6 min-w-6 flex-none items-center justify-center rounded-full bg-[#B3CE52] px-1.5 text-[13px] font-extrabold text-[#1F2638]">{n > 99 ? "99+" : n}</span>;
 }
 
-/** Filtros em pílula, como no WhatsApp: Tudo · Equipe · Grupos · Clientes (com contador). */
-export function Abas({ aba, setAba, contagem, soNaoLidas, setSoNaoLidas }: { aba: Aba; setAba: (a: Aba) => void; contagem: Record<Aba, number>; soNaoLidas?: boolean; setSoNaoLidas?: (v: boolean) => void }) {
+/** Item de uma lista de filtro que abre (23/11/2026). */
+export type ItemSeletor = {
+    id: string;
+    nome: string;
+    cor?: string;
+    detalhe?: string;
+    qtd?: number;
+    naoLidas?: number;
+    ativo: boolean;
+    ativoNaoLidas?: boolean;
+    apagado?: boolean;
+    secao?: string;
+    onEscolher: () => void;
+    onNaoLidas?: () => void;
+};
+
+/**
+ * Filtro em lista que abre e fecha (23/11/2026), no lugar das pílulas com rolagem lateral.
+ * A linha escolhe o filtro; o selo "n não lidas" de cada linha mostra só as não lidas dali. Fecha ao escolher ou ao tocar fora.
+ */
+export function SeletorLista({ rotulo, resumo, destaque, itens }: { rotulo: string; resumo: React.ReactNode; destaque?: number; itens: ItemSeletor[] }) {
+    const [aberto, setAberto] = useState(false);
+    const caixa = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!aberto) return;
+        const fora = (e: Event) => {
+            if (caixa.current && !caixa.current.contains(e.target as Node)) setAberto(false);
+        };
+        document.addEventListener("pointerdown", fora);
+        return () => document.removeEventListener("pointerdown", fora);
+    }, [aberto]);
+    const escolher = (f: () => void) => {
+        f();
+        setAberto(false);
+    };
+    let secao = "";
+    return (
+        <div ref={caixa} className={`rounded-2xl border ${aberto ? "border-[#C9D1DE] dark:border-white/20" : "border-[#E1E5EC] dark:border-white/12"} bg-white dark:bg-[#232B3F]`}>
+            <button type="button" onClick={() => setAberto((v) => !v)} aria-expanded={aberto} className="flex h-11 w-full items-center gap-2 rounded-2xl px-3 text-left hover:bg-[#F5F6F8] dark:hover:bg-white/5">
+                <span className="flex-none text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">{rotulo}</span>
+                <span className="min-w-0 flex-1 truncate text-[15px] font-extrabold text-[#1F2638] dark:text-white">{resumo}</span>
+                <Badge n={destaque || 0} />
+                <span className={`flex-none text-[#5B6478] transition-transform dark:text-[#AEB9CF] ${aberto ? "rotate-180" : ""}`}><Icone nome="chevron" className="h-4 w-4" /></span>
+            </button>
+            {aberto && (
+                <div role="listbox" aria-label={rotulo} className="max-h-[55vh] overflow-y-auto border-t border-[#EEF0F3] px-1.5 py-1.5 dark:border-white/10">
+                    {itens.map((i) => {
+                        const cab = i.secao && i.secao !== secao ? i.secao : "";
+                        if (cab) secao = cab;
+                        const so = !!i.ativoNaoLidas;
+                        return (
+                            <React.Fragment key={i.id}>
+                                {cab && <div className="px-2 pb-1 pt-2 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">{cab}</div>}
+                                <div className="flex items-center gap-1.5">
+                                    <button type="button" role="option" aria-selected={i.ativo && !so} onClick={() => escolher(i.onEscolher)} className={`flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 text-left ${i.ativo && !so ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "font-bold text-[#1F2638] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10"} ${i.apagado ? "opacity-70" : ""}`}>
+                                        {i.cor && <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: i.cor }} aria-hidden="true" />}
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block truncate text-[15px]">{i.nome}</span>
+                                            {i.detalhe && <span className="block truncate text-[12.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{i.detalhe}</span>}
+                                        </span>
+                                        {!!i.qtd && <span className="flex-none text-[14px] font-extrabold text-[#4A5468] dark:text-[#AEB9CF]">{i.qtd}</span>}
+                                    </button>
+                                    {i.onNaoLidas && ((i.naoLidas || 0) > 0 || so) && (
+                                        <button type="button" aria-pressed={so} onClick={() => escolher(i.onNaoLidas!)} className={`flex h-9 flex-none items-center gap-1.5 rounded-full border px-2.5 text-[13px] ${so ? "border-[#4E6B0A] bg-[#4E6B0A] font-extrabold text-white dark:border-[#B3CE52] dark:bg-[#B3CE52] dark:text-[#1F2638]" : "border-[#D8E6A8] font-bold text-[#2F4207] hover:bg-[#F3F8E4] dark:border-[#B3CE52]/40 dark:text-[#DCEBAA] dark:hover:bg-white/10"}`}>
+                                            <span className={`h-2 w-2 rounded-full ${so ? "bg-white dark:bg-[#1F2638]" : "bg-[#4E6B0A] dark:bg-[#B3CE52]"}`} aria-hidden="true" />
+                                            {i.naoLidas || 0} não lida{(i.naoLidas || 0) === 1 ? "" : "s"}
+                                        </button>
+                                    )}
+                                </div>
+                            </React.Fragment>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/** Tipos de conversa (Tudo · Clientes · Grupos · Equipe) em lista que abre; "não lidas" fica dentro de cada tipo (23/11/2026). */
+export function Abas({ aba, soNaoLidas, totais, naoLidas, detalhes, destaque, aoEscolher }: { aba: Aba; soNaoLidas: boolean; totais: Record<Aba, number>; naoLidas: Record<Aba, number>; detalhes?: Partial<Record<Aba, string>>; destaque?: number; aoEscolher: (a: Aba, soNaoLidas: boolean) => void }) {
     const itens: { id: Aba; rotulo: string }[] = [
         { id: "tudo", rotulo: "Tudo" },
         { id: "clientes", rotulo: "Clientes" },
         { id: "grupos", rotulo: "Grupos" },
         { id: "equipe", rotulo: "Equipe" },
     ];
+    const atual = itens.find((i) => i.id === aba)?.rotulo || "Tudo";
     return (
-        <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" aria-label="Filtrar conversas">
-            {itens.map((i) => (
-                <button
-                    key={i.id}
-                    type="button"
-                    aria-pressed={aba === i.id}
-                    onClick={() => setAba(i.id)}
-                    className={`flex h-[38px] flex-none items-center gap-1.5 rounded-full px-4 text-[15.5px] md:h-9 md:px-3 md:text-[14px] ${aba === i.id ? "bg-[#E3EFC0] font-extrabold text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-white" : "bg-[#F0F2F5] font-bold text-[#4A5468] hover:bg-[#E6E9EE] dark:bg-[#1C2334] dark:text-[#AEB9CF] dark:hover:bg-white/10"}`}
-                >
-                    {i.rotulo}
-                    {i.id !== "tudo" && contagem[i.id] > 0 && <span className="text-[14px] font-extrabold">{contagem[i.id]}</span>}
-                </button>
-            ))}
-            {setSoNaoLidas && (
-                // 23/11/2026: filtro só das conversas com mensagem não lida (vale para a aba aberta)
-                <button type="button" aria-pressed={!!soNaoLidas} onClick={() => setSoNaoLidas(!soNaoLidas)} className={`flex h-[38px] flex-none items-center gap-1.5 rounded-full border px-4 text-[15.5px] md:h-9 md:px-3 md:text-[14px] ${soNaoLidas ? "border-[#4E6B0A] bg-[#4E6B0A] font-extrabold text-white dark:border-[#B3CE52] dark:bg-[#B3CE52] dark:text-[#1F2638]" : "border-[#E1E5EC] font-bold text-[#4A5468] hover:bg-[#F0F2F5] dark:border-white/15 dark:text-[#AEB9CF] dark:hover:bg-white/10"}`}>
-                    <span className={`h-2 w-2 rounded-full ${soNaoLidas ? "bg-white dark:bg-[#1F2638]" : "bg-[#4E6B0A] dark:bg-[#B3CE52]"}`} aria-hidden="true" />Não lidas
-                </button>
-            )}
-        </div>
+        <SeletorLista
+            rotulo="Ver"
+            resumo={<>{atual}{soNaoLidas && <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]"> · só não lidas</span>}</>}
+            destaque={destaque}
+            itens={itens.map((i) => ({
+                id: i.id,
+                nome: i.rotulo,
+                detalhe: detalhes?.[i.id],
+                qtd: totais[i.id],
+                naoLidas: naoLidas[i.id],
+                ativo: aba === i.id,
+                ativoNaoLidas: aba === i.id && soNaoLidas,
+                onEscolher: () => aoEscolher(i.id, false),
+                onNaoLidas: () => aoEscolher(i.id, true),
+            }))}
+        />
     );
 }
 

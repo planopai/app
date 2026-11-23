@@ -380,7 +380,39 @@ function AvaliarAurora({ mensagemId }: { mensagemId: number }) {
     );
 }
 
-function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder, onReagir, onEncaminhar, destaque, onFixar, fixada }: { m: Mensagem; conversa: TConversa; eu: number; onApagar: (m: Mensagem) => void; primeiraDoBloco: boolean; citada?: Mensagem | null; onResponder?: (m: Mensagem) => void; onReagir?: (m: Mensagem, emoji: string) => void; onEncaminhar?: (m: Mensagem) => void; destaque?: "atual" | "outro" | null; onFixar?: (m: Mensagem) => void; fixada?: boolean }) {
+/** 23/11/2026: segundos que faltam para o pacote de textos do WhatsApp sair. */
+function ContagemEnvio({ ate }: { ate: number }) {
+    const [agora, setAgora] = useState(() => Date.now());
+    useEffect(() => {
+        const t = setInterval(() => setAgora(Date.now()), 250);
+        return () => clearInterval(t);
+    }, []);
+    const seg = Math.max(0, Math.ceil((ate - agora) / 1000));
+    return <span className="font-extrabold text-[#8A6A00] dark:text-[#F7E39A]">{seg > 0 ? `envia em ${seg} s` : "enviando…"}</span>;
+}
+
+/** 23/11/2026: nota da Aurora (encaminhamento) recolhida: mostra o título e o resumo; o resto abre no "Ver detalhes". */
+function NotaAurora({ texto }: { texto: string }) {
+    const [aberta, setAberta] = useState(false);
+    const linhas = texto.split("\n").filter((l) => l.trim() !== "");
+    const resumo = linhas.find((l) => /^resumo\s*:/i.test(l.trim()));
+    if (linhas.length <= 3) return <span className="whitespace-pre-wrap break-words"><TextoFormatado texto={texto} /></span>;
+    return (
+        <span className="block">
+            {aberta ? (
+                <span className="whitespace-pre-wrap break-words"><TextoFormatado texto={texto} /></span>
+            ) : (
+                <>
+                    <span className="block font-extrabold"><TextoFormatado texto={linhas[0]} /></span>
+                    <span className="mt-0.5 block whitespace-pre-wrap break-words"><TextoFormatado texto={resumo || linhas.slice(1, 3).join("\n")} /></span>
+                </>
+            )}
+            <button type="button" onClick={() => setAberta((v) => !v)} aria-expanded={aberta} className="mt-1 text-[13px] font-extrabold text-[#8A6A00] underline-offset-2 hover:underline dark:text-[#F7E39A]">{aberta ? "Recolher" : "Ver detalhes"}</button>
+        </span>
+    );
+}
+
+function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder, onReagir, onEncaminhar, destaque, onFixar, fixada, onEnviarAgora, onCancelarEnvio }: { m: Mensagem; conversa: TConversa; eu: number; onApagar: (m: Mensagem) => void; primeiraDoBloco: boolean; citada?: Mensagem | null; onResponder?: (m: Mensagem) => void; onReagir?: (m: Mensagem, emoji: string) => void; onEncaminhar?: (m: Mensagem) => void; destaque?: "atual" | "outro" | null; onFixar?: (m: Mensagem) => void; fixada?: boolean; onEnviarAgora?: () => void; onCancelarEnvio?: () => void }) {
     const [puxar, setPuxar] = useState(0);
     const [menu, setMenu] = useState(false);
     const [dados, setDados] = useState(false); // "Dados da mensagem": quem leu e quem reagiu
@@ -394,7 +426,8 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
     const hora = new Date(m.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     let leitura: React.ReactNode = null;
     if (minha && !m.apagada) {
-        if (m._enviando) leitura = <Tiques estado="enviando" />;
+        if (m._aguardando) leitura = <ContagemEnvio ate={m._aguardando} />;
+        else if (m._enviando) leitura = <Tiques estado="enviando" />;
         else if (m._falhaLocal) leitura = <span className="font-extrabold text-[#B42318] dark:text-[#FF9C92]">Não enviada</span>;
         else if (conversa.tipo === "externo") {
             const st = m.status_envio;
@@ -481,7 +514,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                     <>
                         {m.responde_a_id ? <Citacao m={citada} eu={eu} /> : null}
                         {m.anexos.map((a) => <Anexo key={a.id} a={a} minha={minha} />)}
-                        {m.texto && m.tipo !== "audio" && <span className="whitespace-pre-wrap break-words"><TextoFormatado texto={m.texto} /></span>}
+                        {m.texto && m.tipo !== "audio" && (m.interna && m.texto.trim().startsWith("🤖") ? <NotaAurora texto={m.texto} /> : <span className="whitespace-pre-wrap break-words"><TextoFormatado texto={m.texto} /></span>)}
                         {m.transcricao && (
                             <details className="mt-1 max-w-[300px] text-[14px]">
                                 <summary className="cursor-pointer text-[12.5px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">📝 Transcrição (Aurora)</summary>
@@ -518,6 +551,12 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
             <Reacoes m={m} eu={eu} minha={minha} onReagir={onReagir ? (e) => onReagir(m, e) : undefined} onVer={conversa.tipo === "grupo" ? () => setDados(true) : undefined} />
             {dados && <DadosMensagem m={m} conversa={conversa} eu={eu} minha={minha} onFechar={() => setDados(false)} />}
             {m._falhaLocal && <div className="mt-1 text-right text-xs font-bold text-[#B42318] dark:text-[#FF9C92]">{m._falhaLocal}</div>}
+            {m._aguardando && (onEnviarAgora || onCancelarEnvio) && (
+                <div className="mt-1 flex justify-end gap-1.5">
+                    {onCancelarEnvio && <button type="button" onClick={onCancelarEnvio} className="h-8 rounded-full bg-white px-3 text-[13px] font-bold text-[#4A5468] shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] hover:bg-[#F0F2F5] dark:bg-[#232B3F] dark:text-[#AEB9CF]">Cancelar</button>}
+                    {onEnviarAgora && <button type="button" onClick={onEnviarAgora} className="h-8 rounded-full bg-[#313C55] px-3 text-[13px] font-extrabold text-white dark:bg-[#3D6A99]">Enviar agora</button>}
+                </div>
+            )}
         </div>
     );
 }
@@ -707,6 +746,10 @@ export default function JanelaConversa(props: {
     /** celular com o teclado aberto: a barra de digitação encosta no teclado; fechado, fica acima da barra do iPhone */
     tecladoAberto?: boolean;
     onDigitando: () => void;
+    /** 23/11/2026: cada tecla reinicia a espera do pacote de textos do WhatsApp; enviar agora ou cancelar o pacote */
+    onTeclou?: () => void;
+    onEnviarAgora?: () => void;
+    onCancelarEnvio?: () => void;
     onAssumir: () => void;
     onTransferir: () => void;
     onEncerrar: () => void;
@@ -740,6 +783,21 @@ export default function JanelaConversa(props: {
     const [emoji, setEmoji] = useState(false);
     const [catEmoji, setCatEmoji] = useState("Rostos");
     const [gravando, setGravando] = useState(false);
+    const [menuTopo, setMenuTopo] = useState(false);
+    const menuTopoRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!menuTopo) return;
+        const fora = (e: Event) => {
+            if (menuTopoRef.current && !menuTopoRef.current.contains(e.target as Node)) setMenuTopo(false);
+        };
+        document.addEventListener("pointerdown", fora);
+        return () => document.removeEventListener("pointerdown", fora);
+    }, [menuTopo]);
+    const alternarBusca = () => {
+        setBuscando((v) => !v);
+        setTermo("");
+        setAtual(0);
+    };
     const fim = useRef<HTMLDivElement>(null);
     const caixa = useRef<HTMLDivElement>(null);
     // a conversa continua no fim quando a área muda de tamanho (painel do cliente abrindo, teclado, faixa de 24 h)
@@ -762,23 +820,6 @@ export default function JanelaConversa(props: {
     }, []);
     const arquivo = useRef<HTMLInputElement>(null);
     const campo = useRef<HTMLTextAreaElement>(null);
-    // faixa da janela de 24 h: recolhe para um selo pequeno; a escolha fica guardada neste aparelho
-    const [janelaRecolhida, setJanelaRecolhida] = useState(false);
-    useEffect(() => {
-        try {
-            setJanelaRecolhida(localStorage.getItem("pai.msg.janela24h.recolhida") === "1");
-        } catch {
-            /* sem armazenamento */
-        }
-    }, []);
-    const recolherJanela = (v: boolean) => {
-        setJanelaRecolhida(v);
-        try {
-            localStorage.setItem("pai.msg.janela24h.recolhida", v ? "1" : "0");
-        } catch {
-            /* sem armazenamento */
-        }
-    };
     const camera = useRef<HTMLInputElement>(null);
     const ultimoDig = useRef(0);
     const ultimoIdVisto = useRef(0);
@@ -818,6 +859,7 @@ export default function JanelaConversa(props: {
     };
     const aoDigitar = (v: string) => {
         setTexto(v);
+        if (!modoNota) props.onTeclou?.();
         if (Date.now() - ultimoDig.current > 3000) {
             ultimoDig.current = Date.now();
             props.onDigitando();
@@ -851,13 +893,33 @@ export default function JanelaConversa(props: {
         }
         const autor = m.autor_tipo === "sistema" ? "" : `${m.autor_tipo}:${m.autor_usuario_id ?? m.autor_contato_id ?? ""}`;
         itens.push(<Bolha key={m.cliente_uuid || m.id} m={m} conversa={c} eu={perfil.id} onApagar={props.onApagar} primeiraDoBloco={autor !== autorAnterior} citada={m.responde_a_id ? porId.get(m.responde_a_id) : null} onResponder={podeEscrever ? responder : undefined} onReagir={props.onReagir} onEncaminhar={props.onEncaminhar} destaque={m.id === idAtual ? "atual" : achados.includes(m.id) ? "outro" : null}
-            onFixar={props.onFixarMensagem ? (x) => props.onFixarMensagem!(x, !idsFixadas.includes(x.id)) : undefined} fixada={idsFixadas.includes(m.id)} />);
+            onFixar={props.onFixarMensagem ? (x) => props.onFixarMensagem!(x, !idsFixadas.includes(x.id)) : undefined} fixada={idsFixadas.includes(m.id)}
+            onEnviarAgora={m._aguardando ? props.onEnviarAgora : undefined} onCancelarEnvio={m._aguardando ? props.onCancelarEnvio : undefined} />);
         autorAnterior = autor;
     });
 
     const subtitulo = externo
         ? `${c.contato?.telefone || ""}${c.responsavel ? ` · Responsável: ${c.responsavel.nome}` : " · Na fila"}`
         : c.tipo === "grupo" ? `${c.membros.length} membros` : props.presenca || "";
+
+    // 23/11/2026: janela de 24 h como selo na linha das etiquetas (fica vermelho nas 2 últimas horas e quando fecha)
+    let selJanela: React.ReactNode = null;
+    if (externo && c.canal !== "site" && c.status_atendimento !== "aguardando") {
+        const ate = c.janela_aberta && c.janela_ate ? new Date(c.janela_ate) : null;
+        const resta = ate ? ate.getTime() - Date.now() : 0;
+        const alerta = !c.janela_aberta || resta < 2 * 3600000;
+        const titulo = c.janela_aberta
+            ? `Janela de 24 h aberta até ${ate ? ate.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}`
+            : canalNovo ? `Prazo para responder pelo ${canalNovo[0]} terminou: continue pelo WhatsApp (Nova conversa) se a pessoa informou o celular` : "Janela de 24 h fechada: só modelos aprovados pela Meta";
+        const rotulo = c.janela_aberta
+            ? resta < 3600000 ? `Janela fecha em ${Math.max(1, Math.round(resta / 60000))} min` : `Janela até ${ate ? (ate.toDateString() === new Date().toDateString() ? ate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ate.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })) : "—"}`
+            : canalNovo ? "Prazo encerrado" : "Janela fechada";
+        selJanela = (
+            <span title={titulo} role="status" className={`ml-auto inline-flex h-[22px] flex-none items-center gap-1 rounded-full px-2 text-[12px] font-extrabold ${alerta ? "bg-[#FDE8E6] text-[#B42318] dark:bg-[#B42318]/25 dark:text-[#FF9C92]" : "bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/15 dark:text-[#DCEBAA]"}`}>
+                <Icone nome="clock" className="h-3.5 w-3.5" />{rotulo}
+            </span>
+        );
+    }
 
     return (
         <div className="flex h-full min-h-0 flex-1 flex-col overflow-x-hidden bg-[#EFEAE2] dark:bg-[#1C2334]">
@@ -877,18 +939,29 @@ export default function JanelaConversa(props: {
                     </div>
                     <div className="truncate text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{props.digitando ? <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span> : subtitulo}</div>
                 </div>
-                <button type="button" onClick={() => { setBuscando((v) => !v); setTermo(""); setAtual(0); }} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Buscar nesta conversa" title="Buscar"><Icone nome="search" /></button>
+                {!externo && (
+                    <button type="button" onClick={alternarBusca} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Buscar nesta conversa" title="Buscar"><Icone nome="search" /></button>
+                )}
                 {externo && (
-                    <button type="button" onClick={abrirCliente} aria-pressed={!!props.painelClienteAberto} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Cliente na Unymos (contrato e parcelas)" title="Cliente · contrato e parcelas"><Icone nome="user" /></button>
-                )}
-                {externo && props.onEtiquetas && (
-                    <button type="button" onClick={props.onEtiquetas} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Etiquetas da conversa" title="Etiquetas"><Icone nome="tag" /></button>
-                )}
-                {externo && mango && (mango.atendimentos > 0 || mango.mensagens > 0) && (
-                    <button type="button" onClick={() => setVerMango(true)} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Histórico da Mango (conversas antigas)" title="Histórico da Mango"><Icone nome="clock" /></button>
-                )}
-                {externo && props.onSalvarContato && (
-                    <button type="button" onClick={props.onSalvarContato} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label={c.contato?.salvo ? "Editar nome do contato" : "Salvar contato"} title={c.contato?.salvo ? "Editar contato" : "Salvar contato"}><Icone nome={c.contato?.salvo ? "editar" : "contato"} /></button>
+                    // 23/11/2026: buscar, cliente, etiquetas, histórico da Mango e contato ficam no menu ⋯ (o nome do cliente aparece inteiro)
+                    <div ref={menuTopoRef} className="relative flex-none">
+                        <button type="button" onClick={() => setMenuTopo((v) => !v)} aria-expanded={menuTopo} aria-haspopup="menu" className="flex h-11 w-11 items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Mais opções da conversa" title="Mais opções"><Icone nome="mais" /></button>
+                        {menuTopo && (
+                            <div role="menu" className="absolute right-0 top-12 z-30 w-64 overflow-hidden rounded-xl border border-[#E1E5EC] bg-white py-1 shadow-xl dark:border-white/12 dark:bg-[#1C2334]">
+                                {([
+                                    { icone: "search", rotulo: "Buscar nesta conversa", acao: alternarBusca },
+                                    { icone: "user", rotulo: props.painelClienteAberto ? "Fechar painel do cliente" : "Cliente · contrato e parcelas", acao: abrirCliente },
+                                    ...(props.onEtiquetas ? [{ icone: "tag", rotulo: "Etiquetas", acao: props.onEtiquetas }] : []),
+                                    ...(mango && (mango.atendimentos > 0 || mango.mensagens > 0) ? [{ icone: "clock", rotulo: "Histórico da Mango", acao: () => setVerMango(true) }] : []),
+                                    ...(props.onSalvarContato ? [{ icone: c.contato?.salvo ? "editar" : "contato", rotulo: c.contato?.salvo ? "Editar nome do contato" : "Salvar contato", acao: props.onSalvarContato }] : []),
+                                ] as { icone: string; rotulo: string; acao: () => void }[]).map((o) => (
+                                    <button key={o.rotulo} type="button" role="menuitem" onClick={() => { setMenuTopo(false); o.acao(); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[15px] font-bold text-[#1F2638] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10">
+                                        <Icone nome={o.icone} className="h-5 w-5 flex-none" />{o.rotulo}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 )}
                 {externo && c.status_atendimento === "aguardando" && perfil.atendente && (
                     <button type="button" onClick={props.onAssumir} className="h-10 rounded-xl bg-[#313C55] px-4 text-sm font-extrabold text-white dark:bg-[#3D6A99]">Assumir</button>
@@ -913,9 +986,10 @@ export default function JanelaConversa(props: {
             )}
             {verMango && <HistoricoMango conversaId={c.id} resumo={mango} onFechar={() => setVerMango(false)} />}
             {orcIa && <OrcamentoAurora conversaId={c.id} onFechar={() => setOrcIa(false)} onUsar={(t) => { setTexto(t); setOrcIa(false); }} />}
-            {externo && (c.setor || (c.etiquetas && c.etiquetas.length > 0) || (c.contato?.contratos || []).length > 0) && (
-                <div className="flex items-center gap-1.5 overflow-x-auto border-b border-[#E6E9EE] bg-white px-3 py-1.5 dark:border-white/12 dark:bg-[#232B3F]">
-                    {(c.contato?.contratos || []).filter((k, i, todos) => todos.findIndex((x) => x.contrato.replace(/^0+/, "") === k.contrato.replace(/^0+/, "")) === i).slice(0, 2).map((k) => (
+            {externo && (c.setor || (c.etiquetas && c.etiquetas.length > 0) || (!props.painelClienteAberto && (c.contato?.contratos || []).length > 0) || selJanela) && (
+                <div className="flex items-center gap-1.5 overflow-x-auto border-b border-[#E6E9EE] bg-white px-3 py-1.5 [scrollbar-width:none] dark:border-white/12 dark:bg-[#232B3F] [&::-webkit-scrollbar]:hidden">
+                    {/* com o painel do cliente aberto, plano e contrato ficam só no painel */}
+                    {(props.painelClienteAberto ? [] : c.contato?.contratos || []).filter((k, i, todos) => todos.findIndex((x) => x.contrato.replace(/^0+/, "") === k.contrato.replace(/^0+/, "")) === i).slice(0, 2).map((k) => (
                         <React.Fragment key={k.contrato}>
                             {k.plano && <SeloUnymos t={k.tags.find((t) => t.nome.toUpperCase() === k.plano.toUpperCase()) || { nome: k.plano, cor: "#313C55" }} pequeno />}
                             <button type="button" onClick={abrirCliente} title="Abrir o contrato na Unymos" className={`inline-flex h-[22px] flex-none items-center gap-1 rounded-full border px-2 text-[12px] font-extrabold ${/ATIV/i.test(k.situacao) || !k.situacao ? "border-[#3D6A99] text-[#1E3A5C] dark:border-[#A9BED6] dark:text-[#DDE7F3]" : "border-[#B42318] text-[#B42318] dark:border-[#FF9C92] dark:text-[#FF9C92]"}`}>
@@ -926,6 +1000,7 @@ export default function JanelaConversa(props: {
                     {c.setor && <SeloCor nome={c.setor.nome} cor={c.setor.cor} ponto pequeno />}
                     <SelosEtiquetas etiquetas={c.etiquetas} max={6} />
                     {/* etiquetas de aditivos da Unymos ficam só no painel do cliente (à direita) */}
+                    {selJanela}
                 </div>
             )}
             {fixadas.length > 0 && (() => {
@@ -966,17 +1041,6 @@ export default function JanelaConversa(props: {
                     onFechar={() => { setBuscando(false); setTermo(""); }}
                 />
             )}
-            {externo && c.canal !== "site" && c.status_atendimento !== "aguardando" && (janelaRecolhida ? (
-                <button type="button" onClick={() => recolherJanela(false)} className={`mx-3 mt-1.5 flex items-center gap-1.5 self-end rounded-full px-2.5 py-1 text-[12.5px] font-bold shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] ${c.janela_aberta ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/15" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15"}`} aria-label="Mostrar a janela de 24 horas do WhatsApp">
-                    <Icone nome="clock" className="h-4 w-4" />{c.janela_aberta ? "24 h" : "Janela fechada"}<Icone nome="chevron" className="h-3.5 w-3.5" />
-                </button>
-            ) : (
-                <div className={`flex items-center gap-2 border-b border-[#E3E8F0] py-1.5 pl-4 pr-1.5 text-[13.5px] font-bold dark:border-white/12 ${c.janela_aberta ? "bg-[#EEF5D6] dark:bg-[#B3CE52]/15" : "bg-[#FCF3CC] dark:bg-[#F2CB3F]/15"}`} role="status">
-                    <Icone nome="clock" className="h-[18px] w-[18px] flex-none" />
-                    <span className="min-w-0 flex-1">{c.janela_aberta ? `Janela de 24 h aberta até ${new Date(c.janela_ate || "").toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : canalNovo ? `Prazo para responder pelo ${canalNovo[0]} terminou: continue pelo WhatsApp (Nova conversa) se a pessoa informou o celular` : "Janela de 24 h fechada: só modelos aprovados pela Meta"}</span>
-                    <button type="button" onClick={() => recolherJanela(true)} className="flex h-9 w-9 flex-none items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/10" aria-label="Recolher aviso da janela de 24 horas" title="Recolher"><Icone nome="x" className="h-4 w-4" /></button>
-                </div>
-            ))}
 
             <div ref={caixa} className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2.5 py-3 md:px-4">
                 {props.temMais && <button type="button" onClick={props.onCarregarMais} className="self-center rounded-full bg-white px-4 py-1.5 text-sm font-bold shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">Carregar mensagens anteriores</button>}
@@ -986,9 +1050,16 @@ export default function JanelaConversa(props: {
 
             {/* campo de envio */}
             {externo && !c.posso_responder && !modoNota ? (
-                <div className="flex items-center gap-2 bg-[#F0F2F5] px-4 py-3 text-sm font-bold text-[#4A5468] dark:bg-[#232B3F] dark:text-[#AEB9CF]">
+                <div className="flex items-center gap-2 bg-[#F0F2F5] px-4 py-2 text-sm font-bold text-[#4A5468] dark:bg-[#232B3F] dark:text-[#AEB9CF]">
                     <Icone nome="lock" className="h-[18px] w-[18px] flex-none" />
-                    <span className="flex-1">{c.status_atendimento === "aguardando" ? "Assuma o atendimento para responder ao cliente." : c.gestao_acompanha ? "Você vê esta conversa como Gestão: pode transferir ou encerrar, sem responder." : c.meu_papel === "observador" ? "Você acompanha esta conversa. Para responder, ela precisa ser transferida para você." : "Só o responsável pelo atendimento responde ao cliente."}</span>
+                    {(() => {
+                        // 23/11/2026: aviso em uma linha só (o texto inteiro fica no "title")
+                        const [curto, longo] = c.status_atendimento === "aguardando" ? ["Assuma o atendimento para responder.", "Assuma o atendimento para responder ao cliente."]
+                            : c.gestao_acompanha ? ["Gestão: transferir ou encerrar, sem responder.", "Você vê esta conversa como Gestão: pode transferir ou encerrar, sem responder."]
+                            : c.meu_papel === "observador" ? ["Você acompanha: para responder, peça a transferência.", "Você acompanha esta conversa. Para responder, ela precisa ser transferida para você."]
+                            : ["Só o responsável responde ao cliente.", "Só o responsável pelo atendimento responde ao cliente."];
+                        return <span className="min-w-0 flex-1 truncate" title={longo}>{curto}</span>;
+                    })()}
                     {c.status_atendimento !== "aguardando" && props.onEnviarNota && (
                         <button type="button" onClick={() => setModoNota(true)} className="flex h-9 flex-none items-center gap-1.5 rounded-xl bg-[#FFF4C2] px-3 text-[13px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F7E39A]"><Icone nome="nota" className="h-4 w-4" />Nota interna</button>
                     )}

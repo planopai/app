@@ -34,6 +34,8 @@ export type Mensagem = {
     /** só no app: mensagem ainda sendo enviada */
     _enviando?: boolean;
     _falhaLocal?: string;
+    /** 23/11/2026: WhatsApp — texto aguardando para sair junto com os próximos (hora prevista do envio, em ms) */
+    _aguardando?: number;
 };
 
 export type Membro = { usuario_id: number; nome: string; papel: "membro" | "admin" | "observador"; ultima_lida_id: number };

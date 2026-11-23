@@ -12,7 +12,7 @@ import { ativarNotificacoes, ouvir, ouvirNotificacoes, ouvirSeguranca, type Esta
 import { ocultarBarraCelular } from "@/components/barra/BarraCelular";
 import { useSemZoom } from "@/components/messenger/semZoom";
 import type { Aba, Conversa, EtiquetaCurta, Mensagem, Perfil, Setor } from "@/components/messenger/tipos";
-import { Abas, Icone, LinhaConversa, SeloCor, TIPO_CONTATO_SELO } from "./components/Lista";
+import { Abas, Icone, LinhaConversa, SeletorLista, TIPO_CONTATO_SELO } from "./components/Lista";
 import NovaConversaWhats from "./components/NovaConversaWhats";
 import JanelaConversa from "./components/Conversa";
 import { DetalhesGrupo, Encaminhar, EnviarContato, EtiquetasConversa, NovaConversa, Transferir } from "./components/Modais";
@@ -118,6 +118,10 @@ const TIPOS_DOC: Record<string, string> = {
     xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ppt: "application/vnd.ms-powerpoint", pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation", txt: "text/plain", mp4: "video/mp4",
 };
+
+/** 23/11/2026: espera do pacote de textos do WhatsApp (sem nova mensagem e sem digitação) e limite desde o primeiro texto */
+const PACOTE_ESPERA_MS = 5000;
+const PACOTE_LIMITE_MS = 30000;
 
 export default function MessengerPage() {
     const [perfil, setPerfil] = useState<Perfil | null>(null);
@@ -238,7 +242,8 @@ export default function MessengerPage() {
             if (selRef.current !== id) return;
             setConversaSel(d.conversa);
             setFixadas(d.fixadas || []);
-            setMensagens(d.mensagens);
+            // textos ainda saindo (ou esperando o pacote do WhatsApp) continuam na tela ao recarregar a conversa
+            setMensagens((ms) => [...d.mensagens, ...ms.filter((x) => x.conversa_id === id && (x._aguardando || x._enviando) && !d.mensagens.some((y) => y.cliente_uuid && y.cliente_uuid === x.cliente_uuid))]);
             setTemMais(d.tem_mais);
             const ultimo = d.mensagens[d.mensagens.length - 1];
             if (ultimo && d.conversa.participo) {
@@ -397,17 +402,105 @@ export default function MessengerPage() {
         id: Number.MAX_SAFE_INTEGER, conversa_id: selId!, autor_tipo: "usuario", autor_usuario_id: perfil!.id, autor_contato_id: null, autor_nome: perfil!.nome,
         tipo, texto, responde_a_id: null, cliente_uuid: uuid, status_envio: null, erro_envio: null, apagada: false, criado_em: new Date().toISOString(), anexos: [], _enviando: true,
     });
-    const enviarCorpo = async (uuid: string, corpo: Record<string, any>) => {
+    const enviarCorpo = async (uuid: string, corpo: Record<string, any>, cid: number | null = selId) => {
         try {
-            const r = await msgPost("enviar", { conversa_id: selId, cliente_uuid: uuid, ...corpo });
+            const r = await msgPost("enviar", { conversa_id: cid, cliente_uuid: uuid, ...corpo });
             setMensagens((ms) => ms.map((x) => (x.cliente_uuid === uuid ? r.dados : x)).sort((a, b) => a.id - b.id));
             agendarRecarga();
         } catch (e: any) {
             trocarLocal(uuid, { _enviando: false, _falhaLocal: e.message });
-            if (e.detalhe?.janela_fechada) abrirConversa(selId!, true);
+            if (e.detalhe?.janela_fechada && cid === selId) abrirConversa(selId!, true);
         }
     };
+    /*
+     * 23/11/2026: no WhatsApp a Meta cobra cada mensagem entregue. Textos enviados em sequência saem juntos, numa mensagem só:
+     * o pacote espera 5 s sem nova mensagem e sem digitação (cada uma reinicia o contador) e sai no máximo 30 s depois do primeiro texto.
+     * Foto, áudio, documento, modelo, localização ou contato, trocar de conversa ou sair da página fazem o pacote sair na hora.
+     */
+    const enviarCorpoRef = useRef(enviarCorpo);
+    enviarCorpoRef.current = enviarCorpo;
+    const pacote = useRef<{ conversaId: number; uuid: string; textos: string[]; resposta: number | null; inicio: number; ultimo: number; mostrado: number; timer: ReturnType<typeof setTimeout> | null } | null>(null);
+    const pacoteSai = (p: { inicio: number; ultimo: number }) => Math.min(p.ultimo + PACOTE_ESPERA_MS, p.inicio + PACOTE_LIMITE_MS);
+    const dispararPacote = () => {
+        const p = pacote.current;
+        if (!p) return;
+        if (p.timer) clearTimeout(p.timer);
+        pacote.current = null;
+        const texto = p.textos.join("\n");
+        setMensagens((ms) => ms.map((x) => (x.cliente_uuid === p.uuid ? { ...x, texto, _aguardando: undefined } : x)));
+        enviarCorpoRef.current(p.uuid, { tipo: "texto", texto, responde_a_id: p.resposta }, p.conversaId);
+    };
+    const dispararRef = useRef(dispararPacote);
+    dispararRef.current = dispararPacote;
+    const agendarPacote = (mostrar: boolean) => {
+        const p = pacote.current;
+        if (!p) return;
+        if (p.timer) clearTimeout(p.timer);
+        const ate = pacoteSai(p);
+        p.timer = setTimeout(() => dispararRef.current(), Math.max(0, ate - Date.now()));
+        // o contador da bolha só é redesenhado quando muda de verdade (não a cada tecla)
+        if (mostrar || Math.abs(ate - p.mostrado) > 900) {
+            p.mostrado = ate;
+            setMensagens((ms) => ms.map((x) => (x.cliente_uuid === p.uuid ? { ...x, _aguardando: ate } : x)));
+        }
+    };
+    const teclouNoPacote = () => {
+        const p = pacote.current;
+        if (!p || p.conversaId !== selId) return;
+        p.ultimo = Date.now();
+        agendarPacote(false);
+    };
+    const cancelarPacote = () => {
+        const p = pacote.current;
+        if (!p) return;
+        if (p.timer) clearTimeout(p.timer);
+        pacote.current = null;
+        setMensagens((ms) => ms.filter((x) => x.cliente_uuid !== p.uuid));
+        setTextoPainel((x) => ({ texto: p.textos.join("\n"), n: x.n + 1 })); // o texto volta para o campo, para corrigir
+    };
+    useEffect(() => {
+        const p = pacote.current;
+        if (p && p.conversaId !== selId) dispararRef.current(); // trocou de conversa: o que estava esperando sai agora
+    }, [selId]);
+    useEffect(() => {
+        const aoEsconder = () => {
+            if (document.visibilityState === "hidden") dispararRef.current();
+        };
+        const aoSair = (e: BeforeUnloadEvent) => {
+            if (!pacote.current) return;
+            dispararRef.current();
+            e.preventDefault();
+            e.returnValue = "";
+        };
+        document.addEventListener("visibilitychange", aoEsconder);
+        window.addEventListener("beforeunload", aoSair);
+        return () => {
+            document.removeEventListener("visibilitychange", aoEsconder);
+            window.removeEventListener("beforeunload", aoSair);
+            dispararRef.current(); // saiu do Messenger
+        };
+    }, []);
     const enviarTexto = (t: string) => {
+        if (selId && conversaSel?.id === selId && conversaSel.tipo === "externo" && conversaSel.canal === "whatsapp") {
+            const resposta = respondendo?.id ?? null;
+            setRespondendo(null);
+            const p = pacote.current;
+            if (p && p.conversaId === selId && (resposta === null || resposta === p.resposta) && p.textos.join("\n").length + t.length < 3900) {
+                p.textos.push(t);
+                p.ultimo = Date.now();
+                const junto = p.textos.join("\n");
+                setMensagens((ms) => ms.map((x) => (x.cliente_uuid === p.uuid ? { ...x, texto: junto } : x)));
+                agendarPacote(true);
+                return;
+            }
+            dispararPacote();
+            const agora = Date.now();
+            const uuidP = novoUuid();
+            pacote.current = { conversaId: selId, uuid: uuidP, textos: [t], resposta, inicio: agora, ultimo: agora, mostrado: 0, timer: null };
+            acrescentarLocal({ ...mensagemLocal(uuidP, "texto", t), responde_a_id: resposta, _aguardando: agora + PACOTE_ESPERA_MS });
+            agendarPacote(true);
+            return;
+        }
         const uuid = novoUuid();
         const resposta = respondendo?.id ?? null;
         setRespondendo(null);
@@ -415,11 +508,13 @@ export default function MessengerPage() {
         enviarCorpo(uuid, { tipo: "texto", texto: t, responde_a_id: resposta });
     };
     const enviarModelo = (m: { nome: string; idioma: string; parametros: string[]; texto: string }) => {
+        dispararPacote();
         const uuid = novoUuid();
         acrescentarLocal(mensagemLocal(uuid, "modelo", m.texto));
         enviarCorpo(uuid, { tipo: "modelo", texto: m.texto, modelo: { nome: m.nome, idioma: m.idioma, parametros: m.parametros } });
     };
     const enviarMidia = async (f: File | Blob, opcoes: { mime?: string; duracao_s?: number } = {}) => {
+        dispararPacote();
         const uuid = novoUuid();
         const nome = (f as File).name || "";
         let mime = (opcoes.mime || f.type || "").split(";")[0];
@@ -473,6 +568,7 @@ export default function MessengerPage() {
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 if (!window.confirm("Enviar a sua localização atual nesta conversa?")) return;
+                dispararPacote();
                 const uuid = novoUuid();
                 acrescentarLocal(mensagemLocal(uuid, "texto", "📍 Enviando localização…"));
                 enviarCorpo(uuid, { tipo: "localizacao", latitude: pos.coords.latitude, longitude: pos.coords.longitude, nome: "Localização atual" });
@@ -482,6 +578,7 @@ export default function MessengerPage() {
         );
     };
     const enviarContato = (nome: string, telefone: string) => {
+        dispararPacote();
         setModal(null);
         const uuid = novoUuid();
         acrescentarLocal(mensagemLocal(uuid, "texto", `👤 ${nome}`));
@@ -619,6 +716,14 @@ export default function MessengerPage() {
 
     const digitandoAgora = selId && digitando[selId] && digitando[selId].ate > Date.now() ? digitando[selId].nome : "";
     const naoLida = (c: Conversa) => c.nao_lidas > 0 || !!c.marcada_nao_lida;
+    // 23/11/2026: totais e não lidas de cada tipo (lista "Ver")
+    const totaisAba: Record<Aba, number> = { tudo: porAba.tudo.length, clientes: porAba.clientes.length, grupos: porAba.grupos.length, equipe: porAba.equipe.length };
+    const naoLidasAba: Record<Aba, number> = { tudo: porAba.tudo.filter(naoLida).length, clientes: porAba.clientes.filter(naoLida).length, grupos: porAba.grupos.filter(naoLida).length, equipe: porAba.equipe.filter(naoLida).length };
+    const escolherAba = (a: Aba, so: boolean) => {
+        setAba(a);
+        setSoNaoLidas(so);
+        if (so && a === "clientes") setFilaCli("assumidas"); // não lida só existe nas conversas assumidas
+    };
     const listaAtual = (aba === "clientes" ? porAba.clientes : aba === "grupos" ? porAba.grupos : aba === "equipe" ? porAba.equipe : porAba.tudo).filter((c) => !soNaoLidas || naoLida(c));
     // 23/11/2026: aba Clientes em duas filas — Automático (ninguém assumiu: na fila esperando atendente ou com a Aurora) e Assumidas
     const verAutomatico = aba === "clientes" && !!perfil?.atendente && filaCli === "automatico";
@@ -651,7 +756,16 @@ export default function MessengerPage() {
                             <Icone nome="search" />
                             <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar" aria-label="Pesquisar conversa" className="min-w-0 flex-1 bg-transparent text-[18px] text-[#1F2638] outline-none dark:text-white" />
                         </label>
-                        <Abas aba={aba} setAba={setAba} contagem={contagem} soNaoLidas={soNaoLidas} setSoNaoLidas={setSoNaoLidas} />
+                        {/* 23/11/2026: tipos de conversa e setores em listas que abrem (sem rolagem lateral); "não lidas" dentro de cada tipo */}
+                        <Abas
+                            aba={aba}
+                            soNaoLidas={soNaoLidas}
+                            totais={totaisAba}
+                            naoLidas={naoLidasAba}
+                            detalhes={porAba.fila.length && perfil?.atendente ? { clientes: `${porAba.fila.length} sem atendente`, tudo: `${porAba.fila.length} sem atendente` } : undefined}
+                            destaque={contagem.tudo}
+                            aoEscolher={escolherAba}
+                        />
                         {aba === "clientes" && perfil?.atendente && (
                             <div className="grid grid-cols-2 gap-1 rounded-full bg-[#F0F2F5] p-1 dark:bg-[#1C2334]" role="group" aria-label="Fila de clientes">
                                 {([["automatico", "Automático", fila.length], ["assumidas", "Assumidas", porAba.clientes.filter((c) => c.status_atendimento === "em_atendimento").length]] as const).map(([id, rotulo, qtd]) => (
@@ -661,33 +775,27 @@ export default function MessengerPage() {
                                 ))}
                             </div>
                         )}
-                        {aba === "clientes" && (setores.length > 0 || etiquetasEmUso.length > 0 || tiposEmUso.length > 0) && (
-                            <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Filtrar clientes">
-                                {setores.length > 0 && (
-                                    <>
-                                        <button type="button" onClick={() => setFiltroSetor(0)} aria-pressed={filtroSetor === 0} className={`h-8 flex-none rounded-full border px-3 text-[13.5px] font-extrabold ${filtroSetor === 0 ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#3D6A99] dark:bg-[#3D6A99]" : "border-[#E1E5EC] text-[#313C55] dark:border-white/15 dark:text-white"}`}>Todos os setores {fila.length || ""}</button>
-                                        {setores.map((x) => {
-                                            const qtd = fila.filter((c) => c.setor_id === x.id).length;
-                                            return (
-                                                <button key={x.id} type="button" onClick={() => setFiltroSetor(filtroSetor === x.id ? 0 : x.id)} aria-pressed={filtroSetor === x.id} title={x.situacao} className={`flex h-8 flex-none items-center gap-1.5 rounded-full border px-3 text-[13.5px] font-extrabold ${filtroSetor === x.id ? "border-[#313C55] bg-[#E9EFF6] dark:border-[#A9BED6] dark:bg-[#3D6A99]/30" : "border-[#E1E5EC] dark:border-white/15"} ${x.aberto ? "" : "opacity-70"}`}>
-                                                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: x.cor }} aria-hidden="true" />{x.nome}{qtd ? ` ${qtd}` : ""}
-                                                </button>
-                                            );
-                                        })}
-                                        {fila.some((c) => !c.setor_id) && <button type="button" onClick={() => setFiltroSetor(filtroSetor === -1 ? 0 : -1)} aria-pressed={filtroSetor === -1} className={`h-8 flex-none rounded-full border px-3 text-[13.5px] font-extrabold ${filtroSetor === -1 ? "border-[#313C55] bg-[#E9EFF6] dark:bg-[#3D6A99]/30" : "border-[#E1E5EC] dark:border-white/15"}`}>Sem setor {fila.filter((c) => !c.setor_id).length}</button>}
-                                    </>
-                                )}
-                                {tiposEmUso.map((t) => (
-                                    <button key={`t${t}`} type="button" onClick={() => setFiltroTipo(filtroTipo === t ? "" : t)} aria-pressed={filtroTipo === t} className={`flex-none rounded-full ${filtroTipo === t ? "ring-2 ring-[#313C55] dark:ring-white" : ""}`} aria-label={`Filtrar: ${TIPO_CONTATO_SELO[t][0]}`}>
-                                        <SeloCor nome={TIPO_CONTATO_SELO[t][0]} cor={TIPO_CONTATO_SELO[t][1]} />
-                                    </button>
-                                ))}
-                                {etiquetasEmUso.map((e) => (
-                                    <button key={`e${e.id}`} type="button" onClick={() => setFiltroEtiqueta(filtroEtiqueta === e.id ? 0 : e.id)} aria-pressed={filtroEtiqueta === e.id} className={`flex-none rounded-full ${filtroEtiqueta === e.id ? "ring-2 ring-[#313C55] dark:ring-white" : ""}`} aria-label={`Filtrar pela etiqueta ${e.nome}`}>
-                                        <SeloCor nome={e.nome} cor={e.cor} ponto />
-                                    </button>
-                                ))}
-                            </div>
+                        {aba === "clientes" && setores.length > 0 && (
+                            <SeletorLista
+                                rotulo="Setor"
+                                resumo={filtroSetor === 0 ? "Todos os setores" : filtroSetor === -1 ? "Sem setor" : setores.find((x) => x.id === filtroSetor)?.nome || "Todos os setores"}
+                                itens={[
+                                    { id: "s0", nome: "Todos os setores", qtd: fila.length, ativo: filtroSetor === 0, onEscolher: () => setFiltroSetor(0) },
+                                    ...setores.map((x) => ({ id: `s${x.id}`, nome: x.nome, cor: x.cor, detalhe: x.situacao, apagado: !x.aberto, qtd: fila.filter((c) => c.setor_id === x.id).length, ativo: filtroSetor === x.id, onEscolher: () => setFiltroSetor(x.id) })),
+                                    ...(fila.some((c) => !c.setor_id) ? [{ id: "s-1", nome: "Sem setor", qtd: fila.filter((c) => !c.setor_id).length, ativo: filtroSetor === -1, onEscolher: () => setFiltroSetor(-1) }] : []),
+                                ]}
+                            />
+                        )}
+                        {aba === "clientes" && (etiquetasEmUso.length > 0 || tiposEmUso.length > 0) && (
+                            <SeletorLista
+                                rotulo="Etiqueta"
+                                resumo={[filtroTipo ? TIPO_CONTATO_SELO[filtroTipo]?.[0] : "", filtroEtiqueta ? etiquetasEmUso.find((e) => e.id === filtroEtiqueta)?.nome : ""].filter(Boolean).join(" · ") || "Todas"}
+                                itens={[
+                                    { id: "e0", nome: "Todas", ativo: !filtroTipo && !filtroEtiqueta, onEscolher: () => { setFiltroTipo(""); setFiltroEtiqueta(0); } },
+                                    ...tiposEmUso.map((t) => ({ id: `t${t}`, secao: "Tipo de contato", nome: TIPO_CONTATO_SELO[t][0], cor: TIPO_CONTATO_SELO[t][1], ativo: filtroTipo === t, onEscolher: () => setFiltroTipo(filtroTipo === t ? "" : t) })),
+                                    ...etiquetasEmUso.map((e) => ({ id: `e${e.id}`, secao: "Etiquetas", nome: e.nome, cor: e.cor, ativo: filtroEtiqueta === e.id, onEscolher: () => setFiltroEtiqueta(filtroEtiqueta === e.id ? 0 : e.id) })),
+                                ]}
+                            />
                         )}
                     </div>
                     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-24 md:pb-3">
@@ -725,7 +833,7 @@ export default function MessengerPage() {
                                 {!filaAurora.length && <p className="px-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhuma conversa com a Aurora agora.</p>}
                             </>
                         )}
-                        {aba === "tudo" && porAba.fila.length > 0 && perfil?.atendente && (
+                        {aba === "tudo" && !soNaoLidas && porAba.fila.length > 0 && perfil?.atendente && (
                             <>
                                 <div className="px-3 pb-1.5 pt-2 text-[11.5px] font-extrabold uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">Aguardando atendimento · {porAba.fila.length}</div>
                                 {porAba.fila.map((c) => (
@@ -782,6 +890,7 @@ export default function MessengerPage() {
                             fixadas={fixadas} onFixarMensagem={fixarMensagem} onEtiquetas={() => setModal("etiquetas")}
                             tecladoAberto={!!area && typeof window !== "undefined" && area.altura < window.innerHeight * 0.8}
                             onDigitando={() => msgPost("digitando", { conversa_id: conversaSel.id }).catch(() => {})}
+                            onTeclou={teclouNoPacote} onEnviarAgora={() => dispararPacote()} onCancelarEnvio={cancelarPacote}
                             onAssumir={() => assumir(conversaSel.id)} onTransferir={() => setModal("transferir")} onEncerrar={encerrar}
                             onSilenciar={silenciar} onDetalhes={() => setModal("detalhes")}
                             onAbrirCliente={() => setPainelCli((v) => !v)} painelClienteAberto={painelCli} textoParaInserir={textoPainel}
