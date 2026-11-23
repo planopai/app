@@ -2217,9 +2217,10 @@ export default function AcompanhamentoPage() {
         return;
       }
 
-      iniciarNovoRegistro(tipoAtendimento);
+      // 23/11/2026: o tipo Terceiro não é mais usado para atendimentos novos (os antigos continuam abrindo como estão).
+      iniciarNovoRegistro("funerario");
     },
-    [registros, iniciarNovoRegistro, tipoAtendimento, carregarCoroasAtendimento],
+    [registros, iniciarNovoRegistro, carregarCoroasAtendimento],
   );
 
   /** Nome do campo e a aba onde ele está, para o aviso de campos obrigatórios. */
