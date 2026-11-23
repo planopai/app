@@ -1,5 +1,6 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import ItensOSAjuste from "../components/ItensOSAjuste";
 import ReembolsosPendentes from "@/components/correcoes/ReembolsosPendentes";
 import {
@@ -218,6 +219,7 @@ export default function FinanceiroOSPage() {
     const [msg, setMsg] = useState("");
     const [aberta, setAberta] = useState<any>(null);
     const [resumo, setResumo] = useState<any>(null);
+    const [busca, setBusca] = useState("");   // pesquisa na lista (23/11/2026)
 
     const carregar = useCallback(async () => {
         setLoading(true);
@@ -242,8 +244,19 @@ export default function FinanceiroOSPage() {
             .catch(() => { });
     }, []);
 
-    const linhasOS: any[] = painel?.os || [];
-    const opAgentes = useOpcoesAgente(linhasOS);
+    const todasOS: any[] = painel?.os || [];
+    /* Pesquisa por número da OS, falecido, responsável ou agente (sem acento e sem maiúsculas), dentro do período dos filtros. */
+    const linhasOS: any[] = useMemo(() => {
+        const sem = (t: any) => String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        const q = sem(busca).trim();
+        if (!q) return todasOS;
+        const partes = q.split(/\s+/);
+        return todasOS.filter((l) => {
+            const alvo = sem([l.numero_os, l.falecido, l.responsavel, l.agente].join(" "));
+            return partes.every((p) => alvo.includes(p));
+        });
+    }, [todasOS, busca]);
+    const opAgentes = useOpcoesAgente(todasOS);
     const opConvenios = useMemo(
         () =>
             convenios
@@ -323,11 +336,27 @@ export default function FinanceiroOSPage() {
                 {/* Reembolsos de atendimentos e coroas cancelados (09/10/2026) */}
                 <ReembolsosPendentes onAlterou={(m) => setMsg(m)} />
 
+                {/* Pesquisa na lista (23/11/2026) */}
+                <div className="relative">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6B7488]" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="10" cy="10" r="7" /><path d="M21 21l-6-6" /></svg>
+                    <input
+                        type="search"
+                        value={busca}
+                        onChange={(e) => setBusca(e.target.value)}
+                        placeholder="Pesquisar por nº da OS, falecido, responsável ou agente"
+                        aria-label="Pesquisar OS"
+                        className="h-12 w-full rounded-xl border-0 bg-[#FFFFFF] pl-12 pr-12 text-[16px] text-[#313C55] outline-none focus:ring-2 focus:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-white"
+                    />
+                    {busca && (
+                        <button type="button" onClick={() => setBusca("")} aria-label="Limpar pesquisa" className="absolute right-1 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-xl text-[20px] font-bold text-[#6B7488]">×</button>
+                    )}
+                </div>
+
                 <ListaCompactaOS
                     titulo={`${linhasOS.length} OS`}
                     total={linhasOS.length ? brl(totalLista) : undefined}
                     carregando={loading}
-                    vazio="Nenhuma OS no período."
+                    vazio={busca.trim() ? "Nenhuma OS encontrada para a pesquisa no período." : "Nenhuma OS no período."}
                     linhas={linhasOS.map((l) => ({
                         chave: l.os_id,
                         numero: l.numero_os,
@@ -1751,13 +1780,16 @@ function Modal({
     children: React.ReactNode;
     onFechar: () => void;
 }) {
-    return (
+    /* 23/11/2026: por portal no <body> (o cabeçalho do app ficava por cima) e com rolagem própria (o botão de confirmar ficava fora da tela). */
+    if (typeof document === "undefined") return null;
+    return createPortal(
         <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-[rgba(49,60,85,0.45)] p-4"
+            data-os-tela
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(49,60,85,0.45)] p-4"
             onClick={onFechar}
         >
             <div
-                className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+                className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl bg-white p-6 text-[#313C55] shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="text-xl font-extrabold">
@@ -1770,7 +1802,8 @@ function Modal({
                 )}
                 {children}
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 }
 
