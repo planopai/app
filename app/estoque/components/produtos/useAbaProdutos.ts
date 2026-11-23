@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { clampInt, moneyBRL } from "../formato";
 import { getProdutoFotos, resolveProdutoFotoUrl } from "../fotos";
 import { normalizar } from "../ui/BuscaLista";
@@ -16,13 +16,21 @@ export const brl = (v: number) => moneyBRL(Number.isFinite(v) ? v : 0);
 type SaldoFiltro = "todos" | "com" | "sem";
 type SituacaoFiltro = "ativos" | "inativos" | "todos";
 
+// Ordenar a lista clicando no nome da coluna (23/11/2026), mesma regra do OrdenarTabelas do sistema:
+// 1º clique A→Z / menor→maior, de novo inverte; texto sem ligar para acento e com números no lugar certo;
+// vazio ("—") sempre no fim; ordem salva no aparelho. A lista é ordenada inteira antes da paginação.
+export type ColunaOrdem = "n" | "fab" | "cls" | "q" | "mn" | "rep" | "custo" | "venda" | "tot";
+type Ordem = { col: ColunaOrdem; asc: boolean } | null;
+const CHAVE_ORDEM = "pai_ord:/estoque:produtos";
+const comparadorTexto = new Intl.Collator("pt-BR", { sensitivity: "base", numeric: true });
+
 export function useAbaProdutos(n: EstoqueDados, prod: ListaProdutos, abrirProduto: (id: ID) => void) {
     const { depositos, categorias, fabricantes, classificacoes, catById, fabById, classById, alertRows } = n;
     const {
         qEstoque, setQEstoque, depFiltroEstoque, setDepFiltroEstoque, catFiltroEstoque, setCatFiltroEstoque,
         fabFiltroEstoque, setFabFiltroEstoque, classFiltroEstoque, setClassFiltroEstoque, onlyLow, setOnlyLow,
         onlyPositive, setOnlyPositive, onlyZero, setOnlyZero, onlyInactive, setOnlyInactive, incluirInativos, setIncluirInativos,
-        estoqueRows, estoqueRowsPaginados, estoqueResumo, custoMedioMovelProduto, estoquePageSize, setEstoquePageSize,
+        estoqueRows, estoqueResumo, custoMedioMovelProduto, estoquePageSize, setEstoquePageSize,
         estoquePage, setEstoquePage, estoqueTotalPages, limparFiltrosEstoque,
     } = prod;
 
@@ -94,7 +102,53 @@ export function useAbaProdutos(n: EstoqueDados, prod: ListaProdutos, abrirProdut
 
     const umDep = depFiltroEstoque.length === 1 ? depositos.find((d) => Number(d.id) === Number(depFiltroEstoque[0]))?.nome || "" : "";
 
-    const prodRows = estoqueRowsPaginados.map((r) => {
+    const [ordem, setOrdem] = useState<Ordem>(null);
+    useEffect(() => {
+        try {
+            const v = localStorage.getItem(CHAVE_ORDEM);
+            if (v) setOrdem(JSON.parse(v) as Ordem);
+        } catch { /* sem armazenamento: só não lembra */ }
+    }, []);
+    const ordenar = (col: ColunaOrdem) => {
+        const nova: Ordem = !ordem || ordem.col !== col ? { col, asc: true } : { col, asc: !ordem.asc };
+        setOrdem(nova);
+        setEstoquePage(1);
+        try { localStorage.setItem(CHAVE_ORDEM, JSON.stringify(nova)); } catch { /* sem armazenamento */ }
+    };
+    const estadoOrdem = (col: ColunaOrdem): "asc" | "desc" | "none" => (ordem && ordem.col === col ? (ordem.asc ? "asc" : "desc") : "none");
+
+    const linhasOrdenadas = useMemo(() => {
+        if (!ordem) return estoqueRows;
+        const valor = (r: (typeof estoqueRows)[number]): string | number | null => {
+            const p = r.p;
+            switch (ordem.col) {
+                case "n": return p.nome || null;
+                case "fab": return p.fabricante_nome || (p.fabricante_id ? fabById.get(p.fabricante_id)?.nome : "") || null;
+                case "cls": return p.classificacao_nome || (p.classificacao_id ? classById.get(p.classificacao_id)?.nome : "") || null;
+                case "q": return Number(r.qtd) || 0;
+                case "mn": return r.min ? Number(r.min) : null;
+                case "rep": return r.hasMinMax && r.rep > 0 ? Number(r.rep) : null;
+                case "custo": return custoMedioMovelProduto(p.id) || 0;
+                case "venda": return Number(p.valor) || null;
+                case "tot": return (custoMedioMovelProduto(p.id) || 0) * clampInt(r.qtd);
+            }
+        };
+        const base = estoqueRows.map((r, i) => ({ r, i, v: valor(r) }));
+        base.sort((a, b) => {
+            const va = a.v, vb = b.v;
+            if ((va === null) !== (vb === null)) return va === null ? 1 : -1; // vazio sempre no fim
+            let c = 0;
+            if (va !== null && vb !== null) c = typeof va === "number" && typeof vb === "number" ? va - vb : comparadorTexto.compare(String(va), String(vb));
+            if (c !== 0) return ordem.asc ? c : -c;
+            return a.i - b.i;
+        });
+        return base.map((x) => x.r);
+    }, [estoqueRows, ordem, fabById, classById, custoMedioMovelProduto]);
+
+    const linhasDaPagina =
+        estoquePageSize === "ALL" ? linhasOrdenadas : linhasOrdenadas.slice((estoquePage - 1) * estoquePageSize, estoquePage * estoquePageSize);
+
+    const prodRows = linhasDaPagina.map((r) => {
         const p = r.p;
         const custo = custoMedioMovelProduto(p.id);
         const venda = Number(p.valor) || 0;
@@ -165,6 +219,8 @@ export function useAbaProdutos(n: EstoqueDados, prod: ListaProdutos, abrirProdut
         nomeUmDep: umDep,
         variosDep: !umDep,
         prodRows,
+        ordenar,
+        estadoOrdem,
         vazioProd: prodRows.length === 0,
         resumoProd: `${estoqueResumo.totalModelos} produtos · ${estoqueResumo.totalUnidades} unidades · ${brl(estoqueResumo.totalCusto)} a custo`,
         totalLinhas: estoqueRows.length,

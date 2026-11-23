@@ -3,7 +3,7 @@
 import React from "react";
 import { Ic } from "../ui/Icones";
 import { Janela } from "../ui/Janela";
-import type { AbaProdutosV } from "./useAbaProdutos";
+import type { AbaProdutosV, ColunaOrdem } from "./useAbaProdutos";
 
 // Aba Produtos (mockup "Repaginada do app PAI", quadros EstoqueAbas e EstoqueAbasCelular).
 
@@ -14,6 +14,33 @@ type Acoes = {
     expPDF: () => void;
     expTAG: () => void;
 };
+
+/** Cabeçalho que ordena a lista ao clicar (1º clique A→Z / menor→maior; de novo inverte). */
+function Cab({ v, c, r, children }: { v: AbaProdutosV; c: ColunaOrdem; r?: boolean; children: React.ReactNode }) {
+    const st = v.estadoOrdem(c);
+    return (
+        <span
+            role="columnheader"
+            className={r ? "r" : undefined}
+            aria-sort={st === "asc" ? "ascending" : st === "desc" ? "descending" : "none"}
+            tabIndex={0}
+            title="Clique para ordenar"
+            onClick={() => v.ordenar(c)}
+            onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    v.ordenar(c);
+                }
+            }}
+            style={{ cursor: "pointer", userSelect: "none" }}
+        >
+            {children}
+            <span aria-hidden="true" style={{ marginLeft: "4px", fontSize: "8px", letterSpacing: st === "none" ? "-1px" : "0", opacity: st === "none" ? 0.35 : 1, verticalAlign: "middle" }}>
+                {st === "asc" ? "▲" : st === "desc" ? "▼" : "▲▼"}
+            </span>
+        </span>
+    );
+}
 
 function Miniatura({ foto, m }: { foto: string | null; m?: boolean }) {
     return (
@@ -213,21 +240,13 @@ export function AbaProdutos({ v, a, m }: { v: AbaProdutosV; a: Acoes; m: boolean
             {v.variosDep && (
                 <div className="gt" role="table" aria-label="Produtos" style={{ "--cols": "minmax(0,2fr) minmax(0,1fr) minmax(0,1.2fr) 70px 104px 104px 116px 22px" } as React.CSSProperties}>
                     <div className="gh" role="row">
-                        <span role="columnheader">Produto</span>
-                        <span role="columnheader">Fabricante</span>
-                        <span role="columnheader">Classificação</span>
-                        <span className="r" role="columnheader">
-                            Qtd
-                        </span>
-                        <span className="r" role="columnheader">
-                            Custo
-                        </span>
-                        <span className="r" role="columnheader">
-                            Venda
-                        </span>
-                        <span className="r" role="columnheader">
-                            Total a custo
-                        </span>
+                        <Cab v={v} c="n">Produto</Cab>
+                        <Cab v={v} c="fab">Fabricante</Cab>
+                        <Cab v={v} c="cls">Classificação</Cab>
+                        <Cab v={v} c="q" r>Qtd</Cab>
+                        <Cab v={v} c="custo" r>Custo</Cab>
+                        <Cab v={v} c="venda" r>Venda</Cab>
+                        <Cab v={v} c="tot" r>Total a custo</Cab>
                         <span role="columnheader"></span>
                     </div>
                     {v.prodRows.map((p) => (
@@ -270,23 +289,13 @@ export function AbaProdutos({ v, a, m }: { v: AbaProdutosV; a: Acoes; m: boolean
             {v.umDep && (
                 <div className="gt" role="table" aria-label="Produtos no depósito" style={{ "--cols": "minmax(0,2fr) minmax(0,1fr) 70px 64px 64px 104px 104px 22px" } as React.CSSProperties}>
                     <div className="gh" role="row">
-                        <span role="columnheader">Produto</span>
-                        <span role="columnheader">Fabricante</span>
-                        <span className="r" role="columnheader">
-                            Qtd
-                        </span>
-                        <span className="r" role="columnheader">
-                            Mín.
-                        </span>
-                        <span className="r" role="columnheader">
-                            Repor
-                        </span>
-                        <span className="r" role="columnheader">
-                            Custo
-                        </span>
-                        <span className="r" role="columnheader">
-                            Venda
-                        </span>
+                        <Cab v={v} c="n">Produto</Cab>
+                        <Cab v={v} c="fab">Fabricante</Cab>
+                        <Cab v={v} c="q" r>Qtd</Cab>
+                        <Cab v={v} c="mn" r>Mín.</Cab>
+                        <Cab v={v} c="rep" r>Repor</Cab>
+                        <Cab v={v} c="custo" r>Custo</Cab>
+                        <Cab v={v} c="venda" r>Venda</Cab>
                         <span role="columnheader"></span>
                     </div>
                     {v.prodRows.map((p) => (
