@@ -91,6 +91,7 @@ export type Linha = {
     vendedor: string | null;
     indicador: string | null;
     titular_falecido: boolean;
+    titular_falecido_em: string | null;
     cancelamento: string | null;
     tipo_venda: string;
     responsavel: string | null;
@@ -118,6 +119,7 @@ export type Beneficiario = {
     tipo: "titular" | "dependente" | "agregado" | "pet";
     nome: string;
     cpf: string | null;
+    cpf_num?: string | null;
     nascimento: string | null;
     idade: number | null;
     sexo: string | null;

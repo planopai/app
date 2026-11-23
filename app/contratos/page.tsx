@@ -76,6 +76,7 @@ export default function Page() {
     const [fPlano, setFPlano] = useState<string | number | null>(null);
     const [fBon, setFBon] = useState<string | null>(null);
     const [fCidade, setFCidade] = useState<number | null>(null);
+    const [fFal, setFFal] = useState(false); // titular falecido sem novo titular (23/11/2026)
     const [cols, setCols] = useState<string[]>(PADRAO);
     const [verCols, setVerCols] = useState(false);
     const [verBairros, setVerBairros] = useState(false);
@@ -95,6 +96,7 @@ export default function Page() {
             if (fPlano !== null) p.set("plano_id", String(fPlano));
             if (fBon) p.set("bonificacao", fBon);
             if (fCidade) p.set("cidade_id", String(fCidade));
+            if (fFal) p.set("titular_falecido", "1");
             p.set("pagina", String(pag));
             try {
                 const j = await api(URL_CT, "lista", undefined, "&" + p.toString());
@@ -108,7 +110,7 @@ export default function Page() {
                 if (m && minha === vez.current) setErroLista(m);
             }
         },
-        [q, fSit, fPlano, fBon, fCidade],
+        [q, fSit, fPlano, fBon, fCidade, fFal],
     );
     useEffect(() => {
         const t = setTimeout(() => void carregar(1), q ? 300 : 0);
@@ -240,6 +242,9 @@ export default function Page() {
                             />
                             <Combo classe={CAMPO_P} rotulo="Cidade" vazio="Todas as cidades" opcoes={base.cidades.map((c) => ({ v: c.id, t: `${c.nome} – ${c.uf}` }))} valor={fCidade} onChange={setFCidade} />
                             <div className="flex gap-2">
+                                <button type="button" className={fFal ? BTN_PEQ_PRI : BTN_PEQ} aria-pressed={fFal} title="Titular falecido sem novo titular" onClick={() => setFFal((v) => !v)}>
+                                    Titular falecido
+                                </button>
                                 <button type="button" className={BTN_PEQ} onClick={() => setVerCols(true)}>
                                     Colunas
                                 </button>

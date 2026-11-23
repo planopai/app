@@ -6,7 +6,7 @@
  */
 import React, { useCallback, useEffect, useState } from "react";
 import { IconChevronLeft } from "@tabler/icons-react";
-import { api, BTN_PEQ, BTN_PEQ_PRI, BTN_PRI, BTN_SEC, CAMPO, CARTAO, hojeISO, Janela, mensagemErro, NOTA, ROTULO, SELO, SUB } from "../../contas-pagar/components/fin";
+import { api, BTN_PEQ, BTN_PEQ_PRI, BTN_PRI, BTN_SEC, CAMPO, CARTAO, diaMais, hojeISO, Janela, mensagemErro, NOTA, ROTULO, SELO, SUB } from "../../contas-pagar/components/fin";
 import { type Base, type Beneficiario, type Bonificacao, brl, CampoData, Combo, dataValidar, type Ficha, isoParaBR, mesBRCurto, PORTES, SIT_SELO, TIPO_VENDA_REG, URL_CT, useGravar } from "./ct";
 import { benefParaEnvio, benefVazio, JanelaBenef } from "./Benef";
 import { CamposTitular, type TitularForm, titularDeDados, titularParaEnvio, titularProblemas, titularVazio } from "./Titular";
@@ -34,6 +34,7 @@ const TR = "border-t border-[#E3E8F0] dark:border-white/[0.08]";
 type Modal =
     | { k: "ativar" }
     | { k: "titular" }
+    | { k: "transferir" }
     | { k: "incluir"; pet: boolean }
     | { k: "sair"; b: Beneficiario; motivo: "excluido" | "falecido" }
     | { k: "aditivo" }
@@ -79,6 +80,9 @@ export default function FichaContrato({ id, base, recarregarBase, avisar, onVolt
     const aberto = c.situacao !== "cancelado";
     const plano = base.planos.find((p) => p.id === c.plano_id);
     const ativos = f.beneficiarios.filter((b) => b.situacao === "ativo");
+    // Titular falecido sem novo titular (23/11/2026): prazo do sucessor (7.1); o contrato não encerra sozinho
+    const prazoSucessor = c.titular_falecido && c.titular_falecido_em ? diaMais(c.titular_falecido_em, 30) : null;
+    const temTitularAtivo = ativos.some((b) => b.tipo === "titular");
 
     const campos: [string, React.ReactNode][] = [
         ["Titular", `${c.titular} · CPF ${c.cpf || "—"}`],
@@ -112,6 +116,19 @@ export default function FichaContrato({ id, base, recarregarBase, avisar, onVolt
                 {c.bon_pendentes ? <span className={`${SELO} ${S_BON.pendente[1]}`}>Bonificação aguardando a Gestão</span> : null}
             </div>
             {aberto ? <AvisoObitos obitos={f.obitos || []} hoje={base.hoje} gravar={gravar} /> : null}
+            {aberto && c.titular_falecido ? (
+                <div className="flex flex-wrap items-center gap-3 rounded-xl bg-[#FCF3CC] px-4 py-3 text-[14px] text-[#7A5D00] dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F]">
+                    <span className="min-w-0 flex-1">
+                        <b>Titular falecido{c.titular_falecido_em ? ` em ${isoParaBR(c.titular_falecido_em)}` : ""}.</b>{" "}
+                        {prazoSucessor && prazoSucessor >= base.hoje
+                            ? `Prazo do sucessor para aceitar o contrato: até ${isoParaBR(prazoSucessor)} (cláusula 7.1).`
+                            : `Prazo do sucessor venceu${prazoSucessor ? ` em ${isoParaBR(prazoSucessor)}` : ""}. O contrato continua enquanto houver pagamento: tente de novo a mudança de titular.`}
+                    </span>
+                    <button type="button" className={BTN_PEQ_PRI} onClick={() => setModal({ k: "transferir" })}>
+                        Transferir titularidade
+                    </button>
+                </div>
+            ) : null}
             <div className={`${CARTAO} flex flex-col gap-4 p-4 sm:p-5`}>
                 <div role="tablist" className="flex flex-wrap gap-2">
                     {SUBS.map(([k, n]) => (
@@ -148,6 +165,9 @@ export default function FichaContrato({ id, base, recarregarBase, avisar, onVolt
                                 ) : null}
                                 <button type="button" className={BTN_PEQ} onClick={() => setModal({ k: "titular" })}>
                                     Alterar dados do titular
+                                </button>
+                                <button type="button" className={BTN_PEQ} onClick={() => setModal({ k: "transferir" })}>
+                                    Transferir titularidade
                                 </button>
                                 <button type="button" className={BTN_PEQ} onClick={() => setModal({ k: "trocar" })}>
                                     Trocar de plano
@@ -196,7 +216,7 @@ export default function FichaContrato({ id, base, recarregarBase, avisar, onVolt
                                                 {b.sucessor ? <span className={`${SELO} ml-1.5 ${S_BON.aprovada[1]}`}>Sucessor</span> : null}
                                                 {c.flex_beneficiario_id === b.id ? <span className={`${SELO} ml-1.5 bg-[#E9EFF6] text-[#2E5277] dark:bg-[#3D6A99]/25 dark:text-[#C9D8EA]`}>Define a faixa</span> : null}
                                             </td>
-                                            <td className={TD}>{b.tipo === "titular" ? "Titular" : b.tipo === "pet" ? `Pet (${b.pet_especie}, ${PORTES[b.pet_porte || ""] || ""})` : b.pago ? "Extra pago" : "Dependente"}</td>
+                                            <td className={TD}>{b.tipo === "titular" ? (b.situacao !== "ativo" && temTitularAtivo ? "Ex-titular" : "Titular") : b.tipo === "pet" ? `Pet (${b.pet_especie}, ${PORTES[b.pet_porte || ""] || ""})` : b.pago ? "Extra pago" : "Dependente"}</td>
                                             <td className={TD}>{b.parentesco || "—"}</td>
                                             <td className={TD}>{isoParaBR(b.nascimento) || "—"}</td>
                                             <td className={`${TD} text-right`}>{b.idade ?? "—"}</td>
@@ -403,6 +423,9 @@ export default function FichaContrato({ id, base, recarregarBase, avisar, onVolt
             </div>
 
             {modal?.k === "ativar" ? <JanelaAtivar base={base} onFechar={fechar} onSalvar={(data) => acao("ativar", { id: c.id, data })} /> : null}
+            {modal?.k === "transferir" ? (
+                <JanelaTransferir f={f} base={base} antigo={plano?.situacao === "fora_venda"} recarregarBase={recarregarBase} avisar={avisar} onFechar={fechar} onSalvar={(corpo) => acao("transferir", { contrato_id: c.id, ...corpo })} />
+            ) : null}
             {modal?.k === "titular" ? <JanelaTitular f={f} base={base} recarregarBase={recarregarBase} avisar={avisar} onFechar={fechar} onSalvar={(t) => acao("titular", { id: c.id, ...titularParaEnvio(t, base.hoje) })} /> : null}
             {modal?.k === "incluir" ? (
                 <JanelaBenef
@@ -496,6 +519,84 @@ function JanelaTitular({ f, base, recarregarBase, avisar, onFechar, onSalvar }: 
         <Janela titulo="Dados do titular" largura="max-w-4xl" onFechar={onFechar} rodape={<Rodape onFechar={onFechar} ok={!prob.length} salvando={salvando} botao="Salvar" onOk={() => void salvar(t)} />}>
             <CamposTitular t={t} set={(p) => setT((x) => ({ ...x, ...p }))} base={base} recarregarBase={recarregarBase} avisar={avisar} cpfFixo />
             {prob.length ? <p className="text-[13px] font-bold text-[#7A5D00] dark:text-[#F2CB3F]">Falta: {prob.join(", ")}.</p> : null}
+        </Janela>
+    );
+}
+
+/** Transferência de titularidade (23/11/2026): falecimento do titular (7.1) ou a pedido (o antigo vira dependente). Sem taxa. */
+function JanelaTransferir({ f, base, antigo, recarregarBase, avisar, onFechar, onSalvar }: { f: Ficha; base: Base; antigo: boolean; recarregarBase: () => Promise<unknown>; avisar: (m: string) => void; onFechar: () => void; onSalvar: (corpo: Record<string, unknown>) => Promise<unknown> }) {
+    const c = f.contrato;
+    const falecido = c.titular_falecido;
+    const atual = f.beneficiarios.find((b) => b.tipo === "titular" && b.situacao === "ativo");
+    const candidatos = f.beneficiarios.filter((b) => b.situacao === "ativo" && (b.tipo === "dependente" || b.tipo === "agregado") && (b.idade === null || b.idade >= 18));
+    const sucessor = falecido ? candidatos.find((b) => b.sucessor) : undefined;
+    const d = c.titular_dados;
+    const endereco = { cep: d.cep ?? "", cidade_id: d.cidade_id ?? null, bairro_id: d.bairro_id ?? null, rua: d.rua ?? "", numero: d.numero ?? "", complemento: d.complemento ?? "" };
+    const formDe = (id: number | null): TitularForm => {
+        const b = candidatos.find((x) => x.id === id);
+        if (!b) return { ...titularVazio(), ...endereco };
+        return { ...titularVazio(), ...endereco, ...titularDeDados({ cpf: b.cpf_num || undefined, nome: b.nome, nascimento: b.nascimento, sexo: b.sexo }) };
+    };
+    const [escolha, setEscolha] = useState<number | null>(sucessor ? sucessor.id : null);
+    const [t, setT] = useState<TitularForm>(formDe(sucessor ? sucessor.id : null));
+    const [parAntigo, setParAntigo] = useState<string | null>(null);
+    const [salvando, salvar] = useSalvando(onSalvar);
+    const prob = escolha === null ? [] : titularProblemas(t, base.hoje);
+    const ok = escolha !== null && !prob.length && (falecido || !!parAntigo);
+    const opcoes = [
+        ...candidatos.map((b) => ({ v: b.id, t: b.nome, s: [b.sucessor ? "Sucessor" : null, b.parentesco, b.idade !== null ? `${b.idade} anos` : null].filter(Boolean).join(" · ") })),
+        ...(antigo ? [{ v: -1, t: "Pessoa de fora do contrato", s: "familiar que veio ao escritório" }] : []),
+    ];
+    return (
+        <Janela
+            titulo="Transferir titularidade"
+            sub={falecido ? "Titular falecido: sucessão do contrato (cláusula 7.1)." : `A pedido: ${atual?.nome || c.titular} continua no contrato como dependente.`}
+            largura="max-w-4xl"
+            onFechar={onFechar}
+            rodape={
+                <Rodape
+                    onFechar={onFechar}
+                    ok={ok}
+                    salvando={salvando}
+                    botao="Transferir"
+                    onOk={() => void salvar({ beneficiario_id: escolha !== null && escolha > 0 ? escolha : null, titular: titularParaEnvio(t, base.hoje), parentesco_antigo: falecido ? null : parAntigo })}
+                />
+            }
+        >
+            <div>
+                <span className={ROTULO}>Novo titular</span>
+                {opcoes.length ? (
+                    <Combo
+                        rotulo="Novo titular"
+                        opcoes={opcoes}
+                        valor={escolha}
+                        onChange={(v) => {
+                            setEscolha(v);
+                            setT(formDe(v));
+                        }}
+                    />
+                ) : (
+                    <p className={SUB}>Nenhum beneficiário maior de idade no contrato. Planos novos: inclua a pessoa como beneficiário antes de transferir.</p>
+                )}
+            </div>
+            {escolha !== null ? (
+                <>
+                    <CamposTitular t={t} set={(p) => setT((x) => ({ ...x, ...p }))} base={base} recarregarBase={recarregarBase} avisar={avisar} />
+                    {prob.length ? <p className="text-[13px] font-bold text-[#7A5D00] dark:text-[#F2CB3F]">Falta: {prob.join(", ")}.</p> : null}
+                </>
+            ) : null}
+            {!falecido ? (
+                <div>
+                    <span className={ROTULO}>Parentesco de {atual?.nome || c.titular} com o novo titular</span>
+                    <Combo rotulo="Parentesco" opcoes={base.listas.parentescos.map((e) => ({ v: e, t: e }))} valor={parAntigo} onChange={setParAntigo} />
+                </div>
+            ) : null}
+            <div className={NOTA}>
+                {antigo
+                    ? "Plano antigo: assume o cônjuge, o filho mais velho ou o familiar que vier ao escritório. Beneficiário do contrato mantém as carências; pessoa de fora cumpre carência a partir de hoje."
+                    : "Planos novos: assume um beneficiário do contrato, maior de idade, que mantém as carências. Depois, indique o novo sucessor."}{" "}
+                Sem taxa: fica registrado em Aditivos e vendas e no histórico. O parentesco dos outros dependentes não muda sozinho.
+            </div>
         </Janela>
     );
 }
