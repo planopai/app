@@ -170,6 +170,10 @@ function Janela({ aberta, fechar, titulo, sub, direita, largura = "max-w-[1080px
                     <button type="button" aria-label="Fechar" onClick={fechar} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#F1F4F8] text-[22px] dark:bg-[#1C2334]">×</button>
                 </div>
                 {children}
+                {/* 24/11/2026: segundo botão de fechar no fim da janela (a janela rola e o × fica lá em cima) */}
+                <div className="mt-5 flex justify-end border-t border-[#E1E5EC] pt-4 dark:border-white/12">
+                    <button type="button" onClick={fechar} className={BTN_SEC}>Fechar</button>
+                </div>
             </div>
         </div>
     );
