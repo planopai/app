@@ -14,6 +14,7 @@
  */
 import { msgGet } from "./api";
 import type { Conversa, Mensagem } from "./tipos";
+import { dentroDeAba } from "@/lib/abas";
 
 type Ouvir = (fn: (e: { nome: string; dados: any }) => void) => () => void;
 type InfoConversa = { titulo: string; tipo: string; silenciada: boolean; participo: boolean };
@@ -33,10 +34,27 @@ let escondidoDesde = 0;
 const escuro = () => document.documentElement.classList.contains("dark");
 const celular = () => window.matchMedia("(max-width: 1023px), (pointer: coarse)").matches;
 
+function conversaNoEndereco(loc: Location): number {
+    if (!loc.pathname.startsWith("/messenger")) return 0;
+    return Number(new URLSearchParams(loc.search).get("conversa") || 0);
+}
+
 function conversaAbertaNaTela(): number {
     if (document.visibilityState !== "visible") return 0;
-    if (!window.location.pathname.startsWith("/messenger")) return 0;
-    return Number(new URLSearchParams(window.location.search).get("conversa") || 0);
+    const aqui = conversaNoEndereco(window.location);
+    if (aqui) return aqui;
+    // 24/11/2026: com abas, o Messenger roda num iframe e troca de conversa sem avisar a janela de cima:
+    // olha o endereço da aba que está à vista (as outras ficam com a classe "invisible").
+    for (const q of Array.from(document.querySelectorAll("iframe"))) {
+        if (q.classList.contains("invisible")) continue;
+        try {
+            const id = q.contentWindow ? conversaNoEndereco(q.contentWindow.location) : 0;
+            if (id) return id;
+        } catch {
+            /* quadro de outra origem */
+        }
+    }
+    return 0;
 }
 
 function previa(m: Mensagem): string {
@@ -372,6 +390,20 @@ async function alertaNaoLidas() {
 export function iniciarAvisos(opcoes: { eu: number; ouvir: Ouvir }) {
     if (ligado || typeof window === "undefined") return;
     ligado = true;
+    // 24/11/2026: com as abas do computador (cada aba é o app inteiro num iframe), a aba que está à vista também
+    // mostrava o aviso e ele saía duplicado. Só a janela de cima mostra avisos; dentro de uma aba (ou do painel
+    // da Aurora) não. O endereço da janela de cima acompanha a aba ativa, então "conversa já aberta" continua valendo.
+    if (dentroDeAba()) {
+        // a tela do Messenger roda dentro da aba: repassa à janela de cima quando silencia ou volta a ouvir uma conversa
+        window.addEventListener("messenger:silenciada", (e: any) => {
+            try {
+                window.top?.dispatchEvent(new CustomEvent("messenger:silenciada", { detail: e.detail }));
+            } catch {
+                /* sem acesso à janela de cima */
+            }
+        });
+        return;
+    }
     eu = opcoes.eu;
     carregarConversas(true);
     esconderPushComAppNaTela();

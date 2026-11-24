@@ -362,7 +362,8 @@ export default function FinanceiroOSPage() {
                         numero: l.numero_os,
                         situacao: situacaoDaOS(l),
                         pagamento: pagamentoDaOS(l),
-                        valor: brl(l.valor_total),
+                        // 24/11/2026: OS do plano mostra o valor como cobertura (não é cobrança da família)
+                        valor: l.tipo === "SOC" ? `Coberto ${brl(l.valor_total)}` : brl(l.valor_total),
                         nome: l.falecido || "—",
                         meta: metaFinanceiraOS(l),
                     }))}
@@ -796,6 +797,7 @@ function DetalheOS({
                         <ItensOSAjuste
                             osId={osId}
                             editavel={statusAtual === "ABERTA" && ehDaFamilia}
+                            cobertoPlano={linha.tipo === "SOC"}
                             versao={versaoItens}
                             onMudou={() => onAlterou("Valores da OS atualizados.")}
                         />
@@ -840,7 +842,7 @@ function DetalheOS({
 
                 <div className="mb-4 flex flex-col gap-3 lg:flex-row">
                     <Kpi
-                        rotulo="Total da OS"
+                        rotulo={linha.tipo === "SOC" ? "Coberto pelo plano" : "Total da OS"}
                         valor={brl(linha.valor_total)}
                         cor={COR.navy}
                     />

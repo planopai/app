@@ -121,6 +121,7 @@ export default function ItensOSAjuste({
     mostrarTitulo = false,
     semTabela = false,
     pedido = null,
+    cobertoPlano = false,
 }: {
     osId: number | string;
     /** OS Particular ABERTA: mostra o ícone de ajuste e o desconto geral. */
@@ -133,6 +134,8 @@ export default function ItensOSAjuste({
     semTabela?: boolean;
     /** Pedido vindo da folha: "item:<id>" ou "geral". n muda a cada clique (abre de novo o mesmo item). */
     pedido?: { alvo: string; n: number } | null;
+    /** OS do plano (Soc, 24/11/2026): o total é o que o plano cobre, não uma cobrança; sem a linha do desconto geral. */
+    cobertoPlano?: boolean;
 }) {
     const [d, setD] = useState<Dados | null>(null);
     const [erro, setErro] = useState("");
@@ -345,7 +348,7 @@ export default function ItensOSAjuste({
                                 Descontos nos itens: <b>− {brl(res.desconto_itens)}</b>
                             </div>
                         ) : null}
-                        <div className="flex items-center justify-end gap-2">
+                        {cobertoPlano ? null : <div className="flex items-center justify-end gap-2">
                             <span>
                                 Desconto geral: <b>{res.desconto_global > 0 ? `− ${brl(res.desconto_global)}` : brl(0)}</b>
                                 {res.desconto_global > 0 && res.desconto_global_tipo === "PERCENTUAL" ? (
@@ -363,8 +366,8 @@ export default function ItensOSAjuste({
                                     <IconeAjuste />
                                 </button>
                             ) : null}
-                        </div>
-                        <div className="mt-1 text-lg font-extrabold">Total: {brl(res.subtotal - res.desconto_global)}</div>
+                        </div>}
+                        <div className="mt-1 text-lg font-extrabold">{cobertoPlano ? "Coberto pelo plano" : "Total"}: {brl(res.subtotal - res.desconto_global)}</div>
                     </div>
                 </div>
             ) : null}

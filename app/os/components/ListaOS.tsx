@@ -534,6 +534,11 @@ export function metaFinanceiraOS(l: any): string {
         aberto = rv > 0 ? `cancelada · reembolso ${brlOS(rv)} ${l.reembolso_status === "FEITO" ? "feito" : "pendente"}` : "cancelada";
     }
     else if (l.tipo === "SOC") aberto = "coberto pelo plano";
+    // 24/11/2026: a OS da Prefeitura não é cobrada da família: "a faturar à Prefeitura" no lugar do "em aberto".
+    else if (l.tipo === "PRF") {
+        const saldoPrf = l.saldo !== null && l.saldo !== undefined ? Number(l.saldo) || 0 : Math.max(0, (Number(l.valor_total) || 0) - pago);
+        aberto = saldoPrf > 0 ? `a faturar à Prefeitura ${brlOS(saldoPrf)}` : "recebido da Prefeitura";
+    }
     else if (l.saldo !== null && l.saldo !== undefined) aberto = `em aberto ${brlOS(l.saldo)}`;
     else aberto = `em aberto ${brlOS(Math.max(0, (Number(l.valor_total) || 0) - pago))}`;
     return [data, l.agente || "", `pago ${brlOS(pago)}`, aberto].filter(Boolean).join(" · ");
