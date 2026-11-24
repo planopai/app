@@ -1,0 +1,29 @@
+# Conector do WhatsApp Web (Evolution API) — máquina RESERVA (PC do velório online)
+# Fica em C:\pai-whatsapp\docker-compose.yml, ao lado do arquivo .env (criado a partir do .env.exemplo).
+# Subir:   docker compose up -d        Ver se está no ar:   docker compose ps
+# Não usa as portas 80/443 do nginx do velório: o conector só responde em 127.0.0.1:8080 (dentro do PC).
+services:
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7   # versão estável fixa (a 2.4 exige licença)
+    restart: always
+    depends_on:
+      - postgres
+    env_file: .env
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${PG_SENHA}
+      POSTGRES_DB: evolution
+    volumes:
+      - postgres_dados:/var/lib/postgresql/data
+
+volumes:
+  evolution_instances:
+  postgres_dados:

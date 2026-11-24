@@ -6,8 +6,7 @@ import { Ic, type NomeIcone } from "../ui/Icones";
 import { Janela } from "../ui/Janela";
 import { BarcodeScannerModal } from "../ui/LeitorCodigo";
 import type { MovimentacoesV } from "./useMovimentacoes";
-import { useCadastros } from "../../../contas-pagar/components/fin";
-import { NotaPagamento } from "../../../contas-pagar/components/entrada";
+import { ConferePagamento, ListaEntradas, NotaCampos, PagamentoCampos, useBaseEnt } from "../../../contas-pagar/components/entrada";
 
 // Aba Movimentações: Transferência, Entrada e Confecção (mockup "Repaginada do app PAI").
 
@@ -24,39 +23,39 @@ function Campo({ rotulo, children }: { rotulo: string; children: React.ReactNode
 }
 
 /**
- * Nota e pagamento da entrada (23/11/2026): fornecedor, nota e condição de pagamento → títulos no Contas a pagar.
- * Só aparece para quem tem o Contas a pagar (os cadastros do financeiro carregam); para os outros, a entrada vai
- * para o quadro "Entradas do estoque sem conta a pagar" e o financeiro completa.
+ * Nota e pagamento da entrada (24/11/2026, prévia "Como Foi Pago"): fornecedor e número da nota obrigatórios (listas com
+ * busca, cadastro de fornecedor na hora). O pagamento é opcional: a entrada fica pendente e quem tem o Contas a Pagar
+ * confere e aprova (na lista "Entradas lançadas", abaixo, ou no quadro do Contas a Pagar).
  */
 function NotaEstoque({ v, m }: { v: MovimentacoesV; m: boolean }) {
-    const { cad, erroCad, recarregar } = useCadastros();
-    const { setFinOk } = v;
-    React.useEffect(() => {
-        setFinOk(!!cad);
-    }, [cad, setFinOk]);
-    if (!cad) {
-        return erroCad ? (
+    const { base, erro, recarregar } = useBaseEnt();
+    const [verPag, setVerPag] = React.useState(false);
+    if (!base) {
+        return erro ? (
             <div className="sm" style={{ padding: "12px 14px", borderRadius: "12px", background: "var(--sunk)", fontSize: m ? "13px" : "14px" }}>
-                A nota e o pagamento desta entrada ficam para o financeiro, no Contas a pagar.
+                {erro}
             </div>
         ) : null;
     }
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", borderTop: "1px solid var(--line)", paddingTop: "14px" }}>
+            <h3 style={{ margin: "0", fontSize: m ? "16px" : "17px", fontWeight: "800" }}>Nota do fornecedor</h3>
+            <NotaCampos base={base} nota={v.nota} setNota={v.setNota} recarregarBase={recarregar} avisar={v.avisar} />
             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                <h3 style={{ margin: "0", fontSize: m ? "16px" : "17px", fontWeight: "800" }}>Nota e pagamento</h3>
-                <label style={{ display: "inline-flex", alignItems: "center", gap: "8px", fontWeight: "700", minHeight: "44px", cursor: "pointer" }}>
-                    <input type="checkbox" checked={v.gerarFin} onChange={(e) => v.setGerarFin(e.target.checked)} style={{ width: "20px", height: "20px" }} />
-                    Gerar contas a pagar desta entrada
-                </label>
+                <h3 style={{ margin: "0", fontSize: m ? "16px" : "17px", fontWeight: "800" }}>Pagamento</h3>
+                <button type="button" className="btn" onClick={() => setVerPag((x) => !x)} aria-expanded={verPag}>
+                    {verPag ? "Esconder" : base.pode_aprovar ? "Preencher agora" : "Deixar preenchido (opcional)"}
+                </button>
             </div>
-            {v.gerarFin ? (
-                <NotaPagamento cad={cad} recarregarCad={recarregar} total={v.totalNota} nota={v.nota} setNota={v.setNota} avisar={v.avisar} />
-            ) : (
-                <div className="sm" style={{ fontSize: "13.5px" }}>
-                    A entrada vai só para o estoque e aparece no Contas a pagar, em &quot;Entradas do estoque sem conta a pagar&quot;.
-                </div>
-            )}
+            {verPag ? (
+                <>
+                    <PagamentoCampos base={base} total={v.totalNota} pessoaId={v.nota.pessoa_id} pag={v.pag} setPag={v.setPag} podeBuscar={base.pode_aprovar} />
+                    <ConferePagamento total={v.totalNota} pag={v.pag} />
+                </>
+            ) : null}
+            <div className="sm" style={{ fontSize: "13.5px" }}>
+                Ao concluir, o estoque soma na hora e a entrada fica pendente. {base.pode_aprovar ? "Depois, abra a entrada na lista abaixo e aprove o pagamento." : "Quem tem o Contas a Pagar confere o pagamento e aprova."}
+            </div>
         </div>
     );
 }
@@ -574,6 +573,7 @@ export function AbaMovimentacoes({ v, m }: { v: MovimentacoesV; m: boolean }) {
                     </div>
                 </div>
                 {v.isC && <ConfeccoesRegistradas v={v} m />}
+                {v.isE && <ListaEntradas avisar={v.avisar} recarga={v.recargaEntradas} />}
                 {v.cmov && <JanelaConfirmar v={v} m />}
                 {leitor}
             </section>
@@ -768,6 +768,7 @@ export function AbaMovimentacoes({ v, m }: { v: MovimentacoesV; m: boolean }) {
             </div>
 
             {v.isC && <ConfeccoesRegistradas v={v} m={false} />}
+            {v.isE && <ListaEntradas avisar={v.avisar} recarga={v.recargaEntradas} />}
             {v.cmov && <JanelaConfirmar v={v} m={false} />}
             {leitor}
         </section>

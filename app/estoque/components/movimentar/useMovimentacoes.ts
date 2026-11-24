@@ -7,8 +7,7 @@ import { brl } from "../produtos/useAbaProdutos";
 import { useBuscaLista, type OpcaoBusca } from "../ui/BuscaLista";
 import type { ConfeccaoPreviewResp, HistoricoResp, HistoricoRow, ID, Produto } from "../tipos";
 import type { EstoqueDados } from "../useEstoqueDados";
-import { api } from "../../../contas-pagar/components/fin";
-import { notaParaEnvio, notaProblemas, notaVazia, URL_ENT, type NotaEnt } from "../../../contas-pagar/components/entrada";
+import { notaProblemas, notaVazia, pagVazio, salvarNota, type NotaEnt, type PagEnt } from "../../../contas-pagar/components/entrada";
 
 // Movimentações (repaginada): Transferência, Entrada e Confecção na própria aba, com a confirmação numa janela.
 // A Saída manual saiu da tela (as saídas acontecem pelo atendimento e pelas requisições).
@@ -137,11 +136,12 @@ export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
     const freteTotal = parseBRLToNumber(frete);
     const freteU = unid ? freteTotal / unid : 0;
     const totEntrada = fila.entrada.reduce((a, i) => a + (i.cu + freteU) * i.q, 0);
-    // Nota e pagamento (23/11/2026): total da nota = itens pelo custo base + frete (igual ao fin_entrada.php)
+    // Nota e pagamento (24/11/2026): total da nota = itens pelo custo base + frete (igual ao fin_entrada.php).
+    // Fornecedor e número da nota são obrigatórios; o pagamento é opcional (quem aprova é o Contas a Pagar).
     const totalNota = Math.round((fila.entrada.reduce((a, i) => a + Math.round(i.cu * i.q * 100) / 100, 0) + freteTotal) * 100) / 100;
     const [nota, setNota] = useState<NotaEnt>(notaVazia);
-    const [gerarFin, setGerarFin] = useState(true);
-    const [finOk, setFinOk] = useState(false); // quem tem o Contas a pagar (cadastros do financeiro carregados)
+    const [pag, setPag] = useState<PagEnt>(pagVazio);
+    const [recargaEntradas, setRecargaEntradas] = useState(0);
 
     const filaRows = filaAtual.map((i) => {
         const fin = i.cu + freteU;
@@ -298,9 +298,9 @@ export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
     const pedirConcluir = () => {
         if (op === "transf" && (!orig || !dest || !sol)) return setErro("Escolha origem, destino e solicitante.");
         if (op === "entrada" && !depE) return setErro("Escolha o local de entrada.");
-        if (op === "entrada" && finOk && gerarFin && filaAtual.length) {
-            const f = notaProblemas(nota, totalNota);
-            if (f.length) return setErro(`Nota e pagamento: falta ${f.join(", ")}.`);
+        if (op === "entrada" && filaAtual.length) {
+            const f = notaProblemas(nota);
+            if (f.length) return setErro(`Nota: falta ${f.join(" e ")}.`);
         }
         if (!podeConcluir) return setErro(op === "confeccao" ? "Escolha o produto, adicione os insumos e informe quantos ficaram prontos." : "Adicione pelo menos um item.");
         setErro("");
@@ -344,16 +344,18 @@ export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
                 if (!r.ok) throw new Error(r.msg || "Falha na entrada.");
                 setFila((f) => ({ ...f, entrada: [] }));
                 setFrete("");
-                if (finOk && gerarFin && r.codigo) {
+                if (r.codigo) {
                     try {
-                        const j = await api(URL_ENT, "gerar", notaParaEnvio(nota, r.codigo));
-                        avisar(`${r.codigo} registrada. ${j.msg || ""}`.trim());
+                        await salvarNota(r.codigo, nota, pag);
+                        avisar(`${r.codigo} registrada e pendente de aprovação do pagamento.`);
                         setNota(notaVazia());
+                        setPag(pagVazio());
                     } catch (e: unknown) {
-                        avisar(`${r.codigo} registrada, mas o contas a pagar não foi gerado: ${e instanceof Error ? e.message : "erro"}. Complete no Contas a pagar.`);
+                        avisar(`${r.codigo} registrada no estoque, mas a nota não foi salva: ${e instanceof Error ? e.message : "erro"}. Abra a entrada na lista abaixo para completar.`);
                     }
+                    setRecargaEntradas((x) => x + 1);
                 } else {
-                    avisar(`${r.codigo || "Entrada"} registrada.${finOk ? " Sem conta a pagar: o financeiro completa no Contas a pagar." : ""}`);
+                    avisar("Entrada registrada.");
                 }
             } else {
                 const r = await apiPost<{ ok: boolean; msg?: string; confeccao_id?: number }>({
@@ -446,10 +448,9 @@ export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
         totalNota,
         nota,
         setNota,
-        gerarFin,
-        setGerarFin,
-        finOk,
-        setFinOk,
+        pag,
+        setPag,
+        recargaEntradas,
         avisar,
         limparMov: limpar,
         concluirLbl: `Concluir ${ROTULO[op]}`,
