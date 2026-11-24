@@ -360,7 +360,8 @@ export default function MessengerPage() {
             tudo: conversas.filter((c) => !c.gestao_acompanha && f(c)),
             equipe: conversas.filter((c) => c.canal === "interno" && f(c)),
             grupos: conversas.filter((c) => c.tipo === "grupo" && f(c)),
-            clientes: conversas.filter((c) => c.canal !== "interno" && !c.gestao_acompanha && f(c) && porEtiqueta(c)),
+            clientes: conversas.filter((c) => c.canal !== "interno" && c.tipo !== "parceiro" && !c.gestao_acompanha && f(c) && porEtiqueta(c)),
+            externos: conversas.filter((c) => c.tipo === "parceiro" && f(c)), // 24/11/2026: WhatsApp Web
             daEquipe: conversas.filter((c) => !!c.gestao_acompanha && f(c) && porEtiqueta(c)),
             fila: fila.filter((c) => f(c) && porSetor(c) && porEtiqueta(c)),
         };
@@ -377,7 +378,8 @@ export default function MessengerPage() {
         tudo: conversas.filter((c) => c.nao_lidas > 0).length + fila.length,
         equipe: conversas.filter((c) => c.canal === "interno" && c.nao_lidas > 0).length,
         grupos: conversas.filter((c) => c.tipo === "grupo" && c.nao_lidas > 0).length,
-        clientes: fila.length + conversas.filter((c) => c.canal !== "interno" && c.nao_lidas > 0).length,
+        clientes: fila.length + conversas.filter((c) => c.canal !== "interno" && c.tipo !== "parceiro" && c.nao_lidas > 0).length,
+        externos: conversas.filter((c) => c.tipo === "parceiro" && c.nao_lidas > 0).length,
     };
 
     /* ---------- envio ---------- */
@@ -498,7 +500,7 @@ export default function MessengerPage() {
         acrescentarLocal(mensagemLocal(uuid, "modelo", m.texto));
         enviarCorpo(uuid, { tipo: "modelo", texto: m.texto, modelo: { nome: m.nome, idioma: m.idioma, parametros: m.parametros } });
     };
-    const enviarMidia = async (f: File | Blob, opcoes: { mime?: string; duracao_s?: number } = {}) => {
+    const enviarMidia = async (f: File | Blob, opcoes: { mime?: string; duracao_s?: number; legenda?: string } = {}) => {
         dispararPacote();
         const uuid = novoUuid();
         const nome = (f as File).name || "";
@@ -530,7 +532,9 @@ export default function MessengerPage() {
             } else {
                 anexo.chave = await enviarArquivo(f, mime);
             }
-            await enviarCorpo(uuid, { tipo, anexo, responde_a_id: resposta });
+            // 24/11/2026: legenda da foto (vai junto, como no WhatsApp)
+            const legenda = tipo === "imagem" ? (opcoes.legenda || "").trim() : "";
+            await enviarCorpo(uuid, { tipo, anexo, responde_a_id: resposta, ...(legenda ? { texto: legenda } : {}) });
         } catch (e: any) {
             trocarLocal(uuid, { _enviando: false, _falhaLocal: e.message });
         }
@@ -722,14 +726,14 @@ export default function MessengerPage() {
     const digitandoAgora = selId && digitando[selId] && digitando[selId].ate > Date.now() ? digitando[selId].nome : "";
     const naoLida = (c: Conversa) => c.nao_lidas > 0 || !!c.marcada_nao_lida;
     // 23/11/2026: totais e não lidas de cada tipo (lista "Ver")
-    const totaisAba: Record<Aba, number> = { tudo: porAba.tudo.length, clientes: porAba.clientes.length, grupos: porAba.grupos.length, equipe: porAba.equipe.length };
-    const naoLidasAba: Record<Aba, number> = { tudo: porAba.tudo.filter(naoLida).length, clientes: porAba.clientes.filter(naoLida).length, grupos: porAba.grupos.filter(naoLida).length, equipe: porAba.equipe.filter(naoLida).length };
+    const totaisAba: Record<Aba, number> = { tudo: porAba.tudo.length, clientes: porAba.clientes.length, grupos: porAba.grupos.length, equipe: porAba.equipe.length, externos: porAba.externos.length };
+    const naoLidasAba: Record<Aba, number> = { tudo: porAba.tudo.filter(naoLida).length, clientes: porAba.clientes.filter(naoLida).length, grupos: porAba.grupos.filter(naoLida).length, equipe: porAba.equipe.filter(naoLida).length, externos: porAba.externos.filter(naoLida).length };
     const escolherAba = (a: Aba, so: boolean) => {
         setAba(a);
         setSoNaoLidas(so);
         if (so && a === "clientes") setFilaCli("assumidas"); // não lida só existe nas conversas assumidas
     };
-    const listaAtual = (aba === "clientes" ? porAba.clientes : aba === "grupos" ? porAba.grupos : aba === "equipe" ? porAba.equipe : porAba.tudo).filter((c) => !soNaoLidas || naoLida(c));
+    const listaAtual = (aba === "clientes" ? porAba.clientes : aba === "grupos" ? porAba.grupos : aba === "equipe" ? porAba.equipe : aba === "externos" ? porAba.externos : porAba.tudo).filter((c) => !soNaoLidas || naoLida(c));
     // 23/11/2026: aba Clientes em duas filas — Automático (ninguém assumiu: na fila esperando atendente ou com a Aurora) e Assumidas
     const verAutomatico = aba === "clientes" && !!perfil?.atendente && filaCli === "automatico";
     const verFinalizadas = aba === "clientes" && !!perfil?.atendente && filaCli === "finalizadas";
@@ -889,7 +893,7 @@ export default function MessengerPage() {
                         )}
                         {!listaAtual.length && !carregando && !verAutomatico && !verFinalizadas && (
                             <p className="px-4 py-4 text-sm text-[#6B7488] dark:text-[#AEB9CF]">
-                                {soNaoLidas ? "Nenhuma conversa com mensagem não lida." : aba === "clientes" ? (perfil?.atendente ? "Nenhum atendimento assumido por você." : "Você não atende clientes do WhatsApp.") : aba === "grupos" ? "Você ainda não participa de grupos." : "Nenhuma conversa ainda. Toque no botão de nova conversa para começar."}
+                                {soNaoLidas ? "Nenhuma conversa com mensagem não lida." : aba === "clientes" ? (perfil?.atendente ? "Nenhum atendimento assumido por você." : "Você não atende clientes do WhatsApp.") : aba === "grupos" ? "Você ainda não participa de grupos." : aba === "externos" ? "Nenhuma conversa externa. Em Nova conversa › WhatsApp, escolha um canal do WhatsApp Web." : "Nenhuma conversa ainda. Toque no botão de nova conversa para começar."}
                             </p>
                         )}
                     </div>
@@ -946,7 +950,7 @@ export default function MessengerPage() {
                 <NovaConversa online={presenca.online} grupoInicial={modal === "grupo"} onFechar={() => setModal(null)} onAberta={(c) => { setModal(null); carregarListas(); setAba(c.tipo === "grupo" ? "grupos" : "equipe"); abrirConversa(c.id); }} onWhatsApp={perfil?.atendente ? () => setModal("whats") : undefined} />
             )}
             {modal === "whats" && (
-                <NovaConversaWhats onFechar={() => setModal(null)} onAberta={(id) => { setModal(null); carregarListas(); setAba("clientes"); abrirConversa(id); }} />
+                <NovaConversaWhats onFechar={() => setModal(null)} onAberta={(id, externo) => { setModal(null); carregarListas(); setAba(externo ? "externos" : "clientes"); abrirConversa(id); }} />
             )}
             {modal === "transferir" && conversaSel && (
                 <Transferir conversa={conversaSel} onFechar={() => setModal(null)} onFeito={() => { setModal(null); setAviso("Conversa transferida."); if (perfil?.gestao) abrirConversa(conversaSel.id, true); else fecharConversa(); carregarListas(); }} />

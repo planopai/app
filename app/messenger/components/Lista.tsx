@@ -228,13 +228,14 @@ export function SeletorLista({ rotulo, resumo, destaque, itens, compacto = false
 }
 
 /** Tipos de conversa (Tudo · Clientes · Grupos · Equipe) em lista que abre; "não lidas" fica dentro de cada tipo (23/11/2026). */
-export function Abas({ aba, soNaoLidas, naoLidas, detalhes, destaque, aoEscolher, compacto = false }: { aba: Aba; soNaoLidas: boolean; totais?: Record<Aba, number>; naoLidas: Record<Aba, number>; detalhes?: Partial<Record<Aba, string>>; destaque?: number; aoEscolher: (a: Aba, soNaoLidas: boolean) => void; compacto?: boolean }) {
+export function Abas({ aba, soNaoLidas, totais, naoLidas, detalhes, destaque, aoEscolher, compacto = false }: { aba: Aba; soNaoLidas: boolean; totais?: Record<Aba, number>; naoLidas: Record<Aba, number>; detalhes?: Partial<Record<Aba, string>>; destaque?: number; aoEscolher: (a: Aba, soNaoLidas: boolean) => void; compacto?: boolean }) {
     const itens: { id: Aba; rotulo: string }[] = [
         { id: "tudo", rotulo: "Tudo" },
         { id: "clientes", rotulo: "Clientes" },
         { id: "grupos", rotulo: "Grupos" },
         { id: "equipe", rotulo: "Equipe" },
-    ];
+        { id: "externos", rotulo: "Externos" }, // 24/11/2026: WhatsApp Web (fornecedores, prestadores, órgãos…)
+    ].filter((i) => i.id !== "externos" || aba === "externos" || (totais?.externos ?? 0) > 0) as { id: Aba; rotulo: string }[];
     const atual = itens.find((i) => i.id === aba)?.rotulo || "Tudo";
     return (
         <SeletorLista
@@ -389,7 +390,8 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
                             {c.tipo === "externo" && <SeloCanal canal={c.canal} />}
                             {c.com_aurora && <SeloCor nome="Com a Aurora" cor="#6D4FC2" pequeno />}
                             {c.aguardando_atendente && <SeloCor nome="Aguardando atendente" cor="#C2410C" pequeno />}
-                            {c.tipo === "externo" && c.contato?.tipo && TIPO_CONTATO_SELO[c.contato.tipo] && <SeloCor nome={TIPO_CONTATO_SELO[c.contato.tipo][0]} cor={TIPO_CONTATO_SELO[c.contato.tipo][1]} pequeno />}
+                            {c.tipo === "parceiro" && c.wa2 && <SeloCor nome={c.wa2.numero_nome} cor={c.wa2.conectado ? "#2E9D5B" : "#B42318"} pequeno />}
+                            {(c.tipo === "externo" || c.tipo === "parceiro") && c.contato?.tipo && TIPO_CONTATO_SELO[c.contato.tipo] && <SeloCor nome={TIPO_CONTATO_SELO[c.contato.tipo][0]} cor={TIPO_CONTATO_SELO[c.contato.tipo][1]} pequeno />}
                             {c.setor && c.status_atendimento === "aguardando" && <SeloCor nome={c.setor.nome} cor={c.setor.cor} ponto pequeno />}
                             <SelosEtiquetas etiquetas={c.etiquetas} />
                             <TiquesLista estado={estadoUltima(c, eu)} />

@@ -42,7 +42,7 @@ export type Membro = { usuario_id: number; nome: string; papel: "membro" | "admi
 
 export type Conversa = {
     id: number;
-    tipo: "individual" | "grupo" | "externo";
+    tipo: "individual" | "grupo" | "externo" | "parceiro"; // parceiro: externo pelo WhatsApp Web (24/11/2026, aba Externos)
     canal: "interno" | "whatsapp" | "site" | "facebook" | "instagram"; // site, facebook e instagram desde 16/11/2026 (aurora_13 e aurora_14)
     titulo: string;
     outro_usuario_id: number | null;
@@ -79,6 +79,8 @@ export type Conversa = {
     /** 23/11/2026: aguardando — conversando com a Aurora, ou na fila esperando um atendente (pediu atendente, aceitou a proposta ou veio do menu) */
     com_aurora?: boolean;
     aguardando_atendente?: boolean;
+    /** 24/11/2026: conversa pelo WhatsApp Web (tipo parceiro): número usado e se está conectado */
+    wa2?: { numero_id: number; numero_nome: string; conectado: boolean; excluido: boolean } | null;
 };
 
 export type Perfil = {
@@ -97,7 +99,7 @@ export type Perfil = {
     notificacoes_canal?: "ably" | "onesignal";
 };
 
-export type Aba = "tudo" | "equipe" | "grupos" | "clientes";
+export type Aba = "tudo" | "equipe" | "grupos" | "clientes" | "externos";
 
 /* ---------- pacote 4A (15/10/2026): setores e etiquetas ---------- */
 /** Contrato da Unymos vinculado ao contato (selo na conversa); situação e etiquetas vêm da cópia diária. */

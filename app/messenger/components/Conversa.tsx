@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { API_BASE, apiJson, msgGet, msgPost } from "@/components/messenger/api";
 import { formatoAudio, GravadorMp3 } from "@/components/messenger/compressao";
 import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@/components/messenger/tipos";
@@ -38,7 +39,109 @@ function BotaoBaixar({ a, claro = false }: { a: TAnexo; claro?: boolean }) {
     );
 }
 
+/**
+ * 24/11/2026: foto aberta dentro do app, como no WhatsApp (antes abria em outra aba, e o Safari bloqueava).
+ * Toque na foto amplia/reduz; fecha no X, no fundo ou com Esc; o botão de baixar continua no topo.
+ */
+function VisualizadorFoto({ a, previa, onFechar }: { a: TAnexo; previa: string; onFechar: () => void }) {
+    const [url, setUrl] = useState(previa);
+    const [zoom, setZoom] = useState(false);
+    const [erro, setErro] = useState(false);
+    useEffect(() => {
+        let vivo = true;
+        linkAnexo(a.id).then((u) => vivo && setUrl(u)).catch(() => vivo && !previa && setErro(true));
+        const tecla = (e: KeyboardEvent) => { if (e.key === "Escape") onFechar(); };
+        document.addEventListener("keydown", tecla);
+        const antes = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        return () => {
+            vivo = false;
+            document.removeEventListener("keydown", tecla);
+            document.body.style.overflow = antes;
+        };
+    }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (typeof document === "undefined") return null;
+    return createPortal(
+        <div className="fixed inset-0 z-[200] flex flex-col bg-black/95" role="dialog" aria-modal="true" aria-label="Foto" onClick={onFechar}>
+            <div className="flex flex-none items-center gap-2 px-3 py-2 text-white" style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }} onClick={(e) => e.stopPropagation()}>
+                <span className="min-w-0 flex-1 truncate text-[15px] font-bold">{a.nome_original || "Foto"}</span>
+                <BotaoBaixar a={a} claro />
+                <button type="button" onClick={onFechar} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20" aria-label="Fechar foto"><Icone nome="x" className="h-5 w-5" /></button>
+            </div>
+            <div className={`flex min-h-0 flex-1 ${zoom ? "items-start justify-start overflow-auto" : "items-center justify-center overflow-hidden"} p-2`}>
+                {url ? (
+                    <img
+                        src={url}
+                        alt={a.nome_original || "Foto enviada"}
+                        onClick={(e) => { e.stopPropagation(); setZoom((z) => !z); }}
+                        className={zoom ? "max-w-none cursor-zoom-out" : "max-h-full max-w-full cursor-zoom-in object-contain"}
+                        style={zoom ? { width: a.largura ? Math.max(a.largura, 1200) : "200%" } : undefined}
+                    />
+                ) : (
+                    <span className="text-sm font-bold text-white/80">{erro ? "Foto indisponível" : "Carregando foto…"}</span>
+                )}
+            </div>
+        </div>,
+        document.body
+    );
+}
+
+/**
+ * 24/11/2026: foto escolhida (clipe, câmera ou colada) fica numa janela antes de sair, como no WhatsApp:
+ * prévia, legenda e a mensagem que está sendo respondida. Várias fotos: a legenda vai na primeira.
+ */
+function EnvioFoto({ fotos, respondendo, eu, onEnviar, onCancelar, onTirar }: { fotos: File[]; respondendo?: Mensagem | null; eu: number; onEnviar: (legenda: string) => void; onCancelar: () => void; onTirar: (i: number) => void }) {
+    const [legenda, setLegenda] = useState("");
+    const [atual, setAtual] = useState(0);
+    const urls = React.useMemo(() => fotos.map((f) => URL.createObjectURL(f)), [fotos]);
+    useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
+    useEffect(() => {
+        const tecla = (e: KeyboardEvent) => { if (e.key === "Escape") onCancelar(); };
+        document.addEventListener("keydown", tecla);
+        return () => document.removeEventListener("keydown", tecla);
+    }, [onCancelar]);
+    const i = Math.min(atual, fotos.length - 1);
+    if (typeof document === "undefined" || !fotos.length) return null;
+    return createPortal(
+        <div className="fixed inset-0 z-[200] flex flex-col bg-[#0B141A]" role="dialog" aria-modal="true" aria-label="Enviar foto">
+            <div className="flex flex-none items-center gap-2 px-3 py-2 text-white" style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}>
+                <button type="button" onClick={onCancelar} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20" aria-label="Cancelar envio"><Icone nome="x" className="h-5 w-5" /></button>
+                <span className="min-w-0 flex-1 truncate text-[15px] font-bold">{fotos.length > 1 ? `${fotos.length} fotos` : "Enviar foto"}</span>
+                {fotos.length > 1 && <button type="button" onClick={() => { onTirar(i); setAtual(0); }} className="flex h-10 items-center gap-1.5 rounded-full bg-white/10 px-3 text-[13px] font-bold hover:bg-white/20" aria-label="Tirar esta foto"><Icone nome="trash" className="h-4 w-4" />Tirar</button>}
+            </div>
+            <div className="flex min-h-0 flex-1 items-center justify-center p-3">
+                <img src={urls[i]} alt="Prévia da foto" className="max-h-full max-w-full rounded-lg object-contain" />
+            </div>
+            {fotos.length > 1 && (
+                <div className="flex flex-none justify-center gap-2 overflow-x-auto px-3 pb-2">
+                    {urls.map((u, k) => (
+                        <button key={u} type="button" onClick={() => setAtual(k)} className={`h-14 w-14 flex-none overflow-hidden rounded-lg ${k === i ? "ring-2 ring-[#B3CE52]" : "opacity-70"}`} aria-label={`Foto ${k + 1}`}><img src={u} alt="" className="h-full w-full object-cover" /></button>
+                    ))}
+                </div>
+            )}
+            <div className="flex-none px-3 pb-3" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+                {respondendo && <div className="mb-2 rounded-xl bg-white/95 px-2 py-1 dark:bg-[#232B3F]"><Citacao m={respondendo} eu={eu} /></div>}
+                <div className="flex items-end gap-2">
+                    <textarea
+                        autoFocus
+                        rows={1}
+                        value={legenda}
+                        onChange={(e) => setLegenda(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); onEnviar(legenda); } }}
+                        placeholder={fotos.length > 1 ? "Legenda (vai na primeira foto)" : "Adicione uma legenda…"}
+                        aria-label="Legenda da foto"
+                        className="max-h-32 min-h-[48px] flex-1 resize-none rounded-3xl bg-[#2A3942] px-4 py-3 text-[17px] text-white outline-none placeholder:text-white/50 md:text-[15.5px]"
+                    />
+                    <button type="button" onClick={() => onEnviar(legenda)} className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-[#B3CE52] text-[#1F2638]" aria-label="Enviar foto"><Icone nome="send" className="h-5 w-5" /></button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
+
 function Anexo({ a, minha }: { a: TAnexo; minha: boolean }) {
+    const [verFoto, setVerFoto] = useState(false);
     const [url, setUrl] = useState("");
     const [erro, setErro] = useState(false);
     const imagem = a.mime.startsWith("image/");
@@ -60,10 +163,11 @@ function Anexo({ a, minha }: { a: TAnexo; minha: boolean }) {
     if (imagem) {
         return (
             <div className="relative mb-1" style={{ width: 280, maxWidth: "100%" }}>
-                <button type="button" onClick={abrirOriginal} className="block w-full overflow-hidden rounded-lg bg-[#F0F2F5] dark:bg-[#1C2334]" style={{ aspectRatio: a.largura && a.altura ? `${a.largura}/${a.altura}` : "4/3" }} aria-label="Abrir foto">
+                <button type="button" onClick={() => setVerFoto(true)} className="block w-full cursor-zoom-in overflow-hidden rounded-lg bg-[#F0F2F5] dark:bg-[#1C2334]" style={{ aspectRatio: a.largura && a.altura ? `${a.largura}/${a.altura}` : "4/3" }} aria-label="Abrir foto">
                     {url ? <img src={url} alt="Foto enviada" className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-sm font-bold text-[#6B7488] dark:text-[#AEB9CF]">{erro ? "Foto indisponível" : "Carregando foto…"}</span>}
                 </button>
                 <span className="absolute right-1.5 top-1.5"><BotaoBaixar a={a} claro /></span>
+                {verFoto && <VisualizadorFoto a={a} previa={url} onFechar={() => setVerFoto(false)} />}
             </div>
         );
     }
@@ -711,7 +815,7 @@ export default function JanelaConversa(props: {
     onCarregarMais: () => void;
     onEnviarTexto: (t: string) => void;
     onEnviarModelo: (m: { nome: string; idioma: string; parametros: string[]; texto: string }) => void;
-    onEnviarArquivo: (f: File | Blob, opcoes?: { mime?: string; duracao_s?: number }) => void;
+    onEnviarArquivo: (f: File | Blob, opcoes?: { mime?: string; duracao_s?: number; legenda?: string }) => void;
     onAbrirCliente?: () => void;
     painelClienteAberto?: boolean;
     textoParaInserir?: { texto: string; n: number };
@@ -776,6 +880,17 @@ export default function JanelaConversa(props: {
     const [catEmoji, setCatEmoji] = useState("Rostos");
     const [gravando, setGravando] = useState(false);
     const [menuTopo, setMenuTopo] = useState(false);
+    const [fotosEnvio, setFotosEnvio] = useState<File[]>([]); // 24/11/2026: fotos esperando legenda antes de sair
+    const escolherArquivos = (lista: File[]) => {
+        const fotos = lista.filter((f) => f.type.startsWith("image/") && f.type !== "image/gif");
+        lista.filter((f) => !fotos.includes(f)).forEach((f) => props.onEnviarArquivo(f));
+        if (fotos.length) setFotosEnvio((atuais) => [...atuais, ...fotos].slice(0, 10));
+    };
+    const enviarFotos = (legenda: string) => {
+        const lista = fotosEnvio;
+        setFotosEnvio([]);
+        lista.forEach((f, i) => props.onEnviarArquivo(f, i === 0 && legenda.trim() ? { legenda: legenda.trim() } : {}));
+    };
     const menuTopoRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
         if (!menuTopo) return;
@@ -837,6 +952,7 @@ export default function JanelaConversa(props: {
     }, [c.id]);
 
     const externo = c.tipo === "externo";
+    const parceiro = c.tipo === "parceiro"; // 24/11/2026: externo pelo WhatsApp Web (aba Externos): sem Aurora, sem fila, sem janela de 24 h
     // 16/11/2026: cliente pelo chat do site, pelo Facebook ou pelo Instagram (sem modelos aprovados; no site, sem janela de 24 h)
     const canalNovo = externo && c.canal !== "whatsapp" ? CANAIS_CLIENTE[c.canal] : undefined;
     const nomeCanal = c.canal === "site" ? "chat do site" : canalNovo ? canalNovo[0] : "WhatsApp";
@@ -892,6 +1008,7 @@ export default function JanelaConversa(props: {
 
     const subtitulo = externo
         ? `${c.contato?.telefone || ""}${c.responsavel ? ` · Responsável: ${c.responsavel.nome}` : " · Na fila"}`
+        : parceiro ? `${c.contato?.telefone || ""}${c.contato?.empresa ? ` · ${c.contato.empresa}` : ""}`
         : c.tipo === "grupo" ? `${c.membros.length} membros` : props.presenca || "";
 
     // 23/11/2026: janela de 24 h como selo na linha das etiquetas (fica vermelho nas 2 últimas horas e quando fecha)
@@ -928,6 +1045,7 @@ export default function JanelaConversa(props: {
                         <span className="min-w-0 truncate text-[19px] font-extrabold text-[#1F2638] md:text-[17px] dark:text-white" title={c.titulo}>{c.titulo}</span>
                         {externo && !canalNovo && <span title="Cliente do WhatsApp" aria-label="WhatsApp" className="flex h-5 w-5 flex-none items-center justify-center rounded-full bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/15 dark:text-[#DCEBAA]"><Icone nome="phone" className="h-3 w-3" /></span>}
                         {canalNovo && <SeloCor nome={canalNovo[0]} cor={canalNovo[1]} pequeno />}
+                        {parceiro && c.wa2 && <SeloCor nome={`WhatsApp Web · ${c.wa2.numero_nome}`} cor={c.wa2.conectado ? "#2E9D5B" : "#B42318"} pequeno />}
                     </div>
                     <div className="truncate text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{props.digitando ? <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span> : subtitulo}</div>
                 </div>
@@ -976,6 +1094,15 @@ export default function JanelaConversa(props: {
                 {/* 23/11/2026: fecha só a tela da conversa (não encerra o atendimento); no celular quem faz isso é a seta de voltar */}
                 <button type="button" onClick={props.onVoltar} className="hidden h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] md:flex dark:text-white dark:hover:bg-white/10" aria-label="Fechar a conversa (não encerra o atendimento)" title="Fechar (não encerra)"><Icone nome="x" /></button>
             </div>
+            {parceiro && (
+                <div role="status" className={`flex items-center gap-2 border-b px-4 py-1.5 text-[13px] font-bold ${c.wa2 && c.wa2.conectado ? "border-[#2E9D5B]/30 bg-[#E3F4E8] text-[#1E5B32] dark:bg-[#2E9D5B]/15 dark:text-[#A8E6BD]" : "border-[#B42318]/30 bg-[#FDECEA] text-[#B42318] dark:bg-[#B42318]/20 dark:text-[#FF9C92]"}`}>
+                    {!c.wa2 || c.wa2.excluido
+                        ? "O número do WhatsApp Web desta conversa foi excluído: as mensagens não saem mais por ele."
+                        : c.wa2.conectado
+                          ? "Conversa externa pelo WhatsApp Web: sem Aurora, sem fila e sem janela de 24 h — pode escrever a qualquer hora."
+                          : `O número ${c.wa2.numero_nome} está desconectado: as mensagens não saem até a Gestão ler o QR Code em Configurações do Messenger › Canais.`}
+                </div>
+            )}
             {externo && c.orcamento_ia && (
                 <button type="button" onClick={() => setOrcIa(true)} className="flex w-full items-center gap-2 border-b border-[#3D6A99] bg-[#E9EFF6] px-4 py-2 text-left text-[14.5px] font-extrabold text-[#1E3A5C] hover:bg-[#DDE7F3] dark:bg-[#3D6A99]/25 dark:text-[#DDE7F3]">
                     <span className="flex-1">📝 A Aurora preparou um orçamento para esta família — conferir e enviar</span><span aria-hidden="true">›</span>
@@ -1111,7 +1238,7 @@ export default function JanelaConversa(props: {
                     )}
                     <div className="flex items-end gap-1.5 px-2 pt-1.5 md:px-4 md:!pb-2" style={{ paddingBottom: props.tecladoAberto ? 8 : "calc(env(safe-area-inset-bottom, 0px) + 14px)" }}>
                         {gravando ? (
-                            <Gravador mp3={externo} onCancelar={() => setGravando(false)} onPronto={(b, mime, seg) => { setGravando(false); props.onEnviarArquivo(b, { mime, duracao_s: seg }); }} />
+                            <Gravador mp3={externo || parceiro} onCancelar={() => setGravando(false)} onPronto={(b, mime, seg) => { setGravando(false); props.onEnviarArquivo(b, { mime, duracao_s: seg }); }} />
                         ) : (
                             <>
                                 <div className="flex min-h-[54px] min-w-0 flex-1 items-end rounded-[27px] bg-white px-1.5 shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">
@@ -1128,11 +1255,12 @@ export default function JanelaConversa(props: {
                                             e.preventDefault();
                                             if (!perfil.midias) return;
                                             const pergunta = arquivos.length > 1 ? `Enviar os ${arquivos.length} arquivos colados?` : arquivos[0].type.startsWith("image/") ? "Enviar a imagem colada?" : `Enviar "${arquivos[0].name}"?`;
-                                            if (window.confirm(pergunta)) arquivos.forEach((f) => props.onEnviarArquivo(f));
+                                            if (arquivos.every((f) => f.type.startsWith("image/") && f.type !== "image/gif")) escolherArquivos(arquivos); // fotos: janela com legenda
+                                            else if (window.confirm(pergunta)) arquivos.forEach((f) => props.onEnviarArquivo(f));
                                         }}
                                         onChange={(e) => aoDigitar(e.target.value)}
                                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); enviar(); } }}
-                                        placeholder={modoNota ? "Nota interna" : externo ? `Responder pelo ${nomeCanal}` : "Mensagem"}
+                                        placeholder={modoNota ? "Nota interna" : externo ? `Responder pelo ${nomeCanal}` : parceiro ? `Responder pelo WhatsApp Web (${c.wa2?.numero_nome || ""})` : "Mensagem"}
                                         aria-label="Mensagem"
                                         className="max-h-40 min-w-0 flex-1 resize-none bg-transparent py-[13px] text-[18px] leading-7 text-[#1F2638] outline-none dark:text-white"
                                     />
@@ -1153,8 +1281,9 @@ export default function JanelaConversa(props: {
                                     {!texto.trim() && !modoNota && (
                                         <button type="button" onClick={() => camera.current?.click()} disabled={!perfil.midias} className="flex h-[54px] w-11 flex-none items-center justify-center text-[#5B6478] disabled:opacity-40 dark:text-[#AEB9CF]" aria-label="Tirar foto"><Icone nome="camera" className="h-[25px] w-[25px]" /></button>
                                     )}
-                                    <input ref={arquivo} type="file" hidden accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,video/mp4" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) props.onEnviarArquivo(f); }} />
-                                    <input ref={camera} type="file" hidden accept="image/*" capture="environment" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) props.onEnviarArquivo(f); }} />
+                                    <input ref={arquivo} type="file" hidden accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,video/mp4" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) escolherArquivos([f]); }} />
+                                    <input ref={camera} type="file" hidden accept="image/*" capture="environment" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) escolherArquivos([f]); }} />
+                                    {fotosEnvio.length > 0 && <EnvioFoto fotos={fotosEnvio} respondendo={props.respondendo} eu={perfil.id} onEnviar={enviarFotos} onCancelar={() => setFotosEnvio([])} onTirar={(i) => setFotosEnvio((l) => l.filter((_, k) => k !== i))} />}
                                 </div>
                                 {texto.trim() || modoNota ? (
                                     <button type="button" onClick={enviar} className="flex h-[54px] w-[54px] flex-none items-center justify-center rounded-full bg-[#313C55] text-white dark:bg-[#3D6A99]" aria-label="Enviar"><Icone nome="send" /></button>

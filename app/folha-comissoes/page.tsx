@@ -19,7 +19,15 @@ import { BOTAO_PAGINA, BOTAO_PAGINA_PRI, BOTAO_PAGINA_SEC, CartaoInfo, GRADE_CAR
 import { gerarDemonstrativos, mascararPix, nomeArquivoPdf, type Demonstrativo, type DemoLinha, type EnvioChat } from '@/app/folha/components/demonstrativos';
 import EnviarChat from '@/app/folha/components/EnviarChat';
 
-type Item = { tipo: 'AGENTE' | 'VENDAS' | 'VIAGEM'; rotulo: string; valor: number; situacao: string; motivo: string | null; viagens?: { id: number; data: string; destino: string; valor: number }[] };
+type Item = {
+    tipo: 'AGENTE' | 'VENDAS' | 'ADESAO' | 'VIAGEM';
+    rotulo: string;
+    valor: number;
+    situacao: string;
+    motivo: string | null;
+    viagens?: { id: number; data: string; destino: string; valor: number }[];
+    propostas?: { id: number; cliente: string; contrato: string | null; valor: number; paga_em: string; no_ato: boolean }[];
+};
 type Pessoa = {
     colaborador_id: number;
     nome: string;
@@ -68,7 +76,7 @@ type Venda = {
 };
 type Comissao = { id: number; competencia: string; situacao: 'ABERTA' | 'LIBERADA' | 'PAGA'; data_pagamento: string | null; liberado_em: string | null; liberado_por_nome?: string | null };
 type Integracao = { id: number; favorecido: string; descricao: string; natureza: string; natureza_unymos: string | null; valor: number; vencimento: string | null; situacao: string; ref_externa: string | null };
-type Totais = { agentes: number; vendas: number; viagens: number; bruto: number; vales: number; a_pagar: number; saldo_negativo: number };
+type Totais = { agentes: number; vendas: number; adesoes?: number; viagens: number; bruto: number; vales: number; a_pagar: number; saldo_negativo: number };
 type OS = { os_id: number; numero_os: string; tipo: string; data: string; valor_total: number; translado: number; valor: number; agente?: string | null };
 type Aba = 'pessoas' | 'agentes' | 'vendas' | 'unymos' | 'anteriores';
 
@@ -405,6 +413,15 @@ export default function ComissoesPage() {
                         ],
                     });
                 }
+                const ad = p.itens.find((i) => i.tipo === 'ADESAO');
+                if (ad?.propostas?.length)
+                    secoes.push({
+                        titulo: 'Comissão de adesão (venda direta, 100% da adesão)',
+                        linhas: [
+                            ...ad.propostas.map((x) => ({ descricao: `${dataBR(x.paga_em)} · ${x.cliente}${x.contrato ? ` · contrato ${x.contrato}` : ''}`, detalhe: x.no_ato ? 'recebida no ato: abatida nos vales' : null, valor: x.valor })),
+                            { descricao: 'Comissão de adesão', valor: ad.valor, destaque: true },
+                        ],
+                    });
                 const vg = p.itens.find((i) => i.tipo === 'VIAGEM');
                 if (vg?.viagens?.length) secoes.push({ titulo: 'Viagens', linhas: vg.viagens.map((x) => ({ descricao: `${dataBR(x.data)} · ${x.destino}`, valor: x.valor })) });
                 if (p.vales.length) secoes.push({ titulo: 'Vales abatidos', linhas: p.vales.map((v) => ({ descricao: `Vale de ${dataBR(v.data)}${v.descricao ? ` · ${v.descricao}` : ''}`, valor: -v.valor })) });
@@ -518,8 +535,8 @@ export default function ComissoesPage() {
                         <CartaoInfo rotulo="Agentes" valor={brl(totais.agentes)} sub={`${pctBR(base.percentual, 2)}% da base · ${brl(base.valor_base)} por nota cheia`} href="#comissoes" />
                         <CartaoInfo
                             rotulo="Vendas"
-                            valor={brl(totais.vendas)}
-                            sub={pendentesVenda ? `${pendentesVenda} a confirmar` : 'confirmadas'}
+                            valor={brl(totais.vendas + (totais.adesoes || 0))}
+                            sub={`${pendentesVenda ? `${pendentesVenda} a confirmar` : 'confirmadas'}${totais.adesoes ? ` · adesões ${brl(totais.adesoes)}` : ''}`}
                             href="#comissoes"
                             estilo={pendentesVenda ? 'alerta' : undefined}
                         />
@@ -633,6 +650,7 @@ export default function ComissoesPage() {
                                                     {i.rotulo}
                                                     {i.motivo ? <span className={`block ${SUB}`}>{i.motivo}</span> : null}
                                                     {i.viagens ? <span className={`block ${SUB}`}>{i.viagens.map((v) => `${dataBR(v.data)} ${v.destino} ${brl(v.valor)}`).join(' · ')}</span> : null}
+                                                    {i.propostas ? <span className={`block break-words ${SUB}`}>{i.propostas.map((x) => `${dataBR(x.paga_em)} ${x.cliente}${x.contrato ? ` (${x.contrato})` : ''} ${brl(x.valor)}${x.no_ato ? ' no ato' : ''}`).join(' · ')}</span> : null}
                                                 </span>
                                                 {i.situacao !== 'A_PAGAR' && i.situacao !== 'PAGO' ? <span className={`${SELO} ${i.situacao === 'A_CONFIRMAR' ? S_AVISO : S_RUIM}`}>{SIT_AGENTE[i.situacao] || i.situacao}</span> : null}
                                                 <span className={`tabular-nums ${i.situacao === 'A_CONFIRMAR' ? 'text-[#98A1B3]' : ''}`}>{brl(i.valor)}</span>
@@ -641,7 +659,7 @@ export default function ComissoesPage() {
                                         {p.vales.map((v) => (
                                             <div key={`v${v.id}`} className="flex items-baseline gap-3 border-t border-[#E3E8F0] py-1.5 dark:border-white/[0.08]">
                                                 <span className="min-w-0 flex-1">
-                                                    Vale de {dataBR(v.data)}
+                                                    {v.id < 0 ? 'Adesão' : 'Vale'} de {dataBR(v.data)}
                                                     {v.descricao ? ` · ${v.descricao}` : ''}
                                                 </span>
                                                 <span className="tabular-nums text-[#B42318] dark:text-[#FF9C92]">−{brl(v.valor)}</span>
