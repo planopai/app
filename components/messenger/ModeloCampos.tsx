@@ -15,8 +15,10 @@ type Macros = { fontes: Record<string, string>; mapa: Record<string, string[]>; 
 
 const FINANCEIRO = ["valor_aberto", "vencimento"];
 
-export default function ModeloCampos({ modelo, conversaId, telefone, params, onParams, compacto = false }: {
+export default function ModeloCampos({ modelo, conversaId, telefone, params, onParams, compacto = false, rotulos }: {
     modelo: ModeloMeta; conversaId?: number; telefone?: string; params: string[]; onParams: (p: string[]) => void; compacto?: boolean;
+    /** 24/11/2026 (escolha por motivo): nome de cada campo; com ele, a tela mostra "Nome · automático" em vez de {{1}} */
+    rotulos?: string[];
 }) {
     const chave = `${modelo.nome}|${modelo.idioma}`;
     const [m, setM] = useState<Macros | null>(null);
@@ -102,6 +104,42 @@ export default function ModeloCampos({ modelo, conversaId, telefone, params, onP
 
     if (modelo.parametros <= 0) return null;
     const campo = `${compacto ? "h-10" : "h-12"} w-full rounded-xl border border-[#E1E5EC] bg-[#F6F8FB] px-3 text-[15px] outline-none dark:border-white/12 dark:bg-[#1C2334]`;
+    const mudar = (i: number, v: string) => onParams(Array.from({ length: modelo.parametros }, (_, j) => (j === i ? v : params[j] || "")));
+    // 24/11/2026: com os nomes dos campos (catálogo), cada campo mostra o nome e se veio do sistema ou é para digitar;
+    // a escolha da origem do dado fica só para quem configura o Messenger
+    if (rotulos && rotulos.length >= modelo.parametros) {
+        return (
+            <div className="flex flex-col gap-2.5">
+                {carregando && <span className="text-[13px] text-[#6B7488] dark:text-[#AEB9CF]">Buscando os dados do contato…</span>}
+                {Array.from({ length: modelo.parametros }).map((_, i) => {
+                    const auto = !!fontes[i] && fontes[i] !== "livre";
+                    const veio = auto && !!m?.valores[fontes[i]] && (params[i] || "") === m.valores[fontes[i]];
+                    const vazio = !(params[i] || "").trim();
+                    return (
+                        <div key={i}>
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                                <label htmlFor={`modelo-campo-${i}`} className="text-[11.5px] font-black uppercase tracking-wider text-[#5B6478] dark:text-[#AEB9CF]">{rotulos[i]}</label>
+                                <span className={`text-[11.5px] font-extrabold ${veio ? "text-[#3E5208] dark:text-[#DCEBAA]" : "text-[#8A6A00] dark:text-[#F2CB3F]"}`}>{veio ? "automático" : auto ? "sem dado, digite" : "digitar"}</span>
+                            </div>
+                            <div className="flex gap-2">
+                                <input id={`modelo-campo-${i}`} className={`${campo} ${vazio ? "border-[#F2CB3F] dark:border-[#F2CB3F]/70" : ""}`} value={params[i] || ""} onChange={(e) => mudar(i, e.target.value)} placeholder="Digite" />
+                                {m?.pode_configurar && (
+                                    <select className={`${campo} w-[150px] flex-none text-[12.5px]`} value={fontes[i] || "livre"} onChange={(e) => trocarFonte(i, e.target.value)} aria-label={`Origem do dado de ${rotulos[i]}`} title="Origem do dado (só quem configura o Messenger vê)">
+                                        {Object.entries(m?.fontes || { livre: "Digitar na hora" }).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+                                    </select>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+                {m?.valores.aviso && <span className="text-[13px] font-bold text-[#8A5A00] dark:text-[#F7E39A]">{m.valores.aviso}</span>}
+                {m?.pode_configurar && mudouFontes && (
+                    <button type="button" onClick={salvarFontes} className="inline-flex h-9 w-fit items-center rounded-xl border border-[#C9D1DE] px-3 text-[13px] font-extrabold dark:border-white/20">Lembrar este preenchimento para o modelo</button>
+                )}
+                {msg && <span className="text-[13px] font-bold">{msg}</span>}
+            </div>
+        );
+    }
     return (
         <div className="flex flex-col gap-2">
             {carregando && <span className="text-[13px] text-[#6B7488] dark:text-[#AEB9CF]">Buscando os dados do contato…</span>}

@@ -7,7 +7,7 @@ import type { Conversa as TConversa, Mensagem, Perfil, Anexo as TAnexo } from "@
 import { Avatar, CANAIS_CLIENTE, Icone, previa, SeloCor, SelosEtiquetas } from "./Lista";
 import { BarraBusca, MenuAnexar, MenuMensagem, Reacoes, SugestoesRespostas } from "./Acoes";
 import { SeloUnymos } from "./PainelCliente";
-import ModeloCampos from "@/components/messenger/ModeloCampos";
+import SeletorModelo, { type EstadoModelo } from "@/components/messenger/SeletorModelo";
 import { baixarAnexo } from "@/components/messenger/salvarArquivos";
 
 const EMOJIS: Record<string, string[]> = {
@@ -681,30 +681,16 @@ function Gravador({ onPronto, onCancelar, mp3 = false }: { onPronto: (b: Blob, m
 }
 
 /* ---------------- modelos (janela de 24 h fechada) ---------------- */
+// 24/11/2026: escolha por motivo (modelo C) — motivo, mensagem e conferir, com a prévia (SeletorModelo)
 function EscolherModelo({ onEnviar, conversaId }: { onEnviar: (m: { nome: string; idioma: string; parametros: string[]; texto: string }) => void; conversaId?: number }) {
-    const [lista, setLista] = useState<any[] | null>(null);
-    const [erro, setErro] = useState("");
-    const [sel, setSel] = useState<any>(null);
-    const [params, setParams] = useState<string[]>([]);
-    useEffect(() => {
-        msgGet<any[]>("modelos").then(setLista).catch((e) => setErro(e.message));
-    }, []);
-    if (erro) return <div className="text-sm font-bold text-[#B42318] dark:text-[#FF9C92]">{erro}</div>;
-    if (!lista) return <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Carregando modelos…</div>;
-    if (!lista.length) return <div className="text-sm text-[#6B7488] dark:text-[#AEB9CF]">Nenhum modelo aprovado na Meta.</div>;
-    const texto = sel ? sel.corpo.replace(/\{\{\s*(\d+)\s*\}\}/g, (_: string, n: string) => params[Number(n) - 1] || `{{${n}}}`) : "";
+    const [escolha, setEscolha] = useState<EstadoModelo>({ modelo: null, params: [], texto: "", pronto: false });
+    const sel = escolha.modelo;
     return (
-        <div className="flex flex-col gap-2">
-            <select className="h-11 rounded-xl border border-[#E1E5EC] bg-white px-3 text-sm font-bold dark:border-white/12 dark:bg-[#232B3F]" value={sel?.nome || ""} onChange={(e) => { const m = lista.find((x) => x.nome === e.target.value); setSel(m); setParams(Array(m?.parametros || 0).fill("")); }} aria-label="Modelo">
-                <option value="">Escolha um modelo aprovado</option>
-                {lista.map((m) => <option key={m.nome + m.idioma} value={m.nome}>{m.nome} ({m.idioma})</option>)}
-            </select>
+        <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto">
+            <SeletorModelo conversaId={conversaId} onEstado={setEscolha} compacto />
             {sel && (
-                <>
-                    <ModeloCampos modelo={sel} conversaId={conversaId} params={params} onParams={setParams} compacto />
-                    <div className="whitespace-pre-wrap rounded-xl bg-[#F6F8FB] p-3 text-sm dark:bg-[#1C2334]">{texto}</div>
-                    <button type="button" disabled={params.some((p) => !p.trim())} onClick={() => onEnviar({ nome: sel.nome, idioma: sel.idioma, parametros: params, texto })} className="h-11 rounded-xl bg-[#313C55] text-sm font-extrabold text-white disabled:opacity-40 dark:bg-[#3D6A99]">Enviar modelo</button>
-                </>
+                <button type="button" disabled={!escolha.pronto} onClick={() => onEnviar({ nome: sel.nome, idioma: sel.idioma, parametros: escolha.params.slice(0, sel.parametros).map((p) => p.trim()), texto: escolha.texto })}
+                    className="h-11 flex-none rounded-xl bg-[#313C55] text-sm font-extrabold text-white disabled:opacity-40 dark:bg-[#3D6A99]">Enviar mensagem</button>
             )}
         </div>
     );

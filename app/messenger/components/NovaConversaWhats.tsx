@@ -7,12 +7,10 @@
  * Contatos frequentes (27/10/2026): favoritos e mais conversados no topo; tocar preenche os campos (aurora_09.php).
  * Servidor: aurora_07.php (nova_conversa) e messenger.php (modelos, enviar).
  */
-import React, { useEffect, useMemo, useState } from "react";
-import { apiJson, API_BASE, msgGet, msgPost } from "@/components/messenger/api";
-import ModeloCampos from "@/components/messenger/ModeloCampos";
+import React, { useEffect, useState } from "react";
+import { apiJson, API_BASE, msgPost } from "@/components/messenger/api";
+import SeletorModelo, { type EstadoModelo } from "@/components/messenger/SeletorModelo";
 import ContatosFrequentes, { telefoneBonito } from "./ContatosFrequentes";
-
-type Modelo = { nome: string; idioma: string; categoria: string; corpo: string; parametros: number };
 
 export const TIPOS_CONTATO: [string, string][] = [
     ["cliente", "Cliente"],
@@ -32,25 +30,22 @@ export default function NovaConversaWhats({ onFechar, onAberta }: { onFechar: ()
     const [nome, setNome] = useState("");
     const [tipo, setTipo] = useState("cliente");
     const [empresa, setEmpresa] = useState("");
-    const [modelos, setModelos] = useState<Modelo[] | null>(null);
-    const [modelo, setModelo] = useState("");
-    const [params, setParams] = useState<string[]>([]);
+    // 24/11/2026: a mensagem de abertura é escolhida por motivo (SeletorModelo)
+    const [escolha, setEscolha] = useState<EstadoModelo>({ modelo: null, params: [], texto: "", pronto: false });
     const [erro, setErro] = useState("");
     const [salvando, setSalvando] = useState(false);
 
-    useEffect(() => {
-        msgGet<Modelo[]>("modelos").then((l) => setModelos(l.filter((m) => m.categoria !== "AUTHENTICATION"))).catch((e) => { setModelos([]); setErro(e.message); });
-    }, []);
     useEffect(() => {
         const esc = (e: KeyboardEvent) => e.key === "Escape" && onFechar();
         window.addEventListener("keydown", esc);
         return () => window.removeEventListener("keydown", esc);
     }, [onFechar]);
 
-    const m = useMemo(() => (modelos || []).find((x) => `${x.nome}|${x.idioma}` === modelo) || null, [modelos, modelo]);
-    const previa = m ? m.corpo.replace(/\{\{\s*(\d+)\s*\}\}/g, (_, n) => params[Number(n) - 1] || `{{${n}}}`) : "";
+    const m = escolha.modelo;
+    const params = escolha.params;
+    const previa = escolha.texto;
     const digitos = telefone.replace(/\D/g, "");
-    const pronto = digitos.length >= 10 && !!m && params.slice(0, m.parametros).every((p) => p.trim() !== "") && params.length >= m.parametros;
+    const pronto = digitos.length >= 10 && !!m && escolha.pronto;
 
     async function abrir() {
         if (!m) return;
@@ -101,24 +96,10 @@ export default function NovaConversaWhats({ onFechar, onAberta }: { onFechar: ()
                             <input className={campo} value={empresa} maxLength={150} onChange={(e) => setEmpresa(e.target.value)} />
                         </label>
                     </div>
-                    <label className="block"><span className={rotulo}>Mensagem de abertura (modelo aprovado)</span>
-                        <select className={campo} value={modelo} onChange={(e) => { setModelo(e.target.value); setParams([]); }} disabled={!modelos}>
-                            <option value="">{modelos === null ? "Carregando os modelos…" : modelos.length ? "Escolha o modelo" : "Nenhum modelo aprovado na Meta"}</option>
-                            {(modelos || []).map((x) => <option key={`${x.nome}|${x.idioma}`} value={`${x.nome}|${x.idioma}`}>{x.nome} · {x.idioma}{x.categoria ? ` · ${x.categoria === "MARKETING" ? "marketing" : x.categoria === "UTILITY" ? "utilidade" : x.categoria.toLowerCase()}` : ""}</option>)}
-                        </select>
-                    </label>
-                    {m && m.parametros > 0 && (
-                        <div>
-                            <span className={rotulo}>Variáveis do modelo</span>
-                            <div className="mt-1"><ModeloCampos modelo={m} telefone={telefone} params={params} onParams={setParams} /></div>
-                        </div>
-                    )}
-                    {m && (
-                        <div>
-                            <span className={rotulo}>Como a pessoa vai receber</span>
-                            <p className="mt-1 whitespace-pre-wrap rounded-xl bg-[#E7F6E2] p-3 text-[15px] text-[#1F2638] dark:bg-[#1E3A2A] dark:text-white">{previa}</p>
-                        </div>
-                    )}
+                    <div className="rounded-2xl border border-[#E3E8F0] p-4 dark:border-white/12">
+                        <span className={rotulo}>Mensagem de abertura</span>
+                        <div className="mt-2"><SeletorModelo telefone={telefone} onEstado={setEscolha} /></div>
+                    </div>
                     <p className="m-0 text-[13px] text-[#6B7488] dark:text-[#AEB9CF]">O modelo é cobrado pela Meta conforme a categoria (utilidade custa menos que marketing). Diga sempre quem é e o motivo do contato, para a pessoa não bloquear o número.</p>
                 </div>
                 <div className="flex justify-end gap-3 border-t border-[#E3E8F0] bg-[#F6F8FB] px-6 py-4 dark:border-white/12 dark:bg-[#1C2334]">

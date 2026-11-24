@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prévia · Modelos de abertura</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800;900&display=swap');
+:root{--bg:#141a28;--p:#1C2334;--c:#232B3F;--l:rgba(255,255,255,.12);--t:#fff;--m:#AEB9CF;--s:#8FA3C2;--y:#F2CB3F;--b:#3D6A99;--g:#B3CE52}
+*{box-sizing:border-box;margin:0;padding:0;font-family:"Nunito Sans","Segoe UI",Arial,sans-serif}
+body{background:var(--bg);color:var(--t);min-height:100vh;padding:20px 16px}
+.topo{max-width:1040px;margin:0 auto 14px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.topo h1{font-size:18px;font-weight:900;flex:1;min-width:220px}
+.topo h1 small{display:block;font-size:12.5px;color:var(--m);font-weight:600}
+.sel{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--m);font-weight:800}
+select{height:38px;border-radius:12px;background:var(--c);color:#fff;border:1px solid var(--l);padding:0 10px;font-size:13.5px;font-weight:700}
+.wrap{max-width:1040px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media(max-width:820px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--p);border:1px solid var(--l);border-radius:20px;overflow:hidden;display:flex;flex-direction:column}
+.hd{padding:16px 18px 12px;border-bottom:1px solid var(--l)}
+.hd h2{font-size:18px;font-weight:900}.hd p{font-size:13px;color:var(--m);margin-top:3px}
+.bd{padding:14px 18px 16px;overflow:auto}
+.busca{display:flex;align-items:center;gap:10px;height:44px;border-radius:14px;background:var(--c);border:1.5px solid var(--b);padding:0 14px}
+.busca input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:#fff;font-size:15px}
+.h3{font-size:11.5px;font-weight:900;letter-spacing:.08em;color:var(--s);margin:16px 0 8px;display:flex;align-items:center;gap:6px}
+.u{font-size:11px;font-weight:800;border-radius:999px;padding:2px 8px;white-space:nowrap;flex:none}
+.u.UTILITY{background:rgba(179,206,82,.15);color:#DCEBAA}.u.MARKETING{background:rgba(255,156,146,.15);color:#FFB4AB}
+.sug{width:100%;text-align:left;cursor:pointer;color:#fff;background:linear-gradient(135deg,rgba(242,203,63,.14),rgba(61,106,153,.2));border:1.5px solid rgba(242,203,63,.55);border-radius:16px;padding:12px 14px;display:flex;gap:12px;align-items:center}
+.sug b{font-size:15px;font-weight:900;display:block}.sug small{font-size:12.5px;color:#DCE4F0;display:block}
+.why{font-size:11.5px;font-weight:800;color:var(--y);margin-top:3px}
+.vazio{font-size:13px;color:var(--m);padding:4px 2px}
+.it{width:100%;text-align:left;cursor:pointer;color:#fff;background:transparent;border:0;display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:12px}
+.it:hover{background:rgba(255,255,255,.05)}
+.it.on{background:rgba(61,106,153,.35);box-shadow:inset 3px 0 var(--y)}
+.it .ic{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:rgba(61,106,153,.25);font-size:16px;flex:none}
+.it .tx{flex:1;min-width:0}.it b{display:block;font-size:14.5px;font-weight:800}.it small{display:block;font-size:12.5px;color:var(--m);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fav{background:none;border:0;cursor:pointer;font-size:17px;color:#55627C;padding:4px;flex:none}.fav.on{color:var(--y)}
+.tema{border:1px solid var(--l);border-radius:14px;margin-bottom:8px;overflow:hidden}
+.tema>button{width:100%;cursor:pointer;background:var(--c);color:#fff;border:0;display:flex;align-items:center;gap:10px;padding:11px 14px;font-size:14.5px;font-weight:800;text-align:left}
+.tema>button .n{margin-left:auto;color:var(--s);font-size:12.5px}
+.tema>button .chev{transition:transform .15s}.tema.aberto>button .chev{transform:rotate(90deg)}
+.tema .lista{padding:4px}
+.campos{display:grid;gap:10px}
+.campo label{display:flex;justify-content:space-between;font-size:12px;font-weight:900;color:var(--m);letter-spacing:.04em;margin-bottom:5px}
+.campo label span{font-weight:800;letter-spacing:0}
+.auto{color:#DCEBAA}.dig{color:var(--y)}
+.campo input{width:100%;height:42px;border-radius:12px;background:var(--c);border:1.5px solid var(--l);color:#fff;padding:0 12px;font-size:14.5px;outline:0}
+.campo input:focus{border-color:var(--b)}.campo input.falta{border-color:rgba(242,203,63,.7)}
+.whats{margin-top:14px;background:#0B141A url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Ccircle cx='4' cy='4' r='1.2' fill='%23ffffff10'/%3E%3C/svg%3E");border-radius:16px;padding:16px}
+.bolha{background:#005C4B;border-radius:12px 12px 4px 12px;padding:10px 12px;font-size:14.5px;line-height:1.45;white-space:pre-wrap;max-width:94%;margin-left:auto;box-shadow:0 1px 1px rgba(0,0,0,.3)}
+.bolha .v{background:rgba(242,203,63,.25);border-radius:4px;padding:0 3px}
+.bolha .vv{background:rgba(242,203,63,.5);color:#fff;border-radius:4px;padding:0 3px}
+.btns{margin-top:6px;display:grid;gap:4px;max-width:94%;margin-left:auto}
+.btns span{background:#1F2C33;color:#53BDEB;text-align:center;border-radius:10px;padding:8px;font-size:14px;font-weight:700}
+.hora{text-align:right;font-size:11px;color:#9FB3BF;margin-top:4px}
+.info{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px;font-size:12.5px;color:var(--m)}
+.ft{display:flex;justify-content:flex-end;gap:10px;padding:12px 18px;border-top:1px solid var(--l);margin-top:auto}
+.b{height:44px;border-radius:14px;padding:0 18px;font-weight:800;font-size:14.5px;cursor:pointer}
+.b.c{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.3)}.b.p{background:var(--b);color:#fff;border:0}.b.p:disabled{opacity:.45;cursor:default}
+.placeholder{display:grid;place-items:center;text-align:center;color:var(--m);font-size:14px;padding:60px 20px;gap:8px}
+.placeholder div{font-size:36px}
+.aviso{margin-top:10px;font-size:12.5px;color:var(--y);font-weight:700}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#B3CE52;color:#1F2638;font-weight:900;padding:10px 18px;border-radius:12px;display:none}
+mark{background:rgba(242,203,63,.35);color:#fff;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="topo">
+  <h1>Prévia: mensagem de abertura por assunto<small>Protótipo para testar a organização. Nada é enviado.</small></h1>
+  <div class="sel">ENTRADA <select id="entrada"><option value="nova">Nova conversa</option><option value="retomar">Retomar atendimento (janela fechada)</option></select></div>
+  <div class="sel">CONTATO DE TESTE <select id="contato"></select></div>
+</div>
+
+<div class="wrap">
+  <section class="card">
+    <div class="hd"><h2 id="titulo">Mensagem de abertura</h2><p id="sub"></p></div>
+    <div class="bd">
+      <label class="busca"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#AEB9CF" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" placeholder="Buscar: pagamento, documento, coroa, sorteio…" autocomplete="off"></label>
+      <div id="lista"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="hd"><h2 id="mtit">Escolha um modelo</h2><p id="mdesc">A prévia aparece aqui, com os dados do contato.</p></div>
+    <div class="bd" id="painel"><div class="placeholder"><div>💬</div>Escolha um modelo à esquerda para ver os campos e como a pessoa vai receber.</div></div>
+    <div class="ft"><button class="b c" id="cancelar">Cancelar</button><button class="b p" id="enviar" disabled>Enviar e abrir conversa</button></div>
+  </section>
+</div>
+<div class="toast" id="toast">Prévia: nada foi enviado.</div>
+
+<script>
+const TEMAS=[
+ {id:'pag',nome:'Cobrança e pagamento',ic:'💳'},
+ {id:'pos',nome:'Pós-atendimento funerário',ic:'🕊️'},
+ {id:'cor',nome:'Coroas de flores',ic:'🌺'},
+ {id:'ctr',nome:'Contrato e cadastro',ic:'📋'},
+ {id:'ser',nome:'Serviços e benefícios',ic:'🩺'},
+ {id:'ven',nome:'Vendas e relacionamento',ic:'📣'},
+];
+// v: [rótulo, fonte, exemplo]   fontes automáticas: primeiro_nome, atendente, contrato, valor_aberto, vencimento, pedido, falecido_coroa, local_coroa
+const M=[
+ {id:'mensalidade_em_aberto',tema:'pag',ic:'💰',nome:'Mensalidade em aberto',desc:'Avisa valor e vencimento e oferece o Pix',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é {{2}}, do *Plano PAI*.\n\nNo contrato *{{3}}* consta mensalidade em aberto no valor de *{{4}}*, com vencimento em *{{5}}*.\n\nPosso te enviar o link de pagamento por Pix? Se já pagou, é só mandar o comprovante por aqui.",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Contrato','contrato'],['Valor em aberto','valor_aberto'],['Vencimento','vencimento']]},
+ {id:'link_pagamento_mensalidade',tema:'pag',ic:'🔗',nome:'Link de pagamento (Pix)',desc:'Envia o link da mensalidade',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é do *Plano PAI*.\n\nSegue o link para pagar por Pix a mensalidade do contrato *{{2}}*:\n{{3}}\n\nA baixa é automática: não precisa enviar o comprovante.",
+  v:[['Nome','primeiro_nome'],['Contrato','contrato'],['Link do Pix','livre','https://unyfintech.unypax.com.br/pix/…']]},
+ {id:'pagamento_confirmar_comprovante',tema:'pag',ic:'🧾',nome:'Confirmar comprovante',desc:'Pede o comprovante de um pagamento recebido',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é {{2}}, do *Plano PAI*.\n\nRecebemos um pagamento de *{{3}}* no dia {{4}} e precisamos confirmar a qual contrato ele pertence. Pode nos enviar o comprovante por aqui?",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Valor recebido','livre','R$ 46,00'],['Data do pagamento','livre','01/11/2026']]},
+ {id:'pagamento_confirmado_recibo',tema:'pag',ic:'✅',nome:'Pagamento confirmado',desc:'Confirma o pagamento e oferece o recibo',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é do *Plano PAI*.\n\nConfirmamos o pagamento da mensalidade do contrato *{{2}}* referente a *{{3}}*. Se quiser o recibo, é só responder esta mensagem.",
+  v:[['Nome','primeiro_nome'],['Contrato','contrato'],['Mês','livre','novembro de 2026']]},
+ {id:'acordo_parcela_lembrete',tema:'pag',ic:'🤝',nome:'Parcela do acordo',desc:'Lembra a parcela de um acordo de dívida',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é {{2}}, do *Plano PAI*.\n\nPassando para lembrar da parcela do seu acordo, no valor de *{{3}}*, com vencimento em *{{4}}*. Qualquer dúvida, é só responder por aqui.",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Valor da parcela','livre','R$ 72,00'],['Vencimento','livre','30/11/2026']]},
+ {id:'lembrete_vence_amanha',tema:'pag',ic:'⏰',nome:'Lembrete: vence amanhã',desc:'O mesmo lembrete automático, enviado à mão',cat:'UTILITY',
+  t:"Olá, {{1}}! Tudo bem? Passando para lembrar que a mensalidade do seu Plano PAI, no valor de {{2}}, vence amanhã, {{3}}. Para facilitar, você pode pagar por Pix tocando no botão abaixo. Se já pagou, é só desconsiderar esta mensagem. Obrigado por fazer parte da família PAI!",
+  v:[['Nome','primeiro_nome'],['Valor','valor_aberto'],['Vencimento','vencimento']],bt:['Pagar com Pix']},
+ {id:'lembrete_venceu_ontem',tema:'pag',ic:'📅',nome:'Lembrete: venceu ontem',desc:'O mesmo lembrete automático, enviado à mão',cat:'UTILITY',
+  t:"Olá, {{1}}! Tudo bem? Só um lembrete carinhoso: a mensalidade do seu Plano PAI, no valor de {{2}}, venceu ontem, {{3}}. Se ainda não deu tempo, você pode pagar por Pix tocando no botão abaixo. Se já pagou, é só desconsiderar. Qualquer dúvida, estamos por aqui!",
+  v:[['Nome','primeiro_nome'],['Valor','valor_aberto'],['Vencimento','vencimento']],bt:['Pagar com Pix']},
+
+ {id:'pos_atendimento_pesquisa',tema:'pos',ic:'⭐',nome:'Pesquisa de satisfação',desc:'Pergunta à família como foi o atendimento',cat:'UTILITY',
+  t:"Olá, {{1}}. Aqui é {{2}}, da equipe do *Plano PAI*.\n\nEntramos em contato sobre o serviço funerário de *{{3}}*, realizado em {{4}}. Gostaríamos de saber como foi o atendimento da nossa equipe. Podemos fazer três perguntas rápidas por aqui?",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Falecido(a)','livre','José da Silva'],['Data do serviço','livre','20/11/2026']],bt:['Sim, pode perguntar','Agora não']},
+ {id:'funeral_documentos_pendentes',tema:'pos',ic:'📄',nome:'Documentos pendentes',desc:'Pede os documentos que faltam do atendimento',cat:'UTILITY',
+  t:"Olá, {{1}}. Aqui é {{2}}, do *Plano PAI*.\n\nSobre o atendimento de *{{3}}*, ainda precisamos de: {{4}}. Pode nos enviar por aqui ou trazer ao escritório?",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Falecido(a)','livre','José da Silva'],['O que falta','livre','cópia do RG e comprovante de residência']]},
+ {id:'funeral_documento_disponivel',tema:'pos',ic:'📬',nome:'Documento disponível',desc:'Avisa que um documento está pronto para retirar',cat:'UTILITY',
+  t:"Olá, {{1}}. Aqui é do *Plano PAI*.\n\nO documento *{{2}}*, referente ao atendimento de *{{3}}*, já está disponível para retirada no escritório. Atendemos de segunda a sexta, das 8h às 18h, e aos sábados até as 12h.",
+  v:[['Nome','primeiro_nome'],['Documento','livre','declaração de óbito'],['Falecido(a)','livre','José da Silva']]},
+ {id:'funeral_valor_em_aberto',tema:'pos',ic:'💵',nome:'Valor em aberto do serviço',desc:'Cobra valor pendente do serviço funerário',cat:'UTILITY',
+  t:"Olá, {{1}}. Aqui é {{2}}, do *Plano PAI*.\n\nConsta um valor em aberto de *{{3}}* referente ao serviço funerário de *{{4}}*. Podemos te enviar a forma de pagamento por aqui?",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Valor','livre','R$ 320,00'],['Falecido(a)','livre','José da Silva']]},
+
+ {id:'coroa_pedido_recebido',tema:'cor',ic:'📥',nome:'Pedido recebido',desc:'Confirma o pedido de coroa na fila',cat:'UTILITY',
+  t:"Olá, *{{1}}*!\n\nAqui é do *Plano PAI* e recebemos seu pedido de coroa de flores *nº {{2}}*, em homenagem a *{{3}}*.\n\nEle já está na nossa fila de confecção, e vamos avisar por aqui quando a coroa estiver pronta e quando for entregue.\n\nAgradecemos desde já a confiança!",
+  v:[['Nome','primeiro_nome'],['Nº do pedido','pedido'],['Em homenagem a','falecido_coroa']]},
+ {id:'coroa_pronta',tema:'cor',ic:'🌸',nome:'Coroa pronta',desc:'Avisa que a coroa está pronta (com foto)',cat:'UTILITY',
+  t:"Olá, *{{1}}*!\n\nAqui é do *Plano PAI*. A coroa de flores do pedido *nº {{2}}*, em homenagem a *{{3}}*, já está pronta.\n\nEm seguida ela segue com a nossa equipe para o local de entrega: *{{4}}*.\n\nQualquer dúvida, é só responder esta mensagem.",
+  v:[['Nome','primeiro_nome'],['Nº do pedido','pedido'],['Em homenagem a','falecido_coroa'],['Local de entrega','local_coroa']],foto:true},
+ {id:'coroa_entregue',tema:'cor',ic:'🌺',nome:'Coroa entregue',desc:'Confirma a entrega no velório',cat:'UTILITY',
+  t:"Olá, *{{1}}*!\n\nAqui é do *Plano PAI*. A coroa de flores do pedido *nº {{2}}*, em homenagem a *{{3}}*, foi entregue no local: *{{4}}*.\n\nAgradecemos a sua confiança e deixamos os nossos sentimentos à família.",
+  v:[['Nome','primeiro_nome'],['Nº do pedido','pedido'],['Em homenagem a','falecido_coroa'],['Local de entrega','local_coroa']]},
+
+ {id:'reajuste_mensalidade',tema:'ctr',ic:'📈',nome:'Reajuste da mensalidade',desc:'Informa o novo valor a partir de uma data',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é do *Plano PAI*.\n\nA partir de *{{2}}*, a mensalidade do contrato *{{3}}* passa a ser de *{{4}}*, conforme o reajuste anual previsto no contrato. Qualquer dúvida, responda esta mensagem.",
+  v:[['Nome','primeiro_nome'],['A partir de','livre','10/12/2026'],['Contrato','contrato'],['Novo valor','livre','R$ 49,00']]},
+ {id:'vencimento_alterado',tema:'ctr',ic:'🗓️',nome:'Vencimento alterado',desc:'Confirma a troca do dia de vencimento',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é do *Plano PAI*.\n\nConforme solicitado, o vencimento da mensalidade do contrato *{{2}}* passa a ser todo dia *{{3}}*. O próximo vencimento é em *{{4}}*.",
+  v:[['Nome','primeiro_nome'],['Contrato','contrato'],['Novo dia','livre','30'],['Próximo vencimento','livre','30/11/2026']]},
+ {id:'cadastro_atualizacao',tema:'ctr',ic:'✏️',nome:'Atualizar cadastro',desc:'Pede um dado que falta no contrato',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é {{2}}, do *Plano PAI*.\n\nPrecisamos atualizar uma informação do contrato *{{3}}*: {{4}}. Pode nos responder por aqui quando puder?",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Contrato','contrato'],['O que atualizar','livre','o CPF de um dependente']]},
+ {id:'retorno_solicitacao',tema:'ctr',ic:'↩️',nome:'Retorno de solicitação',desc:'Retoma qualquer pedido do cliente',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é {{2}}, do *Plano PAI*, com o retorno da sua solicitação sobre {{3}}. Podemos continuar por aqui?",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Assunto','livre','a inclusão de dependente']]},
+
+ {id:'material_ortopedico_prazo',tema:'ser',ic:'🦽',nome:'Material ortopédico: prazo',desc:'Pergunta se renova ou devolve o material',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é {{2}}, do *Plano PAI*.\n\nO prazo do material ortopédico *{{3}}*, retirado em {{4}}, termina em *{{5}}*. Você vai renovar ou devolver? É só responder por aqui.",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Material','livre','cadeira de rodas'],['Retirado em','livre','24/10/2026'],['Prazo termina','livre','24/11/2026']]},
+ {id:'app_associado_acesso',tema:'ser',ic:'📱',nome:'Acesso ao app do associado',desc:'Envia o link do Aplicativo do Associado',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é do *Plano PAI*.\n\nO acesso ao *Aplicativo do Associado* do contrato *{{2}}* está liberado. Baixe pelo link e entre com o CPF do titular:\n{{3}}\n\nQualquer dúvida, responda esta mensagem.",
+  v:[['Nome','primeiro_nome'],['Contrato','contrato'],['Link do app','livre','https://play.google.com/…']]},
+ {id:'telemedicina_cadastro',tema:'ser',ic:'🩺',nome:'Cadastro da telemedicina',desc:'Pede dados para concluir o cadastro',cat:'UTILITY',
+  t:"Olá, {{1}}! Aqui é {{2}}, do *Plano PAI*.\n\nPara concluir o cadastro da telemedicina do contrato *{{3}}*, precisamos de alguns dados. Podemos continuar por aqui?",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Contrato','contrato']]},
+ {id:'remocao_ambulancia_confirmar',tema:'ser',ic:'🚑',nome:'Confirmar remoção',desc:'Confirma a remoção em ambulância agendada',cat:'UTILITY',
+  t:"Olá, {{1}}. Aqui é {{2}}, do *Plano PAI*, sobre a remoção em ambulância de *{{3}}*, agendada para *{{4}}*. Pode confirmar por aqui?",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Paciente','livre','José da Silva'],['Data e hora','livre','25/11/2026 às 8h']]},
+
+ {id:'venda_retorno_planos',tema:'ven',ic:'🏷️',nome:'Retorno sobre os planos',desc:'Para quem pediu informação de plano',cat:'MARKETING',
+  t:"Olá, {{1}}! Aqui é {{2}}, do *Plano PAI*.\n\nVocê pediu informações sobre os nossos planos. Ficou alguma dúvida? Posso te ajudar a escolher o melhor plano para a sua família.",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente']]},
+ {id:'sorteio_contemplado',tema:'ven',ic:'🎁',nome:'Contemplado no sorteio',desc:'Avisa o ganhador e como retirar o prêmio',cat:'MARKETING',
+  t:"Olá, {{1}}! Aqui é {{2}}, do *Plano PAI*.\n\nVocê foi contemplado no sorteio de *{{3}}* e ganhou *{{4}}*. Retire o prêmio no escritório, de segunda a sexta, das 8h às 18h, com um documento com foto.",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente'],['Sorteio de','livre','novembro'],['Prêmio','livre','1 sanduicheira']]},
+ {id:'reativacao_plano',tema:'ven',ic:'🔄',nome:'Reativar plano',desc:'Convida a reativar um plano inativo',cat:'MARKETING',
+  t:"Olá, {{1}}! Aqui é {{2}}, do *Plano PAI*.\n\nSeu plano está inativo e queremos te ajudar a voltar a ter a proteção da sua família. Posso te explicar as condições para reativar?",
+  v:[['Nome','primeiro_nome'],['Quem envia','atendente']]},
+];
+const CONTATOS=[
+ {nome:'Maria das Graças',sub:'contrato 10397 · 1 mensalidade em aberto',d:{primeiro_nome:'Maria',contrato:'10397',valor_aberto:'R$ 46,00',vencimento:'10/11/2026'},sug:['mensalidade_em_aberto','Porque o contrato tem parcela em aberto na Unymos']},
+ {nome:'Josefa Lima',sub:'pedido de coroa nº 234 · coroa pronta',d:{primeiro_nome:'Josefa',pedido:'234',falecido_coroa:'Tamara Gomes',local_coroa:'Memorial Senhor do Bonfim (Sala 02)'},sug:['coroa_pronta','Porque o pedido de coroa nº 234 acabou de ficar pronto']},
+ {nome:'Antônio Pereira',sub:'família de atendimento funerário de 20/11',d:{primeiro_nome:'Antônio'},sug:['pos_atendimento_pesquisa','Porque houve um atendimento funerário há 4 dias']},
+ {nome:'Novo contato',sub:'sem contrato vinculado',d:{},sug:null},
+];
+const ATENDENTE='Karol';
+let fav=new Set(['link_pagamento_mensalidade','retorno_solicitacao']);
+let uso={link_pagamento_mensalidade:34,retorno_solicitacao:12,funeral_documentos_pendentes:5,mensalidade_em_aberto:21};
+let abertos=new Set(), atual=null, valores={};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const contato=()=>CONTATOS[+$('#contato').value];
+function autoValor(f){ if(f==='atendente')return ATENDENTE; return contato().d[f]||''; }
+
+$('#contato').innerHTML=CONTATOS.map((c,i)=>`<option value="${i}">${esc(c.nome)}</option>`).join('');
+
+function hl(txt,q){ if(!q)return esc(txt); const n=norm(txt),i=n.indexOf(norm(q)); if(i<0)return esc(txt); return esc(txt.slice(0,i))+'<mark>'+esc(txt.slice(i,i+q.length))+'</mark>'+esc(txt.slice(i+q.length)); }
+function item(m,q){
+  return `<div class="it ${atual&&atual.id===m.id?'on':''}" data-id="${m.id}" role="button" tabindex="0">
+    <div class="ic">${m.ic}</div><div class="tx"><b>${hl(m.nome,q)}</b><small>${hl(m.desc,q)}</small></div>
+    <span class="u ${m.cat}">${m.cat==='UTILITY'?'Utilidade':'Marketing'}</span>
+    <button class="fav ${fav.has(m.id)?'on':''}" data-fav="${m.id}" title="Favorito" aria-label="Favoritar">${fav.has(m.id)?'★':'☆'}</button></div>`;
+}
+function render(){
+  const c=contato(), q=$('#q').value.trim();
+  $('#sub').textContent=c.nome+' · '+c.sub;
+  $('#titulo').textContent=$('#entrada').value==='nova'?'Nova conversa · mensagem de abertura':'Retomar atendimento · janela de 24 h fechada';
+  let h='';
+  if(q){
+    const r=M.filter(m=>norm(m.nome+' '+m.desc+' '+m.t+' '+TEMAS.find(t=>t.id===m.tema).nome).includes(norm(q)));
+    h+=`<div class="h3">RESULTADOS · ${r.length}</div>`+(r.length?r.map(m=>item(m,q)).join(''):'<div class="vazio">Nenhum modelo com esse termo. Tente “pagamento”, “documento” ou “coroa”.</div>');
+  } else {
+    if(c.sug){const m=M.find(x=>x.id===c.sug[0]);
+      h+=`<div class="h3">✨ SUGERIDO PARA ESTE CONTATO</div><button class="sug" data-id="${m.id}"><div style="font-size:24px">${m.ic}</div><div style="flex:1"><b>${m.nome}</b><small>${m.desc}</small><div class="why">${c.sug[1]}</div></div><span class="u ${m.cat}">${m.cat==='UTILITY'?'Utilidade':'Marketing'}</span></button>`;}
+    const favs=M.filter(m=>fav.has(m.id)).sort((a,b)=>(uso[b.id]||0)-(uso[a.id]||0));
+    h+=`<div class="h3">⭐ MEUS FAVORITOS</div>`+(favs.length?favs.map(m=>item(m,'')).join(''):'<div class="vazio">Toque na estrela de um modelo para fixar aqui.</div>');
+    h+=`<div class="h3">TODOS OS MODELOS, POR TEMA</div>`;
+    for(const t of TEMAS){const ms=M.filter(m=>m.tema===t.id);const ab=abertos.has(t.id);
+      h+=`<div class="tema ${ab?'aberto':''}"><button data-tema="${t.id}">${t.ic} ${t.nome}${t.id==='ven'?' <span class="u MARKETING">Marketing · mais caro</span>':''}<span class="n">${ms.length}</span><span class="chev">›</span></button>${ab?'<div class="lista">'+ms.map(m=>item(m,'')).join('')+'</div>':''}</div>`;}
+  }
+  $('#lista').innerHTML=h;
+}
+function escolher(id){
+  atual=M.find(m=>m.id===id); valores={};
+  atual.v.forEach((v,i)=>{valores[i]=v[1]==='livre'?'':autoValor(v[1]);});
+  const t=TEMAS.find(x=>x.id===atual.tema);
+  $('#mtit').textContent=atual.ic+' '+atual.nome;
+  $('#mdesc').innerHTML=`${t.ic} ${t.nome} · <span class="u ${atual.cat}">${atual.cat==='UTILITY'?'Utilidade':'Marketing · mais caro'}</span>`;
+  let h='<div class="campos">';
+  atual.v.forEach((v,i)=>{const auto=v[1]!=='livre'; const val=valores[i];
+    h+=`<div class="campo"><label>${esc(v[0]).toUpperCase()} <span class="${auto&&val?'auto':'dig'}">${auto&&val?'automático':(auto?'sem dado: digite':'digitar')}</span></label><input data-i="${i}" value="${esc(val)}" placeholder="${esc(v[2]||'')}" class="${val?'':'falta'}"></div>`;});
+  h+='</div><div class="h3" style="margin-top:16px">COMO A PESSOA VAI RECEBER</div><div class="whats">'+(atual.foto?'<div class="bolha" style="padding:6px;margin-bottom:4px"><div style="height:110px;border-radius:8px;background:linear-gradient(135deg,#3a5a3a,#8a4a6a);display:grid;place-items:center;font-size:40px">🌺</div></div>':'')+'<div class="bolha" id="bolha"></div><div class="btns" id="bts"></div><div class="hora">agora ✓✓</div></div><div class="aviso" id="aviso"></div>';
+  $('#painel').innerHTML=h; preview(); render();
+}
+function preview(){
+  if(!atual)return;
+  let s=esc(atual.t).replace(/\*([^*\n]+)\*/g,'<b>$1</b>');
+  s=s.replace(/\{\{(\d+)\}\}/g,(_,n)=>{const i=+n-1,val=valores[i];return val?`<span class="v">${esc(val)}</span>`:`<span class="vv">[${esc(atual.v[i][0])}]</span>`;});
+  $('#bolha').innerHTML=s;
+  $('#bts').innerHTML=(atual.bt||[]).map(b=>`<span>${esc(b)}</span>`).join('');
+  const falta=atual.v.filter((v,i)=>!valores[i]).length;
+  $('#aviso').textContent=falta?`Falta preencher ${falta} campo${falta>1?'s':''} para enviar.`:'';
+  $('#enviar').disabled=!!falta;
+}
+document.addEventListener('click',e=>{
+  const f=e.target.closest('[data-fav]'); if(f){e.stopPropagation();const id=f.dataset.fav;fav.has(id)?fav.delete(id):fav.add(id);render();return;}
+  const t=e.target.closest('[data-tema]'); if(t){const id=t.dataset.tema;abertos.has(id)?abertos.delete(id):abertos.add(id);render();return;}
+  const it=e.target.closest('[data-id]'); if(it){escolher(it.dataset.id);}
+});
+document.addEventListener('input',e=>{ if(e.target.dataset.i!==undefined){valores[e.target.dataset.i]=e.target.value;e.target.classList.toggle('falta',!e.target.value);preview();} if(e.target.id==='q')render(); });
+$('#contato').onchange=()=>{atual=null;$('#painel').innerHTML='<div class="placeholder"><div>💬</div>Escolha um modelo à esquerda para ver os campos e como a pessoa vai receber.</div>';$('#mtit').textContent='Escolha um modelo';$('#mdesc').textContent='A prévia aparece aqui, com os dados do contato.';$('#enviar').disabled=true;render();};
+$('#entrada').onchange=render;
+$('#cancelar').onclick=()=>$('#contato').onchange();
+$('#enviar').onclick=()=>{const t=$('#toast');t.style.display='block';setTimeout(()=>t.style.display='none',1800);};
+abertos.add('pag'); render();
+</script>
+</body>
+</html>
