@@ -1,63 +1,92 @@
 "use client";
 
 /**
- * Monitor de disparos (26/10/2026) — rota /messenger-disparos
- * Campanhas de mensagens pelo WhatsApp (modelos aprovados na Meta) e o histórico do que saiu, dia a dia.
- *  - Campanhas: ligada (todos), teste (só os contratos da lista), desligada ou arquivada. Cada campanha usa um "tipo"
- *    (motor) do servidor; hoje existe o "mensalidade" (lembrete amigável antes/depois do vencimento, botão "Pagar com Pix").
- *    Tipos novos entram no aurora_03.php (a03Tipos) e aparecem aqui sozinhos.
- *  - Histórico: por dia, quantos foram, abriram o botão, pagaram e falharam; o log de cada execução com erros e pulados.
- *  - O disparo automático roda pelo cron da HostGator (php aurora_03.php disparos) uma vez por dia.
- * Servidor: aurora_03.php (arquivo novo). Acesso: página "messenger"; criar, mudar e disparar é só da Gestão.
+ * Campanhas e Lembretes (24/11/2026) — rota /messenger-disparos
+ * Aba Modelos: Automáticos (régua: vencimento, atraso, boas-vindas) e Campanhas (público por filtros ou lista), cada um
+ * aberto numa janela com o texto (emojis, macros, negrito), a prévia no celular e a aprovação na Meta.
+ * Aba Histórico: cada mensagem da fila (em aprovação, aguardando, enviada, entregue, lida, respondeu, abriu o botão,
+ * pago, não enviada com o motivo), com ações em lote e o detalhe numa janela.
+ * Servidor: aurora_22.php (cron de 15 em 15 minutos). Mudar, aprovar e disparar é só da Gestão.
  */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiJson, API_BASE } from "@/components/messenger/api";
 
-const API = `${API_BASE}/aurora_03.php`;
+const API = `${API_BASE}/aurora_22.php`;
 
-type Modo = "desligada" | "teste" | "ligada" | "arquivada";
-type Numeros = { enviados: number; falhas: number; pagos: number; abriram: number; ultimo: string | null } | null;
-type Campanha = {
-    id: string; nome: string; tipo: string; dias: number; modelo: string; idioma: string; modo: Modo;
-    teste_contratos: string; texto: string; quando: string; numeros: Numeros; atualizado_em?: string; atualizado_por?: string;
+type Meta = "aprovado" | "analise" | "rejeitado" | "rascunho";
+type Modelo = {
+    id: string; kind: "auto" | "camp"; nome: string; modelo: string; modo: string; gat: string; quando: string; aprov: "auto" | "aprov";
+    dias_semana: number[]; hora: string; ate: string; sit: string[]; atraso: string; grupo: string; botao: string; cat: "UTILITY" | "MARKETING";
+    texto: string; meta: Meta; meta_motivo: string; meta_categoria: string; meta_em: string; versao: number;
+    novo: { texto: string; botao: string } | null;
+    pendente: { modelo: string; texto: string; botao: string; enviado_em: string; status: Meta; motivo: string; categoria: string } | null;
+    pub: "filtro" | "lista"; lista: string; agendado_em: string; camp_estado: string; agendada_qtd?: number; teste_contratos: string;
+    atualizado_em?: string; atualizado_por?: string;
+    numeros: { enviados: number; abriram: number; pagos: number; nao_enviados: number; ultimo: string | null; fila?: number } | null;
 };
-type Tipo = { nome: string; descricao: string; variaveis: string[]; botao: string };
-type Painel = { campanhas: Campanha[]; tipos: Record<string, Tipo>; gestao: boolean; meta_ok: boolean; cron: string };
-type Detalhe = { contrato: string; titular: string; valor: number; vencimento: string; situacao: string; msg: string; telefone: string };
-type Resultado = {
-    id: string; nome: string; modo: string; quando: string; msg?: string; erro?: string; vencimento?: string;
-    encontradas?: number; contratos?: number; enviados?: number; falhas?: number; pulados?: number; repetidos?: number; previa?: number;
-    detalhes?: Detalhe[];
+type Macro = { chave: string; nome: string; exemplo: string };
+type Painel = {
+    campanhas: Modelo[]; macros: Macro[]; situacoes: string[]; gestao: boolean; meta_ok: boolean; tabelas_ok: boolean;
+    precos: { UTILITY: number; MARKETING: number }; link_app: string; cron: string;
 };
-type Execucao = { inicio: string; fim?: string; origem: string; campanhas: Resultado[] };
-type ResumoCamp = { enviados?: number; falhas?: number; pagos?: number; abriram?: number; testes?: number };
-type Dia = { data: string; execucoes: number; erros: number; campanhas: Record<string, ResumoCamp> };
 type Envio = {
-    id: number; campanha: string; teste: boolean; contrato: string; valor: number; situacao: "E" | "X" | "PG"; enviado_em: string | null;
-    abriu_em: string | null; pago_em: string | null; conversa_id: number; nome: string | null; telefone: string | null; erro: string | null;
+    id: number; campanha: string; origem: string; contrato: string | null; titular: string | null; telefone: string | null;
+    situacao: string; motivo: string | null; texto: string | null; programado_em: string | null; enviado_em: string | null;
+    conversa_id: number | null; linha: [string | null, string][];
 };
-type DiaDetalhe = { data: string; execucoes: Execucao[]; envios: Envio[] };
-type Form = { id: string; nome: string; tipo: string; dias: number; modelo: string; idioma: string; modo: Modo; teste_contratos: string; texto: string };
+type NP = { telefone: string; contrato: string | null; motivo: string | null; criado_em: string };
 
-const MODOS: Record<Modo, [string, string]> = {
+const MODOS: Record<string, [string, string]> = {
     ligada: ["Ligada", "bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-[#D5E79A]"],
     teste: ["Em teste", "bg-[#FBF0C9] text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F2CB3F]"],
     desligada: ["Desligada", "bg-[#F0F2F5] text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]"],
-    arquivada: ["Arquivada", "bg-[#F0F2F5] text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]"],
 };
-const SIT_ENVIO: Record<string, [string, string]> = {
-    E: ["Enviado", "bg-[#E9EFF6] text-[#1E3A5C] dark:bg-[#3D6A99]/25 dark:text-white"],
-    PG: ["Pago", "bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-[#D5E79A]"],
-    X: ["Falhou", "bg-[#FDECEA] text-[#B42318] dark:bg-[#B42318]/25 dark:text-[#FF9C92]"],
+const OK = "bg-[#EEF5D6] text-[#2F4207] dark:bg-[#B3CE52]/20 dark:text-[#D5E79A]";
+const AMARELO = "bg-[#FBF0C9] text-[#5C4600] dark:bg-[#F2CB3F]/20 dark:text-[#F2CB3F]";
+const CINZA = "bg-[#F0F2F5] text-[#4A5468] dark:bg-white/10 dark:text-[#AEB9CF]";
+const VERMELHO = "bg-[#FDECEA] text-[#B42318] dark:bg-[#B42318]/25 dark:text-[#FF9C92]";
+const AZUL = "bg-[#E9EFF6] text-[#1E3A5C] dark:bg-[#3D6A99]/25 dark:text-white";
+const METAS: Record<Meta, [string, string]> = {
+    aprovado: ["Aprovado na Meta", OK], analise: ["Em análise na Meta", AMARELO], rejeitado: ["Rejeitado pela Meta", VERMELHO], rascunho: ["Ainda não enviado à Meta", CINZA],
 };
-const SIT_DET: Record<string, string> = { E: "Enviado", X: "Falhou", pulado: "Pulado", repetido: "Já enviado", previa: "Vai receber" };
-const FILTROS_ENVIO: [string, string][] = [["todos", "Todos"], ["X", "Falhas"], ["abriu", "Abriram o botão"], ["PG", "Pagos"], ["teste", "Testes"]];
+const SITS: Record<string, [string, string]> = {
+    aprov: ["Em aprovação", AMARELO], aguard: ["Aguardando envio", CINZA], enviada: ["Enviada", AZUL], entregue: ["Entregue", OK], lida: ["Lida", OK],
+    respondeu: ["Respondeu", OK], abriu: ["Abriu o botão", OK], pago: ["Pago", OK], falhou: ["Erro ao enviar", VERMELHO], pulado: ["Não enviada", AMARELO],
+    cancelado: ["Cancelada", CINZA], np: ["Não perturbe", CINZA],
+};
+const GRUPOS: [string, string, (s: string) => boolean][] = [
+    ["", "Todas", () => true],
+    ["fila", "Na fila", (s) => s === "aprov" || s === "aguard"],
+    ["env", "Enviadas", (s) => ["enviada", "entregue", "lida", "respondeu", "abriu", "pago"].includes(s)],
+    ["lida", "Lidas", (s) => ["lida", "respondeu", "abriu", "pago"].includes(s)],
+    ["pago", "Pagaram", (s) => s === "pago"],
+    ["nao", "Não enviadas", (s) => ["falhou", "pulado", "np", "cancelado"].includes(s)],
+];
+const GATILHOS: Record<string, [string, [string, string][]]> = {
+    venc: ["Vencimento da mensalidade", [["-3", "3 dias antes do vencimento"], ["-2", "2 dias antes do vencimento"], ["-1", "1 dia antes do vencimento"], ["0", "No dia do vencimento"], ["1", "1 dia depois do vencimento"], ["2", "2 dias depois do vencimento"]]],
+    atraso: ["Mensalidades em atraso", [["5", "5 dias após o vencimento"], ["10", "10 dias após o vencimento"], ["15", "15 dias após o vencimento"], ["20", "20 dias após o vencimento"], ["30", "30 dias após o vencimento"]]],
+    novo: ["Contrato novo (boas-vindas)", [["0", "No dia em que aparece o contrato"]]],
+};
+const BOTOES: Record<string, string> = { pix: "Pagar com Pix", app: "Acessar meu contrato (app do associado)", falar: "Falar com o Plano PAI", "": "Sem botão" };
+const DIAS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+const EMOJIS = ["😊", "🙂", "👋", "🙏", "💛", "💙", "🌻", "✨", "✅", "📅", "⏰", "📌", "💳", "💰", "📲", "💬", "🎉", "🎂", "🤝", "❤️", "👍", "☀️", "🕊️", "📞"];
+const ORIGENS: Record<string, string> = { auto: "Automático", campanha: "Campanha", teste: "Envio de teste" };
+const PALAVRAS_MKT = /(desconto|promo|oferta|aproveite|parceir|você sabia|novidade|conheça|indique|sorteio|grátis)/i;
 
-const brl = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const BTN = "inline-flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl px-4 text-[14.5px] font-extrabold leading-none disabled:opacity-50";
+const BTN_SEC = `${BTN} border border-[#C9D1DE] bg-white dark:border-white/15 dark:bg-transparent`;
+const BTN_PRI = `${BTN} bg-[#313C55] text-white dark:bg-[#F2CB3F] dark:text-[#313C55]`;
+const CAMPO = "h-12 w-full rounded-xl border-0 bg-[#F1F4F8] px-3 text-[16px] outline-none focus:ring-2 focus:ring-[#3D6A99]/30 dark:bg-[#1C2334]";
+const CARTAO = "rounded-2xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]";
+const ROTULO = "mb-1 block text-[13.5px] font-bold text-[#5B6478] dark:text-[#AEB9CF]";
+const MUDO = "text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]";
+const CHIP = "inline-flex min-h-[36px] items-center rounded-full border border-dashed border-[#C9D1DE] bg-[#F1F4F8] px-3 text-[13px] font-bold dark:border-white/15 dark:bg-[#1C2334]";
+
+const hojeIso = () => new Date().toLocaleDateString("sv-SE");
 const dt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
 const hora = (s: string | null | undefined) => (s ? new Date(s).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—");
-const dataBr = (s: string | null | undefined) => (s && /^\d{4}-\d{2}-\d{2}/.test(s) ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}` : "—");
-const diaSemana = (s: string) => new Date(`${s}T12:00:00`).toLocaleDateString("pt-BR", { weekday: "long" });
+const dataBr = (s: string | null | undefined) => (s ? new Date(s).toLocaleDateString("pt-BR") : "");
+const brl = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fone = (t: string | null) => {
     const d = (t || "").replace(/\D/g, "").replace(/^55/, "");
     return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2, d.length - 4)}-${d.slice(-4)}` : t || "";
@@ -72,119 +101,159 @@ async function aGet<T = any>(acao: string, params: Record<string, any> = {}): Pr
     return j.dados as T;
 }
 async function aPost(acao: string, corpo: Record<string, any> = {}) {
-    return apiJson(`${API}?action=${encodeURIComponent(acao)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(corpo),
-    });
+    return apiJson(`${API}?action=${encodeURIComponent(acao)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
 }
 
-const BTN = "inline-flex h-11 min-w-[44px] shrink-0 items-center justify-center rounded-xl px-4 text-[14.5px] font-extrabold leading-none disabled:opacity-50";
-const BTN_SEC = `${BTN} border border-[#C9D1DE] bg-white dark:border-white/15 dark:bg-transparent`;
-const BTN_PRI = `${BTN} bg-[#313C55] text-white dark:bg-[#F2CB3F] dark:text-[#313C55]`;
-const CAMPO = "h-12 w-full rounded-xl border-0 bg-[#F1F4F8] px-3 text-[16px] outline-none focus:ring-2 focus:ring-[#3D6A99]/30 dark:bg-[#1C2334]";
-const CARTAO = "rounded-2xl border border-[#E1E5EC] bg-white p-4 dark:border-white/12 dark:bg-[#232B3F]";
-const ROTULO = "mb-1 block text-[13.5px] font-bold text-[#5B6478] dark:text-[#AEB9CF]";
-
-function Numero({ n, rotulo, cor = "" }: { n: number | undefined; rotulo: string; cor?: string }) {
-    return (
-        <div className="min-w-[72px] flex-1 rounded-xl bg-[#F4F6F9] px-3 py-2 dark:bg-[#1C2334]">
-            <b className={`block text-[20px] leading-tight ${cor}`}>{n ?? 0}</b>
-            <span className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{rotulo}</span>
-        </div>
-    );
+/** Formatação do WhatsApp (*negrito*, _itálico_, ~riscado~) como elementos React. */
+function Whats({ texto }: { texto: string }) {
+    const partes: React.ReactNode[] = [];
+    const re = /\*([^*\n]+)\*|_([^_\n]+)_|~([^~\n]+)~/g;
+    let ult = 0;
+    let m: RegExpExecArray | null;
+    let i = 0;
+    while ((m = re.exec(texto))) {
+        if (m.index > ult) partes.push(texto.slice(ult, m.index));
+        if (m[1]) partes.push(<b key={i++}>{m[1]}</b>);
+        else if (m[2]) partes.push(<i key={i++}>{m[2]}</i>);
+        else partes.push(<s key={i++}>{m[3]}</s>);
+        ult = re.lastIndex;
+    }
+    if (ult < texto.length) partes.push(texto.slice(ult));
+    return <>{partes}</>;
 }
 
-function TabelaDetalhes({ linhas }: { linhas: Detalhe[] }) {
-    if (!linhas.length) return null;
+function Celular({ texto, botao, horaTxt, titulo = "Plano PAI" }: { texto: string; botao: string; horaTxt: string; titulo?: string }) {
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-[13.5px]">
-                <thead className="text-[#5B6478] dark:text-[#AEB9CF]">
-                    <tr><th className="py-1 pr-2">Contrato</th><th className="py-1 pr-2">Titular</th><th className="py-1 pr-2">Valor</th><th className="py-1 pr-2">Vence</th><th className="py-1 pr-2">Situação</th><th className="py-1">Motivo</th></tr>
-                </thead>
-                <tbody>
-                    {linhas.map((d, i) => (
-                        <tr key={i} className="border-t border-[#EEF0F3] dark:border-white/10">
-                            <td className="py-1.5 pr-2 font-bold">{d.contrato}</td>
-                            <td className="py-1.5 pr-2">{d.titular || "—"}</td>
-                            <td className="py-1.5 pr-2">{brl(d.valor)}</td>
-                            <td className="py-1.5 pr-2">{dataBr(d.vencimento)}</td>
-                            <td className="py-1.5 pr-2 font-bold">{SIT_DET[d.situacao] || d.situacao}</td>
-                            <td className="py-1.5">{d.msg}{d.telefone ? ` · ${fone(d.telefone)}` : ""}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    );
-}
-
-function ResumoResultado({ r }: { r: Resultado }) {
-    return (
-        <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2 text-[14px]">
-                <b>{r.nome}</b>
-                <span className="text-[#5B6478] dark:text-[#AEB9CF]">{r.quando}{r.vencimento ? ` · vencimento ${dataBr(r.vencimento)}` : ""}</span>
+        <div className="rounded-[22px] border-[8px] border-[#313C55] bg-[#EFEAE2] p-3 dark:border-[#0E1320] dark:bg-[#0B141A]">
+            <div className="mb-3 flex items-center gap-2 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                <span className="grid h-8 w-8 place-items-center rounded-full bg-[#F2CB3F] text-[12px] font-extrabold text-[#161C2A]">PAI</span>
+                <span>{titulo}</span>
             </div>
-            {r.erro && <div className="rounded-xl bg-[#FDECEA] px-3 py-2 text-[13.5px] font-bold text-[#B42318] dark:bg-[#B42318]/25 dark:text-[#FF9C92]">Erro: {r.erro}</div>}
-            {r.msg && <div className="text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">{r.msg}</div>}
-            {r.contratos !== undefined && (
-                <div className="flex flex-wrap gap-2">
-                    <Numero n={r.encontradas} rotulo="mensalidades" />
-                    <Numero n={r.contratos} rotulo="contratos" />
-                    {r.previa ? <Numero n={r.previa} rotulo="vão receber" /> : null}
-                    {r.enviados ? <Numero n={r.enviados} rotulo="enviados" cor="text-[#2F6B12] dark:text-[#D5E79A]" /> : null}
-                    {r.falhas ? <Numero n={r.falhas} rotulo="falhas" cor="text-[#B42318] dark:text-[#FF9C92]" /> : null}
-                    <Numero n={r.pulados} rotulo="pulados" />
-                    <Numero n={r.repetidos} rotulo="já enviados" />
-                </div>
-            )}
-            {r.detalhes && r.detalhes.length > 0 && <TabelaDetalhes linhas={r.detalhes} />}
+            <div className="whitespace-pre-wrap break-words rounded-[4px_12px_12px_12px] bg-white px-3 pb-1.5 pt-2 text-[15px] leading-[1.4] text-[#111B21] shadow-sm dark:bg-[#202C33] dark:text-[#E9EDEF]">
+                <Whats texto={texto || " "} />
+                <span className="mt-1 block text-right text-[11px] opacity-60">{horaTxt}</span>
+            </div>
+            {botao && <div className="mt-1 rounded-xl bg-white p-2 text-center text-[15px] font-bold text-[#027EB5] shadow-sm dark:bg-[#202C33] dark:text-[#53BDEB]">↗ {BOTOES[botao]?.replace(" (app do associado)", "")}</div>}
         </div>
     );
 }
 
-export default function DisparosPage() {
+function Etiqueta({ par }: { par: [string, string] | undefined }) {
+    if (!par) return null;
+    return <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[12.5px] font-extrabold ${par[1]}`}>{par[0]}</span>;
+}
+
+function Janela({ aberta, fechar, titulo, sub, direita, largura = "max-w-[1080px]", children }: {
+    aberta: boolean; fechar: () => void; titulo: string; sub?: string; direita?: React.ReactNode; largura?: string; children: React.ReactNode;
+}) {
+    useEffect(() => {
+        if (!aberta) return;
+        const k = (e: KeyboardEvent) => e.key === "Escape" && fechar();
+        window.addEventListener("keydown", k);
+        const antes = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        return () => {
+            window.removeEventListener("keydown", k);
+            document.body.style.overflow = antes;
+        };
+    }, [aberta, fechar]);
+    if (!aberta) return null;
+    return (
+        <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-[#0A0E16]/60 p-2 sm:p-8" onMouseDown={(e) => e.target === e.currentTarget && fechar()} role="dialog" aria-modal="true">
+            <div className={`w-full ${largura} rounded-[20px] border border-[#E1E5EC] bg-white p-4 shadow-2xl sm:p-6 dark:border-white/12 dark:bg-[#232B3F]`}>
+                <div className="mb-2 flex items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                        <h2 className="m-0 text-[21px] font-extrabold leading-tight">{titulo}</h2>
+                        {sub && <p className={`m-0 ${MUDO}`}>{sub}</p>}
+                    </div>
+                    {direita}
+                    <button type="button" aria-label="Fechar" onClick={fechar} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#F1F4F8] text-[22px] dark:bg-[#1C2334]">×</button>
+                </div>
+                {children}
+            </div>
+        </div>
+    );
+}
+
+function Alternar({ ligado, onClick, children }: { ligado: boolean; onClick: () => void; children: React.ReactNode }) {
+    return (
+        <button type="button" onClick={onClick} aria-pressed={ligado}
+            className={`min-h-[36px] rounded-full border px-3 text-[13px] font-bold ${ligado ? "border-transparent " + OK : "border-[#C9D1DE] bg-[#F1F4F8] text-[#5B6478] dark:border-white/15 dark:bg-[#1C2334] dark:text-[#AEB9CF]"}`}>
+            {children}
+        </button>
+    );
+}
+
+const vazio = (kind: "auto" | "camp"): Modelo => ({
+    id: "", kind, nome: "", modelo: "", modo: "desligada", gat: kind === "auto" ? "venc" : "", quando: kind === "auto" ? "-1" : "0", aprov: "auto",
+    dias_semana: [1, 1, 1, 1, 1, 1, 0], hora: "09:00", ate: "18:00", sit: ["Ativo", "Inadimplente", "Pré-cancelado"], atraso: "", grupo: "",
+    botao: kind === "auto" ? "pix" : "falar", cat: "UTILITY", texto: "Olá, {nome}! 👋\n", meta: "rascunho", meta_motivo: "", meta_categoria: "", meta_em: "",
+    versao: 1, novo: null, pendente: null, pub: "filtro", lista: "", agendado_em: "", camp_estado: "rascunho", teste_contratos: "", numeros: null,
+});
+
+export default function CampanhasLembretesPage() {
     const [painel, setPainel] = useState<Painel | null>(null);
-    const [dias, setDias] = useState<Dia[] | null>(null);
-    const [diaSel, setDiaSel] = useState("");
-    const [diaDet, setDiaDet] = useState<DiaDetalhe | null>(null);
-    const [filtroEnvio, setFiltroEnvio] = useState("todos");
-    const [verArquivadas, setVerArquivadas] = useState(false);
-    const [form, setForm] = useState<Form | null>(null);
-    const [previa, setPrevia] = useState<Resultado | null>(null);
-    const [teste, setTeste] = useState<{ id: string; nome: string; contrato: string; telefone: string } | null>(null);
+    const [aba, setAba] = useState<"modelos" | "historico">("modelos");
+    const [kind, setKind] = useState<"auto" | "camp">("auto");
+    const [form, setForm] = useState<Modelo | null>(null);
+    const [original, setOriginal] = useState<Modelo | null>(null);
+    const [exemplo, setExemplo] = useState(0);
+    const [emoji, setEmoji] = useState(false);
+    const [publico, setPublico] = useState<{ n: number; custo: number } | null>(null);
+    const [previa, setPrevia] = useState<{ hoje_envia: boolean; lista: any[] } | null>(null);
+    const [teste, setTeste] = useState<{ contrato: string; telefone: string } | null>(null);
     const [ocupado, setOcupado] = useState("");
     const [erro, setErro] = useState("");
     const [aviso, setAviso] = useState("");
+    // histórico
+    const [de, setDe] = useState(hojeIso());
+    const [ate, setAte] = useState(hojeIso());
+    const [fCamp, setFCamp] = useState("");
+    const [fOrig, setFOrig] = useState("");
+    const [busca, setBusca] = useState("");
+    const [grupo, setGrupo] = useState("");
+    const [envios, setEnvios] = useState<Envio[] | null>(null);
+    const [marcados, setMarcados] = useState<number[]>([]);
+    const [detalhe, setDetalhe] = useState<Envio | null>(null);
+    // configurações
+    const [config, setConfig] = useState(false);
+    const [linkApp, setLinkApp] = useState("");
+    const [np, setNp] = useState<NP[] | null>(null);
+    const [npNovo, setNpNovo] = useState({ telefone: "", contrato: "", motivo: "" });
+    const texto = useRef<HTMLTextAreaElement>(null);
+
+    const gestao = !!painel?.gestao;
+    const nomeModelo = useCallback((id: string) => painel?.campanhas.find((c) => c.id === id)?.nome || id, [painel]);
 
     const carregar = useCallback(async () => {
         try {
-            const [p, d] = await Promise.all([aGet<Painel>("painel"), aGet<Dia[]>("dias")]);
+            const p = await aGet<Painel>("painel");
             setPainel(p);
-            setDias(d);
+            setLinkApp(p.link_app || "");
         } catch (e: any) {
-            setErro(e?.message || "Não foi possível carregar o monitor.");
+            setErro(e?.message || "Não foi possível carregar a tela.");
         }
     }, []);
+    const carregarHist = useCallback(async () => {
+        setEnvios(null);
+        setMarcados([]);
+        try {
+            setEnvios(await aGet<Envio[]>("historico", { de, ate, campanha: fCamp, origem: fOrig, q: busca.trim() }));
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível carregar o histórico.");
+            setEnvios([]);
+        }
+    }, [de, ate, fCamp, fOrig, busca]);
 
     useEffect(() => {
         carregar();
+        if (typeof window !== "undefined" && window.location.hash === "#historico") setAba("historico");
     }, [carregar]);
-
-    const abrirDia = useCallback(async (data: string) => {
-        setDiaSel(data);
-        setDiaDet(null);
-        setFiltroEnvio("todos");
-        try {
-            setDiaDet(await aGet<DiaDetalhe>("dia", { data }));
-        } catch (e: any) {
-            setErro(e?.message || "Não foi possível abrir o dia.");
-        }
-    }, []);
-
-    const nomeCampanha = (id: string) => painel?.campanhas.find((c) => c.id === id)?.nome || id;
+    useEffect(() => {
+        if (aba !== "historico") return;
+        const t = setTimeout(carregarHist, 300);
+        return () => clearTimeout(t);
+    }, [aba, carregarHist]);
 
     async function executar(rotulo: string, fn: () => Promise<any>) {
         setOcupado(rotulo);
@@ -193,7 +262,7 @@ export default function DisparosPage() {
         try {
             const j = await fn();
             if (j?.msg) setAviso(j.msg);
-            return j;
+            return j ?? true;
         } catch (e: any) {
             setErro(e?.message || "Falha na operação.");
             return null;
@@ -202,348 +271,650 @@ export default function DisparosPage() {
         }
     }
 
-    async function verPrevia(c: Campanha) {
+    // -------- modelo (janela)
+    function abrirModelo(m: Modelo) {
+        const edit = { ...m, texto: m.novo?.texto ?? m.texto, botao: m.novo?.botao ?? m.botao };
+        setForm(edit);
+        setOriginal(m);
+        setPublico(null);
         setPrevia(null);
-        setForm(null);
         setTeste(null);
-        await executar(`previa-${c.id}`, async () => {
-            setPrevia(await aGet<Resultado>("previa", { id: c.id }));
-            return null;
+        setEmoji(false);
+        setErro("");
+        setAviso("");
+    }
+    const fecharModelo = useCallback(() => {
+        setForm(null);
+        setOriginal(null);
+    }, []);
+    const mudar = (p: Partial<Modelo>) => setForm((f) => (f ? { ...f, ...p } : f));
+
+    function inserir(txt: string, envolver = "") {
+        const t = texto.current;
+        if (!t || !form) return;
+        const a = t.selectionStart, b = t.selectionEnd, v = form.texto;
+        let novo: string, ini: number, fim: number;
+        if (envolver) {
+            const sel = v.slice(a, b) || "texto";
+            novo = v.slice(0, a) + envolver + sel + envolver + v.slice(b);
+            ini = a + 1;
+            fim = ini + sel.length;
+        } else {
+            novo = v.slice(0, a) + txt + v.slice(b);
+            ini = fim = a + txt.length;
+        }
+        mudar({ texto: novo.slice(0, 1024) });
+        requestAnimationFrame(() => {
+            t.focus();
+            t.setSelectionRange(ini, fim);
         });
     }
 
-    async function rodar(c: Campanha) {
-        const quem = c.modo === "teste" ? "só os contratos da lista de teste" : "todos os contratos que se encaixam hoje";
-        if (!window.confirm(`Rodar agora "${c.nome}"? Vai enviar para ${quem}. Quem já recebeu não recebe de novo.`)) return;
-        const j = await executar(`rodar-${c.id}`, () => aPost("rodar", { id: c.id }));
-        if (j) {
-            await carregar();
-            await abrirDia(new Date().toLocaleDateString("sv-SE"));
-        }
-    }
-
-    async function arquivar(c: Campanha, desarquivar = false) {
-        if (!desarquivar && !window.confirm(`Arquivar "${c.nome}"? Ela para de disparar; o histórico continua aqui.`)) return;
-        const j = await executar(`arq-${c.id}`, () => aPost("campanha_arquivar", { id: c.id, desarquivar }));
-        if (j) await carregar();
-    }
+    const exemplos = useMemo(() => {
+        const base: Record<string, string> = {};
+        painel?.macros.forEach((m) => (base[m.chave] = m.exemplo));
+        return [
+            base,
+            { ...base, nome: "João Ribeiro", valor: "R$ 84,00", parcelas: "2", dias_atraso: "31", vencimento: "25/10/2026", contrato: "10863", plano: "Plano PLUS" },
+            { ...base, nome: "Ana Paula Lima", valor: "R$ 45,00", contrato: "12322", plano: "Plano MAX", dia_vencimento: "10", dependentes: "2" },
+        ];
+    }, [painel]);
+    const preencher = (t: string, ex: Record<string, string>) => t.replace(/\{([a-z_]+)\}/g, (m, k) => ex[k] ?? m);
+    const paraMeta = (t: string) => {
+        let i = 0;
+        const usadas: string[] = [];
+        const out = t.replace(/\{([a-z_]+)\}/g, (m, k) => {
+            if (!painel?.macros.some((x) => x.chave === k)) return m;
+            usadas.push(k);
+            return `{{${++i}}}`;
+        });
+        return out + "\n\n" + (usadas.length ? usadas.map((k, n) => `{{${n + 1}}} = ${painel?.macros.find((x) => x.chave === k)?.nome || k}`).join("\n") : "Sem variáveis.");
+    };
 
     async function salvar() {
         if (!form) return;
-        const j = await executar("salvar", () => aPost("campanha_salvar", form));
+        const j = await executar("salvar", () => aPost("campanha_salvar", { ...form }));
         if (j) {
-            setForm(null);
+            await carregar();
+            if (j.dados?.id && !form.id) mudar({ id: j.dados.id });
+        }
+    }
+    async function enviarMeta() {
+        if (!form?.id) return setErro("Salve o modelo antes de enviar para a Meta.");
+        const ok = await executar("salvar", () => aPost("campanha_salvar", { ...form }));
+        if (!ok) return;
+        const j = await executar("meta", () => aPost("meta_enviar", { id: form.id }));
+        if (j) await recarregarForm(form.id);
+    }
+    async function statusMeta() {
+        if (!form?.id) return;
+        const j = await executar("meta", () => aPost("meta_status", { id: form.id }));
+        if (j) await recarregarForm(form.id);
+    }
+    async function recarregarForm(id: string) {
+        const p = await aGet<Painel>("painel");
+        setPainel(p);
+        const m = p.campanhas.find((c) => c.id === id);
+        if (m) abrirModelo(m);
+    }
+    async function verPublico() {
+        if (!form) return;
+        await executar("publico", async () => {
+            const j = await aPost("publico", { ...form });
+            setPublico(j.dados);
+            return null;
+        });
+    }
+    async function verPrevia() {
+        if (!form?.id) return setErro("Salve o modelo antes de ver a prévia.");
+        await executar("previa", async () => {
+            setPrevia(await aGet("previa", { id: form.id }));
+            return null;
+        });
+    }
+    async function agendar() {
+        if (!form?.id) return;
+        if (!window.confirm(`Agendar "${form.nome}" para ${form.agendado_em ? dt(form.agendado_em) : "agora"}? Quem está na lista Não perturbe fica de fora.`)) return;
+        const ok = await executar("salvar", () => aPost("campanha_salvar", { ...form }));
+        if (!ok) return;
+        const j = await executar("agendar", () => aPost("campanha_agendar", { id: form.id }));
+        if (j) await recarregarForm(form.id);
+    }
+    async function rodar() {
+        if (!form?.id) return;
+        if (!window.confirm(`Montar a fila de hoje de "${form.nome}" e enviar agora o que já está liberado? Quem já recebeu não recebe de novo.`)) return;
+        const j = await executar("rodar", () => aPost("rodar", { id: form.id }));
+        if (j) await carregar();
+    }
+    async function arquivar() {
+        if (!form?.id || !window.confirm(`Arquivar "${form.nome}"? Os envios na fila são cancelados; o histórico continua.`)) return;
+        const j = await executar("arquivar", () => aPost("campanha_arquivar", { id: form.id }));
+        if (j) {
+            fecharModelo();
             await carregar();
         }
     }
-
     async function enviarTeste() {
-        if (!teste) return;
-        const j = await executar("teste", () => aPost("teste_envio", { id: teste.id, contrato: teste.contrato, telefone: teste.telefone }));
+        if (!form?.id || !teste) return;
+        await executar("teste", () => aPost("teste_envio", { id: form.id, contrato: teste.contrato, telefone: teste.telefone }));
+    }
+
+    // -------- histórico
+    const filtrados = useMemo(() => {
+        const f = GRUPOS.find((g) => g[0] === grupo)?.[2] || (() => true);
+        return (envios || []).filter((e) => f(e.situacao));
+    }, [envios, grupo]);
+    const selecionavel = (e: Envio) => ["aprov", "aguard", "falhou", "pulado"].includes(e.situacao);
+    async function emLote(acao: "aprovar" | "cancelar" | "reenviar", ids = marcados) {
+        if (!ids.length) return;
+        const nomes = { aprovar: "Aprovar", cancelar: "Cancelar", reenviar: "Enviar de novo" };
+        if (!window.confirm(`${nomes[acao]} ${ids.length} envio(s)?`)) return;
+        const j = await executar(`lote-${acao}`, () => aPost("envios_acao", { ids, acao }));
         if (j) {
-            setTeste(null);
-            await carregar();
-            await abrirDia(new Date().toLocaleDateString("sv-SE"));
+            setDetalhe(null);
+            await carregarHist();
+        }
+    }
+    async function incluirNp(tel: string, contrato = "", motivo = "") {
+        const j = await executar("np", () => aPost("np_incluir", { telefone: tel, contrato, motivo }));
+        if (j && np) setNp(await aGet<NP[]>("nao_perturbe"));
+        return j;
+    }
+
+    // -------- configurações
+    async function abrirConfig() {
+        setConfig(true);
+        if (painel?.tabelas_ok) {
+            try {
+                setNp(await aGet<NP[]>("nao_perturbe"));
+            } catch {
+                setNp([]);
+            }
         }
     }
 
-    function novaCampanha() {
-        const tipo = Object.keys(painel?.tipos || {})[0] || "mensalidade";
-        setPrevia(null);
-        setTeste(null);
-        setForm({ id: "", nome: "", tipo, dias: -1, modelo: "", idioma: "pt_BR", modo: "desligada", teste_contratos: "", texto: "" });
-    }
-
-    function editar(c: Campanha) {
-        setPrevia(null);
-        setTeste(null);
-        setForm({ id: c.id, nome: c.nome, tipo: c.tipo, dias: c.dias, modelo: c.modelo, idioma: c.idioma || "pt_BR", modo: c.modo === "arquivada" ? "desligada" : c.modo, teste_contratos: c.teste_contratos || "", texto: c.texto || "" });
-    }
-
-    const gestao = !!painel?.gestao;
-    const campanhas = (painel?.campanhas || []).filter((c) => verArquivadas || c.modo !== "arquivada");
-    const arquivadas = (painel?.campanhas || []).filter((c) => c.modo === "arquivada").length;
-    const tipoForm = form ? painel?.tipos[form.tipo] : undefined;
-    const envios = (diaDet?.envios || []).filter((e) =>
-        filtroEnvio === "todos" ? true : filtroEnvio === "abriu" ? !!e.abriu_em : filtroEnvio === "teste" ? e.teste : e.situacao === filtroEnvio,
-    );
+    const lista = (painel?.campanhas || []).filter((c) => c.kind === kind);
+    const mudouTexto = !!form && !!original && original.meta === "aprovado" && (form.texto !== original.texto || form.botao !== original.botao);
+    const palavrasMkt = !!form && form.cat === "UTILITY" && PALAVRAS_MKT.test(form.texto);
+    const metaAtual = form?.meta || "rascunho";
 
     return (
-        <div className="min-h-screen bg-[#F4F6F9] p-4 text-[#313C55] [contain:inline-size] md:p-8 dark:bg-[#1C2334] dark:text-white">
-            <div className="mx-auto flex max-w-[1280px] flex-col gap-4">
-                <div>
-                    <h1 className="m-0 text-2xl font-extrabold md:text-[28px]">Monitor de disparos</h1>
-                    <p className="mt-1 text-[15px] text-[#5B6478] dark:text-[#AEB9CF]">Campanhas de mensagens pelo WhatsApp e o histórico do que saiu, dia a dia: quem recebeu, quem abriu o botão, quem pagou e o que deu erro.</p>
+        <div className="mx-auto w-full max-w-[1280px] px-3 pb-16 pt-4 sm:px-6">
+            <div className="flex flex-wrap items-end gap-3">
+                <div className="min-w-0 flex-1">
+                    <h1 className="m-0 text-[28px] font-extrabold leading-tight sm:text-[34px]">Campanhas e Lembretes</h1>
+                    <p className={`m-0 mt-1 max-w-[70ch] ${MUDO} text-[15px]`}>
+                        Mensagens automáticas da régua (vencimentos, atrasos, boas-vindas) e campanhas da equipe, com o histórico de tudo o que saiu, foi lido, abriu o botão, foi pago ou não foi enviado.
+                    </p>
                 </div>
-                {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318]">{erro}</div>}
-                {aviso && <div className="rounded-xl border border-[#B3CE52] bg-[#EEF5D6] px-4 py-2 text-sm font-bold text-[#2F4207]">{aviso}</div>}
-                {painel && !painel.meta_ok && <div className="rounded-xl border border-[#F2CB3F] bg-[#FBF0C9] px-4 py-2 text-sm font-bold text-[#5C4600]">O WhatsApp (Meta) não está configurado no servidor: nenhuma campanha consegue enviar.</div>}
+                <button type="button" className={BTN_SEC} onClick={abrirConfig}>Configurações</button>
+            </div>
 
-                {/* Campanhas */}
-                <section className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="m-0 mr-auto text-[19px] font-extrabold">Campanhas</h2>
-                        {arquivadas > 0 && (
-                            <button type="button" className={BTN_SEC} onClick={() => setVerArquivadas(!verArquivadas)} aria-pressed={verArquivadas}>
-                                {verArquivadas ? "Esconder arquivadas" : `Ver arquivadas · ${arquivadas}`}
-                            </button>
-                        )}
-                        {gestao && <button type="button" className={BTN_PRI} onClick={novaCampanha}>Nova campanha</button>}
+            {painel && !painel.tabelas_ok && (
+                <div className={`mt-4 rounded-xl px-4 py-3 text-[14.5px] font-bold ${VERMELHO}`}>
+                    Faltam as tabelas chat_disparos_envios e chat_disparos_nao_perturbe no banco. Enquanto isso, nada entra na fila.
+                </div>
+            )}
+            {painel && !painel.meta_ok && <div className={`mt-4 rounded-xl px-4 py-3 text-[14.5px] font-bold ${AMARELO}`}>WhatsApp (Meta) não configurado no servidor.</div>}
+            {erro && <div className={`mt-4 rounded-xl px-4 py-3 text-[14.5px] font-bold ${VERMELHO}`}>{erro}</div>}
+            {aviso && !form && !detalhe && <div className={`mt-4 rounded-xl px-4 py-3 text-[14.5px] font-bold ${OK}`}>{aviso}</div>}
+
+            <div className="mt-5 flex flex-wrap gap-1 border-b border-[#E1E5EC] dark:border-white/12" role="tablist">
+                {([["modelos", "Modelos", painel?.campanhas.length], ["historico", "Histórico", null]] as const).map(([id, rot, n]) => (
+                    <button key={id} type="button" role="tab" aria-selected={aba === id}
+                        onClick={() => { setAba(id); window.history.replaceState(null, "", `#${id}`); }}
+                        className={`min-h-[44px] rounded-t-xl border-b-[3px] px-4 text-[16px] font-extrabold ${aba === id ? "border-[#F2CB3F]" : "border-transparent text-[#5B6478] dark:text-[#AEB9CF]"}`}>
+                        {rot}{n != null && <span className="ml-2 rounded-full bg-[#F1F4F8] px-2 text-[12px] dark:bg-[#1C2334]">{n}</span>}
+                    </button>
+                ))}
+            </div>
+
+            {/* ---------------- MODELOS ---------------- */}
+            {aba === "modelos" && (
+                <section className="mt-4">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <div className="inline-flex flex-wrap gap-1 rounded-xl bg-[#F1F4F8] p-1 dark:bg-[#1C2334]">
+                            {([["auto", "Automáticos (régua)"], ["camp", "Campanhas (manuais)"]] as const).map(([k, r]) => (
+                                <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)}
+                                    className={`min-h-[40px] rounded-lg px-4 text-[15px] font-extrabold ${kind === k ? "bg-white shadow dark:bg-[#232B3F]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{r}</button>
+                            ))}
+                        </div>
+                        <span className="flex-1" />
+                        {gestao && <button type="button" className={BTN_PRI} onClick={() => abrirModelo(vazio(kind))}>{kind === "auto" ? "Novo automático" : "Nova campanha"}</button>}
                     </div>
-                    {!painel && !erro && <p className={CARTAO}>Carregando…</p>}
-                    {painel && !campanhas.length && <p className={CARTAO}>Nenhuma campanha.</p>}
-                    <div className="grid gap-3 md:grid-cols-2">
-                        {campanhas.map((c) => {
-                            const n = c.numeros;
-                            return (
-                                <article key={c.id} className={`${CARTAO} flex flex-col gap-3 ${c.modo === "arquivada" ? "opacity-70" : ""}`}>
-                                    <div className="flex items-start gap-2">
-                                        <div className="min-w-0 flex-1">
-                                            <h3 className="m-0 text-[17px] font-extrabold">{c.nome}</h3>
-                                            <p className="m-0 text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]">
-                                                {painel?.tipos[c.tipo]?.nome || c.tipo} · {c.quando} · modelo <code className="font-bold">{c.modelo}</code>
-                                            </p>
-                                        </div>
-                                        <span className={`shrink-0 rounded-lg px-2 py-0.5 text-[13px] font-extrabold ${MODOS[c.modo]?.[1] || ""}`}>{MODOS[c.modo]?.[0] || c.modo}</span>
-                                    </div>
-                                    {c.modo === "teste" && <p className="m-0 text-[13.5px]">Só recebem os contratos: <b>{c.teste_contratos || "nenhum na lista"}</b></p>}
-                                    <div>
-                                        <span className={ROTULO}>Últimos 30 dias{n?.ultimo ? ` · último envio ${dt(n.ultimo)}` : ""}</span>
-                                        <div className="flex flex-wrap gap-2">
-                                            <Numero n={n?.enviados} rotulo="enviados" />
-                                            <Numero n={n?.abriram} rotulo="abriram o botão" />
-                                            <Numero n={n?.pagos} rotulo="pagos" cor="text-[#2F6B12] dark:text-[#D5E79A]" />
-                                            <Numero n={n?.falhas} rotulo="falhas" cor={n?.falhas ? "text-[#B42318] dark:text-[#FF9C92]" : ""} />
-                                        </div>
-                                    </div>
-                                    <details className="text-[13.5px]">
-                                        <summary className="cursor-pointer font-bold">Texto do modelo</summary>
-                                        <p className="mt-2 whitespace-pre-wrap rounded-xl bg-[#F4F6F9] p-3 dark:bg-[#1C2334]">{c.texto}</p>
-                                    </details>
-                                    <div className="flex flex-wrap gap-2">
-                                        {c.modo !== "arquivada" && (
-                                            <button type="button" className={BTN_SEC} disabled={!!ocupado} onClick={() => verPrevia(c)}>
-                                                {ocupado === `previa-${c.id}` ? "Consultando…" : "Prévia de hoje"}
-                                            </button>
-                                        )}
-                                        {gestao && c.modo !== "arquivada" && <button type="button" className={BTN_SEC} onClick={() => editar(c)}>Editar</button>}
-                                        {gestao && c.modo !== "arquivada" && (
-                                            <button type="button" className={BTN_SEC} onClick={() => { setForm(null); setPrevia(null); setTeste({ id: c.id, nome: c.nome, contrato: "", telefone: "" }); }}>Envio de teste</button>
-                                        )}
-                                        {gestao && (c.modo === "ligada" || c.modo === "teste") && (
-                                            <button type="button" className={BTN_PRI} disabled={!!ocupado} onClick={() => rodar(c)}>
-                                                {ocupado === `rodar-${c.id}` ? "Enviando…" : "Rodar agora"}
-                                            </button>
-                                        )}
-                                        {gestao && (
-                                            <button type="button" className={`${BTN} text-[#5B6478] dark:text-[#AEB9CF]`} disabled={!!ocupado} onClick={() => arquivar(c, c.modo === "arquivada")}>
-                                                {c.modo === "arquivada" ? "Desarquivar" : "Arquivar"}
-                                            </button>
-                                        )}
-                                    </div>
-                                    {c.atualizado_por && <p className="m-0 text-[12.5px] text-[#6B7488] dark:text-[#AEB9CF]">Alterada por {c.atualizado_por} em {dt(c.atualizado_em)}</p>}
-                                </article>
-                            );
-                        })}
+                    <p className={`m-0 mb-3 ${MUDO}`}>
+                        {kind === "auto"
+                            ? "Saem sozinhos todo dia, pelas regras de cada um. A fila do dia é montada de madrugada e sai no horário do modelo."
+                            : "Montadas pela equipe para um público escolhido por filtros ou por uma lista. A Gestão aprova e agenda o envio."}
+                    </p>
+                    <div className={`${CARTAO} overflow-x-auto p-2`}>
+                        {!painel ? <p className={`p-4 ${MUDO}`}>Carregando…</p> : lista.length === 0 ? <p className={`p-4 ${MUDO}`}>Nenhum modelo aqui ainda.</p> : (
+                            <table className="w-full min-w-[820px] text-left text-[14.5px]">
+                                <thead className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                    {kind === "auto" ? (
+                                        <tr><th className="p-2">Modelo</th><th className="p-2">Quando</th><th className="p-2">Envio</th><th className="p-2">Situação</th><th className="p-2">Meta</th><th className="p-2">Último envio</th><th className="p-2 text-right">Enviados</th><th className="p-2 text-right">Pagos</th><th className="p-2 text-right">Não enviados</th></tr>
+                                    ) : (
+                                        <tr><th className="p-2">Campanha</th><th className="p-2">Público</th><th className="p-2">Agendada para</th><th className="p-2">Categoria</th><th className="p-2">Situação</th><th className="p-2">Meta</th><th className="p-2 text-right">Enviados</th><th className="p-2 text-right">Na fila</th></tr>
+                                    )}
+                                </thead>
+                                <tbody>
+                                    {lista.map((c) => (
+                                        <tr key={c.id} tabIndex={0} onClick={() => abrirModelo(c)} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), abrirModelo(c))}
+                                            className="cursor-pointer border-t border-[#EEF0F3] hover:bg-[#F7F9FB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F2CB3F] dark:border-white/10 dark:hover:bg-white/5">
+                                            <td className="p-2"><b>{c.nome}</b><div className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{c.modelo}{c.pendente ? ` · nova versão em análise` : c.novo ? " · texto novo não enviado" : ""}</div></td>
+                                            {kind === "auto" ? (
+                                                <>
+                                                    <td className="p-2">{GATILHOS[c.gat]?.[1].find((q) => q[0] === c.quando)?.[1] || GATILHOS[c.gat]?.[0]}</td>
+                                                    <td className="p-2"><Etiqueta par={c.aprov === "aprov" ? ["Com aprovação", AMARELO] : ["Automático", CINZA]} /></td>
+                                                    <td className="p-2"><Etiqueta par={MODOS[c.modo]} /></td>
+                                                    <td className="p-2"><Etiqueta par={METAS[c.meta]} /></td>
+                                                    <td className="whitespace-nowrap p-2">{dt(c.numeros?.ultimo)}</td>
+                                                    <td className="p-2 text-right">{c.numeros?.enviados ?? 0}</td>
+                                                    <td className="p-2 text-right">{c.numeros?.pagos ?? 0}</td>
+                                                    <td className="p-2 text-right">{c.numeros?.nao_enviados ?? 0}</td>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <td className="p-2">{c.pub === "lista" ? "Lista colada" : `${c.sit.join(", ")}${c.grupo ? ` · ${c.grupo}` : ""}`}</td>
+                                                    <td className="whitespace-nowrap p-2">{c.agendado_em ? dt(c.agendado_em) : "—"}</td>
+                                                    <td className="p-2"><Etiqueta par={c.cat === "MARKETING" ? ["Marketing", AMARELO] : ["Utilidade", CINZA]} /></td>
+                                                    <td className="p-2"><Etiqueta par={c.camp_estado === "agendada" ? [`Agendada (${c.agendada_qtd ?? 0})`, OK] : ["Rascunho", CINZA]} /></td>
+                                                    <td className="p-2"><Etiqueta par={METAS[c.meta]} /></td>
+                                                    <td className="p-2 text-right">{c.numeros?.enviados ?? 0}</td>
+                                                    <td className="p-2 text-right">{c.numeros?.fila ?? 0}</td>
+                                                </>
+                                            )}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
                     </div>
                 </section>
+            )}
 
-                {/* Editor de campanha */}
+            {/* ---------------- HISTÓRICO ---------------- */}
+            {aba === "historico" && (
+                <section className="mt-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                        <label><span className={ROTULO}>De</span><input type="date" className={CAMPO} value={de} onChange={(e) => setDe(e.target.value)} /></label>
+                        <label><span className={ROTULO}>Até</span><input type="date" className={CAMPO} value={ate} onChange={(e) => setAte(e.target.value)} /></label>
+                        <label><span className={ROTULO}>Modelo</span>
+                            <select className={CAMPO} value={fCamp} onChange={(e) => setFCamp(e.target.value)}>
+                                <option value="">Todos</option>
+                                {painel?.campanhas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                            </select>
+                        </label>
+                        <label><span className={ROTULO}>Origem</span>
+                            <select className={CAMPO} value={fOrig} onChange={(e) => setFOrig(e.target.value)}>
+                                <option value="">Todas</option>
+                                {Object.entries(ORIGENS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                            </select>
+                        </label>
+                        <label><span className={ROTULO}>Contrato, nome ou telefone</span><input className={CAMPO} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Digite para filtrar" /></label>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                        {GRUPOS.map(([k, r, f]) => (
+                            <button key={k} type="button" aria-pressed={grupo === k} onClick={() => setGrupo(k)}
+                                className={`rounded-2xl border bg-white p-3 text-left dark:bg-[#232B3F] ${grupo === k ? "border-[#F2CB3F] ring-1 ring-[#F2CB3F]" : "border-[#E1E5EC] dark:border-white/12"}`}>
+                                <b className="block text-[22px] leading-tight">{(envios || []).filter((e) => f(e.situacao)).length}</b>
+                                <span className={MUDO}>{r}</span>
+                            </button>
+                        ))}
+                    </div>
+                    {gestao && marcados.length > 0 && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <b>{marcados.length} selecionado(s)</b>
+                            <button type="button" className={BTN_PRI} disabled={!!ocupado} onClick={() => emLote("aprovar")}>Aprovar envio</button>
+                            <button type="button" className={BTN_SEC} disabled={!!ocupado} onClick={() => emLote("reenviar")}>{ocupado === "lote-reenviar" ? "Enviando…" : "Enviar novamente"}</button>
+                            <button type="button" className={BTN_SEC} disabled={!!ocupado} onClick={() => emLote("cancelar")}>Cancelar envio</button>
+                        </div>
+                    )}
+                    <div className={`${CARTAO} mt-3 overflow-x-auto p-2`}>
+                        {envios === null ? <p className={`p-4 ${MUDO}`}>Carregando…</p> : filtrados.length === 0 ? <p className={`p-4 ${MUDO}`}>Nenhuma mensagem com esses filtros.</p> : (
+                            <table className="w-full min-w-[820px] text-left text-[14.5px]">
+                                <thead className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                    <tr><th className="w-10 p-2" /><th className="p-2">Hora</th><th className="p-2">Contrato</th><th className="p-2">Titular</th><th className="p-2">Modelo</th><th className="p-2">Situação</th><th className="p-2">Motivo</th></tr>
+                                </thead>
+                                <tbody>
+                                    {filtrados.map((e, i) => {
+                                        const dia = dataBr(e.programado_em);
+                                        const novoDia = i === 0 || dataBr(filtrados[i - 1].programado_em) !== dia;
+                                        return (
+                                            <React.Fragment key={e.id}>
+                                                {novoDia && <tr><td colSpan={7} className="px-2 pb-1 pt-4 font-extrabold">{dia}</td></tr>}
+                                                <tr tabIndex={0} onClick={() => setDetalhe(e)} onKeyDown={(k) => (k.key === "Enter") && setDetalhe(e)}
+                                                    className="cursor-pointer border-t border-[#EEF0F3] hover:bg-[#F7F9FB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F2CB3F] dark:border-white/10 dark:hover:bg-white/5">
+                                                    <td className="p-2" onClick={(k) => k.stopPropagation()}>
+                                                        {gestao && selecionavel(e) && (
+                                                            <input type="checkbox" className="h-5 w-5" aria-label="Selecionar" checked={marcados.includes(e.id)}
+                                                                onChange={(k) => setMarcados((m) => (k.target.checked ? [...m, e.id] : m.filter((x) => x !== e.id)))} />
+                                                        )}
+                                                    </td>
+                                                    <td className="whitespace-nowrap p-2">{hora(e.enviado_em || e.programado_em)}</td>
+                                                    <td className="p-2">{e.contrato || "—"}</td>
+                                                    <td className="p-2">{e.titular || fone(e.telefone) || "—"}</td>
+                                                    <td className="p-2">{nomeModelo(e.campanha)}{e.origem !== "auto" ? <span className={`ml-1 ${MUDO}`}>· {ORIGENS[e.origem] || e.origem}</span> : null}</td>
+                                                    <td className="p-2"><Etiqueta par={SITS[e.situacao]} /></td>
+                                                    <td className={`p-2 ${MUDO}`}>{e.motivo || ""}</td>
+                                                </tr>
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </section>
+            )}
+
+            {/* ---------------- JANELA DO MODELO ---------------- */}
+            <Janela aberta={!!form} fechar={fecharModelo} titulo={form?.nome || (form?.kind === "camp" ? "Nova campanha" : "Novo automático")}
+                sub={original?.atualizado_por ? `Alterado por ${original.atualizado_por} em ${dt(original.atualizado_em)}` : undefined}
+                direita={form && form.kind === "auto" ? <Etiqueta par={MODOS[form.modo]} /> : undefined}>
                 {form && (
-                    <section className={`${CARTAO} flex flex-col gap-3`}>
-                        <h2 className="m-0 text-[19px] font-extrabold">{form.id ? "Editar campanha" : "Nova campanha"}</h2>
-                        <div className="grid gap-3 md:grid-cols-2">
-                            <label><span className={ROTULO}>Nome</span>
-                                <input className={CAMPO} value={form.nome} maxLength={80} onChange={(ev) => setForm({ ...form, nome: ev.target.value })} placeholder="Ex.: Mensalidade vence em 3 dias" />
-                            </label>
-                            <label><span className={ROTULO}>Tipo</span>
-                                <select className={CAMPO} value={form.tipo} disabled={!!form.id} onChange={(ev) => setForm({ ...form, tipo: ev.target.value })}>
-                                    {Object.entries(painel?.tipos || {}).map(([k, t]) => <option key={k} value={k}>{t.nome}</option>)}
+                    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
+                        <div className="min-w-0">
+                            {erro && <div className={`mb-3 rounded-xl px-3 py-2 text-[14px] font-bold ${VERMELHO}`}>{erro}</div>}
+                            {aviso && <div className={`mb-3 rounded-xl px-3 py-2 text-[14px] font-bold ${OK}`}>{aviso}</div>}
+                            <fieldset disabled={!gestao} className="m-0 min-w-0 border-0 p-0">
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <label><span className={ROTULO}>Nome na tela</span><input className={CAMPO} value={form.nome} onChange={(e) => mudar({ nome: e.target.value })} /></label>
+                                    <label><span className={ROTULO}>Nome do modelo na Meta</span>
+                                        <input className={CAMPO} value={form.modelo} disabled={form.meta === "aprovado"} onChange={(e) => mudar({ modelo: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") })} placeholder="ex.: lembrete_vence_hoje" />
+                                    </label>
+                                    {form.kind === "auto" && (
+                                        <label><span className={ROTULO}>Situação</span>
+                                            <select className={CAMPO} value={form.modo} onChange={(e) => mudar({ modo: e.target.value })}>
+                                                <option value="ligada">Ligada</option><option value="teste">Em teste (só contratos de teste)</option><option value="desligada">Desligada</option>
+                                            </select>
+                                        </label>
+                                    )}
+                                    <label><span className={ROTULO}>Botão</span>
+                                        <select className={CAMPO} value={form.botao} onChange={(e) => mudar({ botao: e.target.value })}>
+                                            {Object.entries(BOTOES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                                        </select>
+                                    </label>
+                                    {form.kind === "auto" && form.modo === "teste" && (
+                                        <label className="sm:col-span-2"><span className={ROTULO}>Contratos de teste (só estes recebem)</span>
+                                            <input className={CAMPO} value={form.teste_contratos} onChange={(e) => mudar({ teste_contratos: e.target.value })} placeholder="04197, 12322" />
+                                        </label>
+                                    )}
+                                </div>
+
+                                {form.kind === "auto" ? (
+                                    <div className="mt-5 border-t border-[#E1E5EC] pt-3 dark:border-white/12">
+                                        <h3 className="m-0 text-[16px] font-extrabold">Quando enviar</h3>
+                                        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                            <label><span className={ROTULO}>Gatilho</span>
+                                                <select className={CAMPO} value={form.gat} onChange={(e) => mudar({ gat: e.target.value, quando: GATILHOS[e.target.value][1][0][0] })}>
+                                                    {Object.entries(GATILHOS).map(([k, v]) => <option key={k} value={k}>{v[0]}</option>)}
+                                                </select>
+                                            </label>
+                                            <label><span className={ROTULO}>Dia</span>
+                                                <select className={CAMPO} value={form.quando} onChange={(e) => mudar({ quando: e.target.value })}>
+                                                    {(GATILHOS[form.gat]?.[1] || []).map(([v, r]) => <option key={v} value={v}>{r}</option>)}
+                                                </select>
+                                            </label>
+                                            <label><span className={ROTULO}>Envio</span>
+                                                <select className={CAMPO} value={form.aprov} onChange={(e) => mudar({ aprov: e.target.value as any })}>
+                                                    <option value="auto">Automático</option><option value="aprov">Com aprovação no Histórico</option>
+                                                </select>
+                                            </label>
+                                        </div>
+                                        <span className={`${ROTULO} mt-3`}>Dias da semana</span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {DIAS.map((d, i) => (
+                                                <Alternar key={d} ligado={!!form.dias_semana[i]} onClick={() => mudar({ dias_semana: form.dias_semana.map((v, j) => (j === i ? (v ? 0 : 1) : v)) })}>{d}</Alternar>
+                                            ))}
+                                        </div>
+                                        <div className="mt-2 grid grid-cols-2 gap-3">
+                                            <label><span className={ROTULO}>Sai a partir de</span><input type="time" className={CAMPO} value={form.hora} onChange={(e) => mudar({ hora: e.target.value })} /></label>
+                                            <label><span className={ROTULO}>Até</span><input type="time" className={CAMPO} value={form.ate} onChange={(e) => mudar({ ate: e.target.value })} /></label>
+                                        </div>
+                                        {form.gat === "novo" && <p className={`mt-2 ${MUDO}`}>Os contratos novos aparecem pela cópia diária da Unymos (cron da madrugada). No primeiro dia ligado, o sistema só marca de onde começar.</p>}
+                                    </div>
+                                ) : (
+                                    <div className="mt-5 border-t border-[#E1E5EC] pt-3 dark:border-white/12">
+                                        <h3 className="m-0 text-[16px] font-extrabold">Público e envio</h3>
+                                        <div className="mt-2 inline-flex flex-wrap gap-1 rounded-xl bg-[#F1F4F8] p-1 dark:bg-[#1C2334]">
+                                            {([["filtro", "Por filtros"], ["lista", "Lista de contratos ou telefones"]] as const).map(([k, r]) => (
+                                                <button key={k} type="button" aria-pressed={form.pub === k} onClick={() => { mudar({ pub: k }); setPublico(null); }}
+                                                    className={`min-h-[40px] rounded-lg px-3 text-[14px] font-extrabold ${form.pub === k ? "bg-white shadow dark:bg-[#232B3F]" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>{r}</button>
+                                            ))}
+                                        </div>
+                                        {form.pub === "lista" && (
+                                            <label className="mt-2 block"><span className={ROTULO}>Um contrato ou telefone por linha</span>
+                                                <textarea className={`${CAMPO} h-auto min-h-[110px] py-2`} value={form.lista} onChange={(e) => { mudar({ lista: e.target.value }); setPublico(null); }} placeholder={"04197\n(77) 99982-6083"} />
+                                            </label>
+                                        )}
+                                        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                            <label><span className={ROTULO}>Enviar em</span><input type="datetime-local" className={CAMPO} value={form.agendado_em} onChange={(e) => mudar({ agendado_em: e.target.value })} /></label>
+                                            <label><span className={ROTULO}>Categoria na Meta</span>
+                                                <select className={CAMPO} value={form.cat} disabled={form.meta === "aprovado"} onChange={(e) => { mudar({ cat: e.target.value as any }); setPublico(null); }}>
+                                                    <option value="UTILITY">Utilidade</option><option value="MARKETING">Marketing</option>
+                                                </select>
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!(form.kind === "camp" && form.pub === "lista") && (
+                                    <div className="mt-5 border-t border-[#E1E5EC] pt-3 dark:border-white/12">
+                                        <h3 className="m-0 text-[16px] font-extrabold">Regras do público</h3>
+                                        <span className={`${ROTULO} mt-2`}>Situação do contrato</span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {(painel?.situacoes || []).map((s) => (
+                                                <Alternar key={s} ligado={form.sit.includes(s)} onClick={() => { mudar({ sit: form.sit.includes(s) ? form.sit.filter((x) => x !== s) : [...form.sit, s] }); setPublico(null); }}>{s}</Alternar>
+                                            ))}
+                                        </div>
+                                        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                            {form.gat === "atraso" && (
+                                                <label><span className={ROTULO}>Parcelas em atraso</span>
+                                                    <select className={CAMPO} value={form.atraso} onChange={(e) => mudar({ atraso: e.target.value })}>
+                                                        <option value="">Qualquer</option><option value="1">1</option><option value="2">2</option><option value="1-2">1 a 2</option><option value="3+">3 ou mais</option>
+                                                    </select>
+                                                </label>
+                                            )}
+                                            <label><span className={ROTULO}>Plano</span>
+                                                <select className={CAMPO} value={form.grupo} onChange={(e) => { mudar({ grupo: e.target.value }); setPublico(null); }}>
+                                                    <option value="">Todos</option>{["LIGHT", "FLEX", "PLUS", "MAX"].map((g) => <option key={g} value={g}>{g}</option>)}<option value="Outros">Planos antigos</option>
+                                                </select>
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
+                                {form.kind === "camp" && (
+                                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-[#F4F6F9] p-3 text-[14px] dark:bg-[#1C2334]">
+                                        <button type="button" className={BTN_SEC} disabled={ocupado === "publico"} onClick={verPublico}>{ocupado === "publico" ? "Contando…" : "Ver público"}</button>
+                                        {publico && <span><b className="text-[20px]">{publico.n}</b> {form.pub === "lista" ? "linhas na lista" : "contratos"} · custo estimado <b>{brl(publico.custo)}</b> ({form.cat === "MARKETING" ? "Marketing" : "Utilidade"}) · ficam de fora quem está em Não perturbe e quem não tem celular</span>}
+                                    </div>
+                                )}
+
+                                <span className={`${ROTULO} mt-5`}>Texto da mensagem</span>
+                                <div className="mb-2 flex flex-wrap gap-1.5">
+                                    <button type="button" className={CHIP} title="Negrito" onClick={() => inserir("", "*")}>B</button>
+                                    <button type="button" className={CHIP} title="Itálico" onClick={() => inserir("", "_")}><i>I</i></button>
+                                    <button type="button" className={CHIP} title="Riscado" onClick={() => inserir("", "~")}><s>S</s></button>
+                                    <button type="button" className={CHIP} aria-expanded={emoji} onClick={() => setEmoji((v) => !v)}>Emoji 😊</button>
+                                </div>
+                                {emoji && (
+                                    <div className="mb-2 grid grid-cols-8 gap-1 rounded-xl border border-[#E1E5EC] p-2 dark:border-white/12">
+                                        {EMOJIS.map((e) => <button key={e} type="button" className="min-h-[40px] rounded-lg text-[22px] hover:bg-[#F1F4F8] dark:hover:bg-[#1C2334]" onClick={() => inserir(e)}>{e}</button>)}
+                                    </div>
+                                )}
+                                <div className="mb-2 flex flex-wrap gap-1.5">
+                                    {painel?.macros.map((m) => <button key={m.chave} type="button" className={CHIP} title={m.nome} onClick={() => inserir(`{${m.chave}}`)}>{`{${m.chave}}`}</button>)}
+                                </div>
+                                <textarea ref={texto} className={`${CAMPO} h-auto min-h-[170px] py-2 leading-relaxed`} value={form.texto} maxLength={1024} onChange={(e) => mudar({ texto: e.target.value })} />
+                                <p className={`m-0 mt-1 ${MUDO}`}>{form.texto.length} de 1.024 caracteres · *negrito*, _itálico_ e ~riscado~ seguem a formatação do WhatsApp</p>
+                                {palavrasMkt && <div className={`mt-2 rounded-xl px-3 py-2 text-[14px] font-bold ${AMARELO}`}>Este texto tem palavras de divulgação. A Meta costuma classificar como Marketing, que custa mais. Para ficar em Utilidade, fale só do contrato, da mensalidade ou do acesso do cliente.</div>}
+                                {form.cat === "MARKETING" && <div className={`mt-2 rounded-xl px-3 py-2 text-[14px] font-bold ${AMARELO}`}>Categoria Marketing: custa mais por mensagem e a Meta limita quantas o cliente recebe.</div>}
+                            </fieldset>
+
+                            <div className="mt-4 rounded-2xl border border-[#E1E5EC] p-3 dark:border-white/12">
+                                <div className="flex flex-wrap items-center gap-2"><b>Aprovação na Meta</b><span className="flex-1" /><Etiqueta par={METAS[metaAtual]} /></div>
+                                <p className={`m-0 mt-1 ${MUDO}`}>
+                                    {form.meta === "aprovado" ? `Em uso: ${original?.modelo}${form.meta_categoria ? ` · ${form.meta_categoria.toLowerCase()}` : ""}${form.meta_em ? ` · desde ${dt(form.meta_em)}` : ""}`
+                                        : form.meta === "analise" ? `Enviado à Meta${form.meta_em ? ` em ${dt(form.meta_em)}` : ""}. A análise costuma levar de alguns minutos a 24 horas.`
+                                        : form.meta === "rejeitado" ? `Rejeitado. ${form.meta_motivo || "Ajuste o texto e envie de novo."}`
+                                        : "Ainda não enviado. Ao enviar, o sistema cadastra o modelo na Meta (pt_BR) com os exemplos das variáveis."}
+                                </p>
+                                {form.meta_categoria && form.meta_categoria.toUpperCase() !== form.cat && <p className={`m-0 mt-1 rounded-lg px-2 py-1 text-[13.5px] font-bold ${AMARELO}`}>A Meta classificou como {form.meta_categoria.toLowerCase()}.</p>}
+                                {original?.pendente && (
+                                    <p className={`m-0 mt-2 rounded-lg px-2 py-1 text-[13.5px] font-bold ${original.pendente.status === "rejeitado" ? VERMELHO : AMARELO}`}>
+                                        Nova versão {original.pendente.modelo}: {original.pendente.status === "rejeitado" ? `rejeitada. ${original.pendente.motivo}` : "em análise. Continua saindo a versão aprovada até a Meta aprovar a nova."}
+                                    </p>
+                                )}
+                                {mudouTexto && !original?.pendente && <p className={`m-0 mt-2 rounded-lg px-2 py-1 text-[13.5px] font-bold ${AMARELO}`}>O texto mudou. Ao enviar, o sistema cria uma nova versão na Meta. Até a aprovação, continua saindo a versão atual.</p>}
+                                {gestao && (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        <button type="button" className={BTN_PRI} disabled={!!ocupado || (form.meta === "aprovado" && !mudouTexto) || form.meta === "analise"} onClick={enviarMeta}>
+                                            {ocupado === "meta" ? "Enviando…" : form.meta === "aprovado" ? "Enviar nova versão para aprovação" : form.meta === "rejeitado" ? "Enviar de novo para aprovação" : "Enviar para aprovação na Meta"}
+                                        </button>
+                                        {form.id && form.meta !== "rascunho" && <button type="button" className={BTN_SEC} disabled={!!ocupado} onClick={statusMeta}>Atualizar situação</button>}
+                                    </div>
+                                )}
+                                <details className="mt-2 text-[14px]">
+                                    <summary className="cursor-pointer font-bold">Ver o texto como vai para a Meta</summary>
+                                    <pre className="mt-2 whitespace-pre-wrap break-words rounded-xl bg-[#F4F6F9] p-3 font-sans text-[14px] dark:bg-[#1C2334]">{paraMeta(form.texto)}</pre>
+                                    <button type="button" className={`${BTN_SEC} mt-2`} onClick={async () => { try { await navigator.clipboard.writeText(paraMeta(form.texto)); setAviso("Texto copiado."); } catch { setErro("Selecione o texto e copie."); } }}>Copiar texto</button>
+                                </details>
+                            </div>
+
+                            {gestao && (
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                    <button type="button" className={BTN_PRI} disabled={!!ocupado} onClick={salvar}>{ocupado === "salvar" ? "Salvando…" : "Salvar"}</button>
+                                    {form.id && <button type="button" className={BTN_SEC} onClick={() => setTeste(teste ? null : { contrato: "", telefone: "" })}>Envio de teste</button>}
+                                    {form.id && form.kind === "auto" && <button type="button" className={BTN_SEC} disabled={!!ocupado} onClick={verPrevia}>{ocupado === "previa" ? "Consultando…" : "Prévia de hoje"}</button>}
+                                    {form.id && form.kind === "auto" && form.modo !== "desligada" && <button type="button" className={BTN_SEC} disabled={!!ocupado || form.meta !== "aprovado"} onClick={rodar}>{ocupado === "rodar" ? "Rodando…" : "Rodar agora"}</button>}
+                                    {form.id && form.kind === "camp" && <button type="button" className={BTN_SEC} disabled={!!ocupado || form.meta !== "aprovado"} onClick={agendar}>{ocupado === "agendar" ? "Agendando…" : "Aprovar e agendar"}</button>}
+                                    <span className="flex-1" />
+                                    {form.id && <button type="button" className={BTN_SEC} disabled={!!ocupado} onClick={arquivar}>Arquivar</button>}
+                                </div>
+                            )}
+                            {teste && (
+                                <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl bg-[#F4F6F9] p-3 sm:grid-cols-[1fr_1fr_auto] dark:bg-[#1C2334]">
+                                    <label><span className={ROTULO}>Contrato (para os dados)</span><input className={CAMPO} value={teste.contrato} onChange={(e) => setTeste({ ...teste, contrato: e.target.value })} /></label>
+                                    <label><span className={ROTULO}>Celular que recebe o teste</span><input className={CAMPO} inputMode="tel" value={teste.telefone} onChange={(e) => setTeste({ ...teste, telefone: e.target.value })} placeholder="(77) 9…" /></label>
+                                    <button type="button" className={`${BTN_PRI} self-end`} disabled={ocupado === "teste" || form.meta !== "aprovado"} onClick={enviarTeste}>{ocupado === "teste" ? "Enviando…" : "Enviar teste"}</button>
+                                </div>
+                            )}
+                            {previa && (
+                                <div className="mt-3 rounded-xl bg-[#F4F6F9] p-3 text-[14px] dark:bg-[#1C2334]">
+                                    <b>{previa.lista.filter((x) => x.situacao === "entra").length} entram hoje</b> · {previa.lista.filter((x) => x.situacao !== "entra").length} fora das regras{!previa.hoje_envia && " · hoje não é dia de envio deste modelo"}
+                                    <div className="mt-2 max-h-[260px] overflow-auto">
+                                        <table className="w-full text-left text-[13.5px]">
+                                            <tbody>
+                                                {previa.lista.map((x, i) => (
+                                                    <tr key={i} className="border-t border-[#E1E5EC] dark:border-white/10">
+                                                        <td className="py-1 pr-2 font-bold">{x.contrato || "—"}</td><td className="py-1 pr-2">{x.titular}</td>
+                                                        <td className="py-1 pr-2">{x.valor ? brl(x.valor) : ""}</td><td className="py-1">{x.motivo || "Entra"}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="min-w-0">
+                            <label><span className={ROTULO}>Ver como fica para</span>
+                                <select className={CAMPO} value={exemplo} onChange={(e) => setExemplo(Number(e.target.value))}>
+                                    {exemplos.map((e, i) => <option key={i} value={i}>{e.nome} · contrato {e.contrato}</option>)}
                                 </select>
                             </label>
-                            <div>
-                                <span className={ROTULO}>Quando dispara</span>
-                                <div className="flex gap-2">
-                                    <input className={`${CAMPO} w-24`} type="number" min={0} max={60} value={Math.abs(form.dias)}
-                                        onChange={(ev) => { const v = Math.max(0, Math.min(60, parseInt(ev.target.value || "0", 10))); setForm({ ...form, dias: form.dias < 0 ? -v : v }); }} />
-                                    <select className={CAMPO} value={form.dias < 0 ? "antes" : "depois"}
-                                        onChange={(ev) => setForm({ ...form, dias: ev.target.value === "antes" ? -Math.abs(form.dias) : Math.abs(form.dias) })}>
-                                        <option value="antes">dia(s) antes do vencimento</option>
-                                        <option value="depois">dia(s) depois do vencimento</option>
-                                    </select>
-                                </div>
-                                <span className="text-[12.5px] text-[#6B7488] dark:text-[#AEB9CF]">0 = no dia do vencimento. Só vai para quem ainda está com a mensalidade em aberto.</span>
+                            <div className="mt-2 lg:sticky lg:top-2">
+                                <Celular texto={preencher(form.texto, exemplos[exemplo] || {})} botao={form.botao} horaTxt={form.hora || "09:00"} />
+                                <p className={`m-0 mt-2 ${MUDO}`}>Nomes e valores de exemplo.</p>
                             </div>
-                            <label><span className={ROTULO}>Nome do modelo aprovado na Meta</span>
-                                <input className={CAMPO} value={form.modelo} onChange={(ev) => setForm({ ...form, modelo: ev.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "") })} placeholder="lembrete_vence_amanha" />
-                            </label>
                         </div>
-                        <label><span className={ROTULO}>Texto do modelo (igual ao aprovado na Meta)</span>
-                            <textarea className={`${CAMPO} h-36 py-2`} value={form.texto} maxLength={1024} onChange={(ev) => setForm({ ...form, texto: ev.target.value })} />
-                        </label>
-                        {tipoForm && (
-                            <div className="rounded-xl bg-[#F4F6F9] p-3 text-[13.5px] dark:bg-[#1C2334]">
-                                <p className="m-0">{tipoForm.descricao}</p>
-                                <p className="m-0 mt-1"><b>Variáveis:</b> {tipoForm.variaveis.join(" · ")}</p>
-                                <p className="m-0 mt-1 break-all"><b>Botão:</b> {tipoForm.botao}</p>
-                            </div>
-                        )}
+                    </div>
+                )}
+            </Janela>
+
+            {/* ---------------- JANELA DO ENVIO ---------------- */}
+            <Janela aberta={!!detalhe} fechar={() => setDetalhe(null)} largura="max-w-[560px]" titulo={detalhe?.titular || fone(detalhe?.telefone || null) || "Envio"}
+                sub={detalhe ? `Contrato ${detalhe.contrato || "—"} · ${fone(detalhe.telefone)} · ${nomeModelo(detalhe.campanha)} · ${ORIGENS[detalhe.origem] || detalhe.origem}` : undefined}
+                direita={detalhe ? <Etiqueta par={SITS[detalhe.situacao]} /> : undefined}>
+                {detalhe && (() => {
+                    const m = painel?.campanhas.find((c) => c.id === detalhe.campanha);
+                    const saiu = ["enviada", "entregue", "lida", "respondeu", "abriu", "pago"].includes(detalhe.situacao);
+                    const naFila = ["aprov", "aguard"].includes(detalhe.situacao);
+                    const textoMsg = detalhe.texto || (m ? m.texto : "");
+                    return (
                         <div>
-                            <span className={ROTULO}>Situação</span>
-                            <div className="flex flex-wrap gap-2">
-                                {(["desligada", "teste", "ligada"] as Modo[]).map((m) => (
-                                    <button key={m} type="button" aria-pressed={form.modo === m} onClick={() => setForm({ ...form, modo: m })}
-                                        className={`h-11 rounded-full px-4 text-[14.5px] ${form.modo === m ? "bg-[#313C55] font-extrabold text-white dark:bg-[#3D6A99]" : "bg-[#F1F4F8] font-bold dark:bg-[#1C2334]"}`}>
-                                        {m === "desligada" ? "Desligada" : m === "teste" ? "Teste (só a lista)" : "Ligada (todos)"}
-                                    </button>
+                            {detalhe.motivo && <div className={`mb-3 rounded-xl px-3 py-2 text-[14px] font-bold ${detalhe.situacao === "falhou" ? VERMELHO : AMARELO}`}>{detalhe.motivo}</div>}
+                            <Celular texto={textoMsg} botao={m?.botao || ""} horaTxt={hora(detalhe.enviado_em || detalhe.programado_em)}
+                                titulo={saiu ? "Mensagem como o cliente recebeu" : naFila ? "Mensagem que vai sair (com as macros)" : "Mensagem que seria enviada (não saiu)"} />
+                            <b className="mt-4 block">Caminho da mensagem</b>
+                            <ul className="m-0 mt-2 list-none p-0">
+                                {detalhe.linha.map(([t, d], i) => (
+                                    <li key={i} className={`grid grid-cols-[64px_1fr] gap-2 border-l-2 py-1.5 pl-3 text-[14px] ${/Não|Cancelad|não entregou/.test(d) ? "border-[#B42318]" : /Pago|Abriu|Respondeu/.test(d) ? "border-[#5E8C1E]" : "border-[#E1E5EC] dark:border-white/15"}`}>
+                                        <b className="tabular-nums">{t ? hora(t) : ""}</b><span>{d}</span>
+                                    </li>
                                 ))}
+                            </ul>
+                            <div className="mt-4 flex flex-wrap gap-2">
+                                {detalhe.conversa_id ? <a className={BTN_SEC} href={`/messenger?conversa=${detalhe.conversa_id}`}>Abrir conversa no Messenger</a> : null}
+                                {gestao && detalhe.situacao === "aprov" && <button type="button" className={BTN_PRI} onClick={() => emLote("aprovar", [detalhe.id])}>Aprovar envio</button>}
+                                {gestao && naFila && <button type="button" className={BTN_SEC} onClick={() => emLote("cancelar", [detalhe.id])}>Cancelar envio</button>}
+                                {gestao && ["falhou", "pulado"].includes(detalhe.situacao) && <button type="button" className={BTN_PRI} onClick={() => emLote("reenviar", [detalhe.id])}>Enviar novamente</button>}
+                                {detalhe.telefone && detalhe.situacao !== "np" && (
+                                    <button type="button" className={BTN_SEC} onClick={async () => { if (window.confirm("Incluir este telefone na lista Não perturbe? Ele deixa de receber campanhas e lembretes.")) { await incluirNp(detalhe.telefone!, detalhe.contrato || ""); } }}>Não perturbe</button>
+                                )}
                             </div>
+                            {aviso && <div className={`mt-3 rounded-xl px-3 py-2 text-[14px] font-bold ${OK}`}>{aviso}</div>}
                         </div>
-                        {form.modo === "teste" && (
-                            <label><span className={ROTULO}>Contratos que recebem no teste (separe por vírgula)</span>
-                                <input className={CAMPO} value={form.teste_contratos} onChange={(ev) => setForm({ ...form, teste_contratos: ev.target.value })} placeholder="12345, 67890" />
-                            </label>
-                        )}
+                    );
+                })()}
+            </Janela>
+
+            {/* ---------------- CONFIGURAÇÕES ---------------- */}
+            <Janela aberta={config} fechar={() => setConfig(false)} largura="max-w-[720px]" titulo="Configurações">
+                <div className="flex flex-col gap-5">
+                    <div>
+                        <span className={ROTULO}>Link do app do associado (botão "Acessar meu contrato")</span>
                         <div className="flex flex-wrap gap-2">
-                            <button type="button" className={BTN_PRI} disabled={ocupado === "salvar"} onClick={salvar}>{ocupado === "salvar" ? "Salvando…" : "Salvar"}</button>
-                            <button type="button" className={BTN_SEC} onClick={() => setForm(null)}>Cancelar</button>
+                            <input className={`${CAMPO} min-w-0 flex-1`} value={linkApp} onChange={(e) => setLinkApp(e.target.value)} placeholder="https://…" disabled={!gestao} />
+                            {gestao && <button type="button" className={BTN_PRI} disabled={!!ocupado} onClick={async () => { const j = await executar("cfg", () => aPost("config_salvar", { link_app: linkApp.trim() })); if (j) await carregar(); }}>Salvar</button>}
                         </div>
-                    </section>
-                )}
-
-                {/* Envio de teste */}
-                {teste && (
-                    <section className={`${CARTAO} flex flex-col gap-3`}>
-                        <h2 className="m-0 text-[19px] font-extrabold">Envio de teste · {teste.nome}</h2>
-                        <p className="m-0 text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Usa os dados de um contrato (a mensalidade em aberto mais antiga) e manda para o celular informado, mesmo fora da data. Não conta nos números da campanha.</p>
-                        <div className="grid gap-3 md:grid-cols-2">
-                            <label><span className={ROTULO}>Contrato</span>
-                                <input className={CAMPO} inputMode="numeric" value={teste.contrato} onChange={(ev) => setTeste({ ...teste, contrato: ev.target.value })} />
-                            </label>
-                            <label><span className={ROTULO}>Celular que recebe (com DDD)</span>
-                                <input className={CAMPO} inputMode="tel" value={teste.telefone} onChange={(ev) => setTeste({ ...teste, telefone: ev.target.value })} placeholder="(77) 99999-9999" />
-                            </label>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            <button type="button" className={BTN_PRI} disabled={ocupado === "teste"} onClick={enviarTeste}>{ocupado === "teste" ? "Enviando…" : "Enviar teste"}</button>
-                            <button type="button" className={BTN_SEC} onClick={() => setTeste(null)}>Cancelar</button>
-                        </div>
-                    </section>
-                )}
-
-                {/* Prévia */}
-                {previa && (
-                    <section className={`${CARTAO} flex flex-col gap-3`}>
-                        <div className="flex items-center gap-2">
-                            <h2 className="m-0 mr-auto text-[19px] font-extrabold">Prévia de hoje</h2>
-                            <button type="button" className={BTN_SEC} onClick={() => setPrevia(null)}>Fechar</button>
-                        </div>
-                        <p className="m-0 text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Nada foi enviado. Mostra quem receberia se a campanha rodasse agora{previa.modo === "teste" ? " (no modo de teste, só os contratos da lista)" : ""}.</p>
-                        <ResumoResultado r={previa} />
-                    </section>
-                )}
-
-                {/* Histórico */}
-                <section className="grid gap-4 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
-                    <div className={`${CARTAO} flex flex-col gap-1 p-2 ${diaSel ? "hidden lg:flex" : ""}`}>
-                        <h2 className="m-0 px-2 pt-2 text-[19px] font-extrabold">Histórico por dia</h2>
-                        <p className="m-0 px-2 pb-2 text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">Últimos 30 dias.</p>
-                        {!dias && !erro && <p className="p-2">Carregando…</p>}
-                        {dias && !dias.length && <p className="p-2 text-[#6B7488]">Nenhum disparo ainda.</p>}
-                        {(dias || []).map((d) => {
-                            const t = Object.values(d.campanhas).reduce<{ enviados: number; falhas: number; pagos: number; abriram: number }>((a, c) => ({
-                                enviados: a.enviados + (c.enviados || 0), falhas: a.falhas + (c.falhas || 0), pagos: a.pagos + (c.pagos || 0), abriram: a.abriram + (c.abriram || 0),
-                            }), { enviados: 0, falhas: 0, pagos: 0, abriram: 0 });
-                            return (
-                                <button key={d.data} type="button" onClick={() => abrirDia(d.data)}
-                                    className={`flex flex-col gap-1 rounded-xl px-3 py-2.5 text-left hover:bg-[#F0F2F5] dark:hover:bg-white/5 ${diaSel === d.data ? "bg-[#F0F2F5] dark:bg-white/10" : ""}`}>
-                                    <span className="flex items-center gap-2">
-                                        <b className="flex-1 text-[15.5px]">{dataBr(d.data)} <span className="font-normal capitalize text-[#6B7488] dark:text-[#AEB9CF]">{diaSemana(d.data)}</span></b>
-                                        {(d.erros > 0 || t.falhas > 0) && <span className="rounded-lg bg-[#FDECEA] px-2 py-0.5 text-[12.5px] font-extrabold text-[#B42318] dark:bg-[#B42318]/25 dark:text-[#FF9C92]">{d.erros + t.falhas} erro{d.erros + t.falhas > 1 ? "s" : ""}</span>}
-                                    </span>
-                                    <span className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
-                                        {t.enviados} enviados · {t.abriram} abriram · {t.pagos} pagos{d.execucoes ? ` · ${d.execucoes} execuç${d.execucoes > 1 ? "ões" : "ão"}` : ""}
-                                    </span>
-                                </button>
-                            );
-                        })}
                     </div>
-
-                    <div className={`${CARTAO} flex flex-col gap-4 ${diaSel ? "" : "hidden lg:flex"}`}>
-                        {!diaSel && <p className="m-0 text-[#6B7488]">Escolha um dia para ver as execuções, os envios e os erros.</p>}
-                        {diaSel && (
-                            <div className="flex items-center gap-2">
-                                <button type="button" className={`${BTN_SEC} lg:hidden`} onClick={() => setDiaSel("")} aria-label="Voltar">←</button>
-                                <h2 className="m-0 mr-auto text-[19px] font-extrabold">{dataBr(diaSel)}</h2>
-                                <button type="button" className={BTN_SEC} onClick={() => abrirDia(diaSel)}>Atualizar</button>
-                            </div>
-                        )}
-                        {diaSel && !diaDet && <p className="m-0">Carregando…</p>}
-                        {diaDet && (
-                            <>
-                                <div className="flex flex-col gap-2">
-                                    <h3 className="m-0 text-[16px] font-extrabold">Execuções</h3>
-                                    {!diaDet.execucoes.length && <p className="m-0 text-[14px] text-[#6B7488]">Nenhuma execução registrada neste dia.</p>}
-                                    {diaDet.execucoes.slice().reverse().map((ex, i) => (
-                                        <details key={i} className="rounded-xl border border-[#EEF0F3] p-3 dark:border-white/10" open={i === 0}>
-                                            <summary className="cursor-pointer text-[14px] font-bold">
-                                                {hora(ex.inicio)} · {ex.origem === "cron" ? "automática (cron)" : ex.origem}
-                                                {ex.campanhas.some((c) => c.erro || c.falhas) ? <span className="ml-2 text-[#B42318] dark:text-[#FF9C92]">com erros</span> : null}
-                                            </summary>
-                                            <div className="mt-3 flex flex-col gap-4">
-                                                {!ex.campanhas.length && <p className="m-0 text-[14px]">Nenhuma campanha ativa.</p>}
-                                                {ex.campanhas.map((c, k) => <ResumoResultado key={k} r={c} />)}
-                                            </div>
-                                        </details>
-                                    ))}
-                                </div>
-
-                                <div className="flex flex-col gap-2">
-                                    <h3 className="m-0 text-[16px] font-extrabold">Envios · {diaDet.envios.length}</h3>
-                                    <div className="flex gap-2 overflow-x-auto pb-1">
-                                        {FILTROS_ENVIO.map(([k, nome]) => (
-                                            <button key={k} type="button" aria-pressed={filtroEnvio === k} onClick={() => setFiltroEnvio(k)}
-                                                className={`h-10 shrink-0 rounded-full px-4 text-[14px] ${filtroEnvio === k ? "bg-[#313C55] font-extrabold text-white dark:bg-[#3D6A99]" : "bg-[#F1F4F8] font-bold dark:bg-[#1C2334]"}`}>
-                                                {nome}
-                                            </button>
+                    <div>
+                        <b className="text-[16px]">Não perturbe</b>
+                        <p className={`m-0 ${MUDO}`}>Telefones que pediram para não receber. Ficam de fora de todos os automáticos e campanhas.</p>
+                        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
+                            <input className={CAMPO} inputMode="tel" placeholder="Telefone com DDD" value={npNovo.telefone} onChange={(e) => setNpNovo({ ...npNovo, telefone: e.target.value })} />
+                            <input className={CAMPO} placeholder="Contrato (opcional)" value={npNovo.contrato} onChange={(e) => setNpNovo({ ...npNovo, contrato: e.target.value })} />
+                            <input className={CAMPO} placeholder="Motivo" value={npNovo.motivo} onChange={(e) => setNpNovo({ ...npNovo, motivo: e.target.value })} />
+                            <button type="button" className={BTN_PRI} disabled={!!ocupado} onClick={async () => { const j = await incluirNp(npNovo.telefone, npNovo.contrato, npNovo.motivo); if (j) { setNpNovo({ telefone: "", contrato: "", motivo: "" }); setNp(await aGet<NP[]>("nao_perturbe")); } }}>Incluir</button>
+                        </div>
+                        <div className="mt-2 max-h-[280px] overflow-auto">
+                            {np === null ? <p className={MUDO}>{painel?.tabelas_ok ? "Carregando…" : "Faltam as tabelas no banco."}</p> : np.length === 0 ? <p className={MUDO}>Ninguém na lista.</p> : (
+                                <table className="w-full text-left text-[14px]">
+                                    <tbody>
+                                        {np.map((x) => (
+                                            <tr key={x.telefone} className="border-t border-[#EEF0F3] dark:border-white/10">
+                                                <td className="py-1.5 pr-2 font-bold">{fone(x.telefone)}</td><td className="py-1.5 pr-2">{x.contrato || ""}</td>
+                                                <td className={`py-1.5 pr-2 ${MUDO}`}>{x.motivo}</td><td className="py-1.5 pr-2">{dataBr(x.criado_em)}</td>
+                                                <td className="py-1.5 text-right">{gestao && <button type="button" className="font-bold text-[#B42318] underline dark:text-[#FF9C92]" onClick={async () => { const j = await executar("np", () => aPost("np_remover", { telefone: x.telefone })); if (j) setNp(await aGet<NP[]>("nao_perturbe")); }}>Retirar</button>}</td>
+                                            </tr>
                                         ))}
-                                    </div>
-                                    {!envios.length && <p className="m-0 text-[14px] text-[#6B7488]">Nada aqui.</p>}
-                                    {envios.map((e) => (
-                                        <div key={e.id} className="flex flex-col gap-1 rounded-xl border border-[#EEF0F3] px-3 py-2.5 dark:border-white/10">
-                                            <span className="flex flex-wrap items-center gap-2">
-                                                <b className="min-w-0 flex-1 truncate text-[15px]">{e.nome || fone(e.telefone) || "Sem nome"}</b>
-                                                <b className="text-[14.5px]">{brl(e.valor)}</b>
-                                            </span>
-                                            <span className="flex flex-wrap items-center gap-2 text-[13px]">
-                                                <span className={`rounded-lg px-2 py-0.5 font-extrabold ${SIT_ENVIO[e.situacao]?.[1] || ""}`}>{SIT_ENVIO[e.situacao]?.[0] || e.situacao}</span>
-                                                {e.teste && <span className="rounded-lg border border-[#C9D1DE] px-2 py-0.5 font-bold">Teste</span>}
-                                                <span className="rounded-lg bg-[#313C55] px-2 py-0.5 font-extrabold text-white">Contrato {e.contrato}</span>
-                                                <span className="text-[#5B6478] dark:text-[#AEB9CF]">{nomeCampanha(e.campanha)} · {hora(e.enviado_em)} · {fone(e.telefone)}</span>
-                                            </span>
-                                            <span className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
-                                                {e.abriu_em ? `Abriu o botão ${dt(e.abriu_em)}` : "Não abriu o botão"}{e.pago_em ? ` · pago ${dt(e.pago_em)}` : ""}
-                                            </span>
-                                            {e.erro && <span className="text-[13px] font-bold text-[#B42318] dark:text-[#FF9C92]">Erro da Meta: {e.erro}</span>}
-                                            {e.conversa_id > 0 && <a className="text-[13.5px] font-bold text-[#3D6A99] underline dark:text-[#9CC0E6]" href={`/messenger?conversa=${e.conversa_id}`}>Abrir conversa</a>}
-                                        </div>
-                                    ))}
-                                </div>
-                            </>
-                        )}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
                     </div>
-                </section>
-
-                {/* Agendamento */}
-                {painel && gestao && (
-                    <details className={`${CARTAO} text-[14px]`}>
-                        <summary className="cursor-pointer font-extrabold">Agendamento automático</summary>
-                        <p className="mt-2">O servidor roda as campanhas ligadas e em teste uma vez por dia, pelo cron da HostGator:</p>
-                        <code className="block break-all rounded-xl bg-[#F4F6F9] p-3 dark:bg-[#1C2334]">{painel.cron}</code>
-                        <p className="mt-2 text-[#5B6478] dark:text-[#AEB9CF]">Quem já recebeu a mensagem de uma campanha não recebe de novo pela mesma mensalidade. Contratos cancelados, suspensos ou sem celular ficam como pulados no log.</p>
-                    </details>
-                )}
-            </div>
+                    <div>
+                        <b className="text-[16px]">Agendamento automático</b>
+                        <p className={`m-0 ${MUDO}`}>O servidor monta a fila do dia e envia de 15 em 15 minutos, pelo cron da HostGator (use o PHP da versão do site):</p>
+                        <code className="mt-1 block overflow-x-auto whitespace-nowrap rounded-xl bg-[#F4F6F9] p-3 text-[13px] dark:bg-[#1C2334]">{painel?.cron}</code>
+                    </div>
+                    {aviso && <div className={`rounded-xl px-3 py-2 text-[14px] font-bold ${OK}`}>{aviso}</div>}
+                    {erro && <div className={`rounded-xl px-3 py-2 text-[14px] font-bold ${VERMELHO}`}>{erro}</div>}
+                </div>
+            </Janela>
         </div>
     );
 }
