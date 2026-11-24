@@ -753,6 +753,8 @@ export default function JanelaConversa(props: {
     onEnviarAgora?: () => void;
     onCancelarEnvio?: () => void;
     onAssumir: () => void;
+    /** 24/11/2026: encerrar a conversa da fila sem assumir */
+    onEncerrarFila?: () => void;
     /** 23/11/2026: conversa finalizada — abre um atendimento novo já com quem pediu */
     onRetomar?: () => void;
     onTransferir: () => void;
@@ -966,6 +968,9 @@ export default function JanelaConversa(props: {
                             </div>
                         )}
                     </div>
+                )}
+                {externo && c.status_atendimento === "aguardando" && (perfil.atendente || perfil.gestao) && props.onEncerrarFila && (
+                    <button type="button" onClick={props.onEncerrarFila} className="flex h-10 items-center gap-2 rounded-xl border border-[#C9D1DE] bg-white px-3 text-sm font-bold text-[#313C55] dark:border-white/25 dark:bg-[#232B3F] dark:text-white" aria-label="Encerrar sem assumir" title="Encerrar sem assumir"><Icone nome="ok" className="h-[18px] w-[18px]" /><span className="hidden 2xl:inline">Encerrar</span></button>
                 )}
                 {externo && c.status_atendimento === "aguardando" && perfil.atendente && (
                     <button type="button" onClick={props.onAssumir} className="h-10 rounded-xl bg-[#313C55] px-4 text-sm font-extrabold text-white dark:bg-[#3D6A99]">Assumir</button>

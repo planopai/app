@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { msgGet, msgPost } from "@/components/messenger/api";
+import { API_BASE, apiJson, msgGet, msgPost } from "@/components/messenger/api";
 import type { Conversa, Etiqueta, Perfil, Setor } from "@/components/messenger/tipos";
 import { Avatar, Icone, SeloCor } from "./Lista";
 
@@ -104,6 +104,43 @@ export function NovaConversa({ grupoInicial, onFechar, onAberta, online = () => 
 }
 
 /** Transferir atendimento de cliente para outro atendente. Quem transfere passa a só acompanhar. */
+/** 24/11/2026: encerrar uma conversa da fila sem assumir (aurora_21.php). O cliente não recebe nada; fica a nota com o motivo. */
+const MOTIVOS_FILA = ["Propaganda ou spam", "Número errado", "Mensagem sem sentido", "Não precisa de resposta"];
+export function EncerrarFila({ conversa, onFechar, onFeito }: { conversa: Conversa; onFechar: () => void; onFeito: () => void }) {
+    const [motivo, setMotivo] = useState("");
+    const [erro, setErro] = useState("");
+    const [salvando, setSalvando] = useState(false);
+    const confirmar = async () => {
+        setSalvando(true);
+        try {
+            await apiJson(`${API_BASE}/aurora_21.php?action=encerrar_fila`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ conversa_id: conversa.id, motivo: motivo.trim() }),
+            });
+            onFeito();
+        } catch (e: any) {
+            setErro(e.message);
+            setSalvando(false);
+        }
+    };
+    return (
+        <Janela titulo="Encerrar sem assumir" sub={`${conversa.titulo} · a conversa sai da fila e vai para Finalizadas. O cliente não recebe nenhuma mensagem.`} onFechar={onFechar}
+            rodape={<><button type="button" className={btn} onClick={onFechar}>Voltar</button><button type="button" className={btnPri} disabled={salvando} onClick={confirmar}>Encerrar</button></>}>
+            {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
+            <span className={rotulo}>Motivo (opcional)</span>
+            <div className="flex flex-wrap gap-2">
+                {MOTIVOS_FILA.map((m) => (
+                    <button key={m} type="button" onClick={() => setMotivo(m)} aria-pressed={motivo === m}
+                        className={`inline-flex h-11 items-center justify-center rounded-full border px-4 text-sm font-bold ${motivo === m ? "border-[#313C55] bg-[#E9EFF6] text-[#313C55] dark:border-[#A9BED6] dark:bg-[#3D6A99]/30 dark:text-white" : "border-[#C9D1DE] text-[#313C55] dark:border-white/25 dark:text-white"}`}>{m}</button>
+                ))}
+            </div>
+            <textarea value={motivo} onChange={(e) => setMotivo(e.target.value.slice(0, 300))} rows={2} placeholder="Ou escreva o motivo"
+                className="w-full resize-none rounded-xl border-0 bg-[#F1F4F8] px-4 py-3 text-[16px] text-[#1F2638] outline-none focus:ring-2 focus:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-white" />
+        </Janela>
+    );
+}
+
 export function Transferir({ conversa, onFechar, onFeito }: { conversa: Conversa; onFechar: () => void; onFeito: () => void }) {
     const [lista, setLista] = useState<{ usuario_id: number; nome: string; em_atendimento: number }[]>([]);
     const [para, setPara] = useState(0);

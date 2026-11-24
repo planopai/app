@@ -15,10 +15,11 @@ import type { Aba, Conversa, EtiquetaCurta, Mensagem, Perfil, Setor } from "@/co
 import { Abas, Icone, LinhaConversa, SeletorLista, TIPO_CONTATO_SELO } from "./components/Lista";
 import NovaConversaWhats from "./components/NovaConversaWhats";
 import JanelaConversa from "./components/Conversa";
-import { DetalhesGrupo, Encaminhar, EnviarContato, EtiquetasConversa, NovaConversa, Transferir } from "./components/Modais";
+import { DetalhesGrupo, Encaminhar, EncerrarFila, EnviarContato, EtiquetasConversa, NovaConversa, Transferir } from "./components/Modais";
 import HistoricoClientes from "./components/Historico";
 import PainelCliente from "./components/PainelCliente";
 import { salvarAutomatico } from "@/components/messenger/salvarArquivos";
+import { dentroDeAba } from "@/lib/abas";
 
 /**
  * Celular com a conversa aberta: a conversa ocupa só a parte visível da tela (acima do teclado),
@@ -148,7 +149,7 @@ export default function MessengerPage() {
     const [carregando, setCarregando] = useState(true);
     const [seguranca, setSeguranca] = useState(false);
     const [digitando, setDigitando] = useState<Record<number, { nome: string; ate: number }>>({});
-    const [modal, setModal] = useState<null | "nova" | "grupo" | "whats" | "transferir" | "detalhes" | "contato" | "encaminhar" | "etiquetas">(null);
+    const [modal, setModal] = useState<null | "nova" | "grupo" | "whats" | "transferir" | "detalhes" | "contato" | "encaminhar" | "etiquetas" | "encerrar_fila">(null);
     // pacote 4A: filtros da aba Clientes por setor (0 = todos, -1 = sem setor) e por etiqueta
     const [setores, setSetores] = useState<Setor[]>([]);
     const [filtroSetor, setFiltroSetor] = useState(0);
@@ -157,38 +158,21 @@ export default function MessengerPage() {
     const [paraEncaminhar, setParaEncaminhar] = useState<Mensagem | null>(null);
     const [verHistorico, setVerHistorico] = useState(false);
     const [pastaEquipeAberta, setPastaEquipeAberta] = useState(false);
-    // computador: tela cheia (o Messenger cobre o menu lateral e o topo do app); a escolha fica guardada no aparelho
+    // 24/11/2026: dentro de uma aba do computador o Messenger fica sempre no modo mais cheio (ocupa a aba inteira).
+    // O botão de tela cheia saiu: com as abas, a diferença entre os dois modos era pequena.
     const [telaCheia, setTelaCheia] = useState(false);
     useEffect(() => {
-        try {
-            setTelaCheia(localStorage.getItem("pai.msg.telacheia") === "1");
-        } catch {
-            /* sem armazenamento */
-        }
+        setTelaCheia(dentroDeAba());
     }, []);
     // tela cheia: a página de trás não rola e o menu do app fica escondido debaixo do Messenger
     useEffect(() => {
         if (!telaCheia || !window.matchMedia("(min-width: 768px)").matches) return;
         const antes = document.body.style.overflow;
         document.body.style.overflow = "hidden";
-        const esc = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector('[role="dialog"]') && alternarTelaCheia();
-        window.addEventListener("keydown", esc);
         return () => {
             document.body.style.overflow = antes;
-            window.removeEventListener("keydown", esc);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [telaCheia]);
-    const alternarTelaCheia = () => {
-        setTelaCheia((v) => {
-            try {
-                localStorage.setItem("pai.msg.telacheia", v ? "0" : "1");
-            } catch {
-                /* sem armazenamento */
-            }
-            return !v;
-        });
-    };
     // mensagem que está sendo respondida (responder direcionado, como no WhatsApp)
     const [respondendo, setRespondendo] = useState<Mensagem | null>(null);
     useEffect(() => setRespondendo(null), [selId]);
@@ -775,7 +759,6 @@ export default function MessengerPage() {
                         <h1 className="m-0 min-w-0 flex-1 truncate text-[26px] font-extrabold text-[#313C55] md:text-[22px] dark:text-white">Conversas</h1>
                         <button type="button" onClick={() => setModal("nova")} className="hidden h-11 flex-none items-center gap-1.5 rounded-full bg-[#313C55] px-3.5 text-[14.5px] font-extrabold text-white shadow-sm hover:bg-[#262F45] md:flex dark:bg-[#3D6A99] dark:hover:bg-[#4A7AAB]" aria-label="Nova conversa" title="Nova conversa"><Icone nome="novaconversa" className="h-5 w-5" /><span className={painelCli && largo ? "hidden" : ""}>Nova conversa</span></button>
                         <button type="button" onClick={() => setVerHistorico(true)} className="flex h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5] dark:text-white dark:hover:bg-white/10" aria-label="Histórico de clientes" title="Histórico de clientes"><Icone nome="clock" className="h-[22px] w-[22px]" /></button>
-                        <button type="button" onClick={alternarTelaCheia} aria-pressed={telaCheia} className="hidden h-11 w-11 items-center justify-center rounded-full text-[#313C55] hover:bg-[#F0F2F5] md:flex dark:text-white dark:hover:bg-white/10" aria-label={telaCheia ? "Sair da tela cheia" : "Tela cheia"} title={telaCheia ? "Sair da tela cheia" : "Tela cheia"}><Icone nome={telaCheia ? "recolher" : "expandir"} className="h-[20px] w-[20px]" /></button>
                     </div>
                     <div className="flex flex-col gap-2 px-4 pb-2 pt-1">
                         <label className="flex h-11 items-center gap-3 rounded-full bg-[#F0F2F5] px-4 text-[#5B6478] dark:bg-[#1C2334] dark:text-[#AEB9CF]">
@@ -932,7 +915,7 @@ export default function MessengerPage() {
                             tecladoAberto={!!area && typeof window !== "undefined" && area.altura < window.innerHeight * 0.8}
                             onDigitando={() => msgPost("digitando", { conversa_id: conversaSel.id }).catch(() => {})}
                             onTeclou={teclouNoPacote} onEnviarAgora={() => dispararPacote()} onCancelarEnvio={cancelarPacote}
-                            onAssumir={() => assumir(conversaSel.id)} onTransferir={() => setModal("transferir")} onEncerrar={encerrar}
+                            onAssumir={() => assumir(conversaSel.id)} onEncerrarFila={() => setModal("encerrar_fila")} onTransferir={() => setModal("transferir")} onEncerrar={encerrar}
                             onRetomar={perfil.atendente ? () => retomar(conversaSel.id) : undefined}
                             onSilenciar={silenciar} onDetalhes={() => setModal("detalhes")}
                             onAbrirCliente={() => setPainelCli((v) => !v)} painelClienteAberto={painelCli} textoParaInserir={textoPainel}
@@ -967,6 +950,9 @@ export default function MessengerPage() {
             )}
             {modal === "transferir" && conversaSel && (
                 <Transferir conversa={conversaSel} onFechar={() => setModal(null)} onFeito={() => { setModal(null); setAviso("Conversa transferida."); if (perfil?.gestao) abrirConversa(conversaSel.id, true); else fecharConversa(); carregarListas(); }} />
+            )}
+            {modal === "encerrar_fila" && conversaSel && (
+                <EncerrarFila conversa={conversaSel} onFechar={() => setModal(null)} onFeito={() => { setModal(null); setAviso("Conversa encerrada sem atendimento."); fecharConversa(); carregarListas(); }} />
             )}
             {modal === "etiquetas" && conversaSel && <EtiquetasConversa conversa={conversaSel} onFechar={() => setModal(null)} onSalvo={(c) => { setModal(null); setConversaSel(c); setAviso("Etiquetas atualizadas."); carregarListas(); }} />}
             {modal === "contato" && <EnviarContato onFechar={() => setModal(null)} onEnviar={enviarContato} />}
