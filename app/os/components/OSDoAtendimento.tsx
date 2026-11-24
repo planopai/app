@@ -291,7 +291,7 @@ export default function OSDoAtendimento({
             .then((r) => {
                 if (!vivo) return;
                 const d = r?.dados || {};
-                const l = [d.os_convenio, d.os_particular].filter(Boolean).map((o: any) => ({
+                const l = [d.os_convenio, d.os_particular, d.os_prefeitura].filter(Boolean).map((o: any) => ({
                     id: Number(o.id), numero_os: String(o.numero_os ?? ""), natureza: String(o.natureza ?? ""), convenio: String(o.convenio ?? ""), status: String(o.status ?? ""), valor_total: Number(o.valor_total) || 0,
                 }));
                 setLista(l);

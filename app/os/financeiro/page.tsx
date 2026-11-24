@@ -493,7 +493,8 @@ function DetalheOS({
     /** OS cobrada da família (Particular, diferenças e coroa): valores ajustáveis. */
     const ehDaFamilia = ["PRT", "DIF_SOC", "DIF_PRF", "COR"].includes(linha.tipo);
     // 23/11/2026: a OS da Prefeitura também reabre (ex.: pacote ou coroa lançados errado), com motivo, pelo mesmo "reabrir".
-    const podeReabrir = (ehDaFamilia || linha.tipo === "PRF") && statusAtual === "FECHADA";
+    // 24/11/2026: a OS do plano (Soc) também reabre, para ajustar o que a Prefeitura passa a pagar num atendimento já concluído.
+    const podeReabrir = (ehDaFamilia || linha.tipo === "PRF" || linha.tipo === "SOC") && statusAtual === "FECHADA";
 
     const carregar = useCallback(async () => {
         setErro("");
