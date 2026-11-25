@@ -1,0 +1,1842 @@
+"use client";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import ItensOSAjuste from "../components/ItensOSAjuste";
+import ReembolsosPendentes from "@/components/correcoes/ReembolsosPendentes";
+import {
+    BarraFiltrosOS, CartoesOS, EstiloTemaOS, Ic, Icone, JanelaFiltrosOS, ListaCompactaOS, PAGAMENTOS_OS, ResumoOS, SITUACOES_OS, TIPOS_OS,
+    baixarPdfDaOS, dataBROS, metaFinanceiraOS, pagamentoDaOS, prepararPdfDaOS, filtroInicial, itensExportar, paramsDoFiltro, situacaoDaOS, useOpcoesAgente,
+    type FiltroOS, type TabelaExport,
+} from "../components/ListaOS";
+import { JanelaRelatorios } from "../components/RelatoriosOS";
+import { OS_API, apiJson, osGet, osPost as osPostBase, valorDigitado } from "../components/apiOS";
+import BotoesReciboLoja from "@/app/coroa-de-flores/BotoesReciboLoja";
+
+/** O Financeiro envia também os campos vazios (ex.: limpar a observação), como antes. */
+const osPost = (acao: string, params: Record<string, any> = {}) => osPostBase(acao, params, true);
+
+const brl = (v: any) =>
+    (Number(v) || 0).toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+    });
+
+const dataBR = (s?: string | null) =>
+    s ? new Date(s.replace(" ", "T")).toLocaleDateString("pt-BR") : "—";
+
+const dataHoraBR = (s?: string | null) =>
+    s
+        ? new Date(s.replace(" ", "T")).toLocaleString("pt-BR", {
+            dateStyle: "short",
+            timeStyle: "short",
+        })
+        : "—";
+
+/**
+ * 09/11/2026: os comprovantes ficam no servidor da API (api.planoassistencialintegrado.com.br/uploads/comprovantes).
+ * O os_principal.php devolve o caminho relativo ("/uploads/comprovantes/..."); aberto no domínio do app ele dava 404.
+ */
+const ARQUIVOS_API = "https://api.planoassistencialintegrado.com.br";
+const urlComprovante = (u?: string | null): string => {
+    const v = String(u ?? "").trim();
+    if (!v) return "";
+    const m = v.match(/\/uploads\/[^\s"']+/i);
+    if (m && (v.startsWith("/") || /^https?:\/\/(pai\.|app\.|www\.)?planoassistencialintegrado\.com\.br\//i.test(v))) {
+        return `${ARQUIVOS_API}${m[0]}`;
+    }
+    return v;
+};
+
+/**
+ * 09/11/2026: número do pedido da Loja On-line de um lançamento pago pelo site.
+ * O lançamento automático grava "Pagamento online (site) — pedido nº 13132" na observação.
+ */
+const pedidoLojaDoPagamento = (p: any): string => {
+    const direto = String(p?.pedido_externo_id ?? p?.woocommerce_order_id ?? p?.origem_externa_id ?? "").replace(/\D+/g, "");
+    if (direto) return direto;
+    const m = String(p?.observacao ?? "").match(/pedido\s*n[º°o.]?\s*(\d+)/i);
+    return m ? m[1] : "";
+};
+
+const hoje = () => new Date().toLocaleDateString("sv-SE");
+const inicioMes = () => hoje().slice(0, 8) + "01";
+
+const COR = {
+    navy: "#313C55",
+    amarelo: "#F2CB3F",
+    verde: "#B3CE52",
+    azul: "#3D6A99",   // sem ciano nas telas (regra de cores)
+    muted: "#6B7488",
+};
+
+function Kpi({
+    rotulo,
+    valor,
+    sub,
+    cor,
+}: {
+    rotulo: string;
+    valor: string;
+    sub?: string;
+    cor: string;
+}) {
+    return (
+        <div
+            className="flex-1 rounded-xl border border-[#E1E5EC] bg-white p-4"
+            style={{ borderTop: `4px solid ${cor}` }}
+        >
+            <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">
+                {rotulo}
+            </div>
+            <div className="mt-1 whitespace-nowrap text-2xl font-extrabold text-[#313C55]">
+                {valor}
+            </div>
+            {sub && <div className="text-xs text-[#6B7488]">{sub}</div>}
+        </div>
+    );
+}
+
+function Tag({
+    children,
+    tom = "neutro",
+}: {
+    children: React.ReactNode;
+    tom?: "amarelo" | "verde" | "azul" | "laranja" | "neutro";
+}) {
+    const bg = {
+        amarelo: "#FBEFC4",
+        verde: "#E6F0C9",
+        azul: "#E0F3FA",
+        laranja: "#FDECD8",
+        neutro: "#EEF1F5",
+    }[tom];
+
+    return (
+        <span
+            className="inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-extrabold tracking-wide text-[#313C55]"
+            style={{ background: bg }}
+        >
+            {children}
+        </span>
+    );
+}
+
+function Botao({
+    children,
+    primario,
+    perigo,
+    ...p
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    primario?: boolean;
+    perigo?: boolean;
+}) {
+    const cls = perigo
+        ? "bg-[#C0392B] text-white"
+        : primario
+            ? "bg-[#313C55] text-white"
+            : "border border-[#E1E5EC] bg-white text-[#313C55]";
+
+    return (
+        <button
+            type="button"
+            {...p}
+            className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-50 ${cls} ${p.className || ""}`}
+        >
+            {children}
+        </button>
+    );
+}
+
+function Campo({
+    rotulo,
+    children,
+}: {
+    rotulo: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <label className="block text-sm">
+            <span className="mb-1 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">
+                {rotulo}
+            </span>
+            {children}
+        </label>
+    );
+}
+
+const inputCls =
+    "w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm font-semibold text-[#313C55] outline-none focus:border-[#3D6A99]";
+
+const TIPOS = [
+    { v: "", r: "Todos" },
+    { v: "PRT", r: "Particular (Prt)" },
+    { v: "SOC", r: "Associado (Soc)" },
+    { v: "DIF_SOC", r: "Dif.Soc" },
+    { v: "PRF", r: "Prefeitura (Prf)" },
+    { v: "DIF_PRF", r: "Dif.Prf" },
+    { v: "COR", r: "Coroa (Cor)" },
+];
+
+const FORMAS = [
+    "PIX",
+    "DINHEIRO",
+    "CARTAO_DEBITO",
+    "CARTAO_CREDITO",
+    "TRANSFERENCIA",
+    "CHEQUE",
+    "BOLETO",
+    "OUTRO",
+];
+
+function tagNP(np: any) {
+    if (!np) return <span className="text-[#6B7488]">—</span>;
+    if (np.status === "BAIXADA") {
+        return (
+            <Tag tom="verde">
+                NP BAIXADA{np.devolvida ? " · DEVOLVIDA" : ""}
+            </Tag>
+        );
+    }
+    if (np.status === "SUBSTITUIDA") {
+        return (
+            <Tag tom="amarelo">
+                NP SUBSTITUÍDA{np.devolvida ? " · DEVOLVIDA" : ""}
+            </Tag>
+        );
+    }
+    return <Tag tom="amarelo">NP ABERTA</Tag>;
+}
+
+export default function FinanceiroOSPage() {
+    /* Padrão de 08/10/2026: tudo de filtro no botão Filtros (seleção múltipla), cartões compactos e lista que cabe na tela. */
+    const [filtro, setFiltro] = useState<FiltroOS>(() => filtroInicial());
+    const [janelaFiltros, setJanelaFiltros] = useState(false);
+    const [janelaRelatorios, setJanelaRelatorios] = useState(false);   // botão Relatórios (16/10/2026)
+    const [painel, setPainel] = useState<any>(null);
+    const [convenios, setConvenios] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [erro, setErro] = useState("");
+    const [msg, setMsg] = useState("");
+    const [aberta, setAberta] = useState<any>(null);
+    const [resumo, setResumo] = useState<any>(null);
+    const [busca, setBusca] = useState("");   // pesquisa na lista (23/11/2026)
+
+    const carregar = useCallback(async () => {
+        setLoading(true);
+        setErro("");
+        try {
+            const r = await osGet("financeiro_painel", paramsDoFiltro(filtro));
+            setPainel(r.dados);
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível carregar o painel.");
+        } finally {
+            setLoading(false);
+        }
+    }, [filtro]);
+
+    useEffect(() => {
+        void carregar();
+    }, [carregar]);
+
+    useEffect(() => {
+        osGet("convenios_listar")
+            .then((r) => setConvenios(r.dados || []))
+            .catch(() => { });
+    }, []);
+
+    const todasOS: any[] = painel?.os || [];
+    /* Pesquisa por número da OS, falecido, responsável ou agente (sem acento e sem maiúsculas), dentro do período dos filtros. */
+    const linhasOS: any[] = useMemo(() => {
+        const sem = (t: any) => String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        const q = sem(busca).trim();
+        if (!q) return todasOS;
+        const partes = q.split(/\s+/);
+        return todasOS.filter((l) => {
+            const alvo = sem([l.numero_os, l.falecido, l.responsavel, l.agente].join(" "));
+            return partes.every((p) => alvo.includes(p));
+        });
+    }, [todasOS, busca]);
+    const opAgentes = useOpcoesAgente(todasOS);
+    const opConvenios = useMemo(
+        () =>
+            convenios
+                .filter((c: any) => c.codigo && c.tipo !== "PARTICULAR")
+                .map((c: any) => ({ v: String(c.codigo), r: c.tipo === "PREFEITURA" ? `Prefeitura de ${c.nome}` : `Plano ${c.nome}` })),
+        [convenios],
+    );
+    // "Cancelada" só no Financeiro: atendimento ou pedido de coroa cancelado (13/10/2026)
+    const mostrar = { tipo: TIPOS_OS, situacao: [...SITUACOES_OS, { v: "CANCELADA", r: "Cancelada" }], pagamento: PAGAMENTOS_OS, agente: opAgentes, convenio: opConvenios };
+    const soAReceber = filtro.pagamentos.length === 1 && filtro.pagamentos[0] === "A_RECEBER";
+
+    const ind = painel?.indicadores;
+    const vt = ind?.vendas_por_tipo || {};
+    const totalLista = linhasOS.reduce((a, l) => a + (l.status === "CONVERTIDA" || l.status === "CANCELADA" ? 0 : Number(l.valor_total) || 0), 0);
+
+    const tabela = (): TabelaExport => ({
+        titulo: "Financeiro da OS",
+        subtitulo: `${dataBROS(filtro.data_inicio)} a ${dataBROS(filtro.data_fim)} · ${linhasOS.length} OS`,
+        cabecalho: ["OS", "Situação", "Tipo", "Falecido", "Responsável", "Agente", "Aberta em", "Total", "Recebido", "Saldo"],
+        linhas: linhasOS.map((l) => [
+            l.numero_os, situacaoDaOS(l).texto, l.tipo_rotulo, l.falecido || "—", l.responsavel || "—", l.agente || "—", dataBROS(l.criado_em),
+            brl(l.valor_total), l.recebido ? brl(l.recebido) : "—", l.saldo === null ? (l.tipo === "SOC" ? "Coberto" : "—") : brl(l.saldo),
+        ]),
+        rodape: `Total da lista: ${brl(totalLista)}`,
+        arquivo: `financeiro-os-${filtro.data_inicio}-a-${filtro.data_fim}`,
+    });
+
+    const linhaDe = (osId: any) => linhasOS.find((l) => l.os_id === osId);
+
+    return (
+        <main data-os-tela className="min-h-screen bg-[#F4F6F9] px-4 py-3 text-[#313C55] dark:bg-[#161C2A] dark:text-white sm:p-6">
+            <EstiloTemaOS />
+            <div className="mx-auto flex max-w-6xl flex-col gap-3">
+                <BarraFiltrosOS
+                    filtro={filtro}
+                    mostrar={mostrar}
+                    onAbrirFiltros={() => setJanelaFiltros(true)}
+                    onMudar={setFiltro}
+                    exportar={itensExportar(tabela)}
+                    extra={
+                        <>
+                            <button type="button" onClick={() => setJanelaRelatorios(true)} className="hidden h-11 items-center rounded-xl border-[1.5px] border-[#C9D1DE] px-3.5 text-[15px] font-bold dark:border-white/25 sm:inline-flex">Relatórios</button>
+                            <a href="/convenio" className="hidden h-11 items-center rounded-xl border-[1.5px] border-[#C9D1DE] px-3.5 text-[15px] font-bold dark:border-white/25 sm:inline-flex">Convênios</a>
+                            <MaisAtalhos onRelatorios={() => setJanelaRelatorios(true)} />
+                        </>
+                    }
+                />
+
+                {erro && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>}
+                {msg && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{msg}</div>}
+
+                {ind && (
+                    <>
+                        <CartoesOS
+                            itens={[
+                                { rotulo: "Total de vendas", valor: brl(ind.total_vendas), cor: "#313C55", sub: `Prt ${brl(vt.PRT)} · Dif ${brl((vt.DIF_SOC || 0) + (vt.DIF_PRF || 0))} · Cor ${brl(vt.COR)} · Prf ${brl(vt.PRF)}` },
+                                {
+                                    rotulo: "A receber", valor: brl(ind.a_receber), cor: "#F2CB3F", sub: soAReceber ? "lista filtrada · toque para tirar" : "toque para ver as OS",
+                                    ativo: soAReceber, onClick: () => setFiltro({ ...filtro, pagamentos: soAReceber ? [] : ["A_RECEBER"] }),
+                                },
+                                { rotulo: "Recebido no período", valor: brl(ind.recebido_no_periodo), cor: "#B3CE52" },
+                                { rotulo: "NPs abertas", valor: String(ind.nps_abertas?.quantidade || 0), cor: "#3D6A99", sub: `${brl(ind.nps_abertas?.valor)} à vista` },
+                                // OS ainda abertas (a venda só conta depois de concluída — 09/10/2026)
+                                { rotulo: "A concluir", valor: String(ind.aguardando_assinatura?.quantidade || 0), cor: "#C9CFD9", sub: `${brl(ind.aguardando_assinatura?.valor)} em OS abertas` },
+                                { rotulo: "Cobertura dos planos", valor: brl(ind.cobertura_planos), cor: "#B3CE52", sub: "no período" },
+                            ]}
+                        />
+                        {(ind.nps_a_devolver > 0 || ind.creditos_a_devolver > 0) && (
+                            <div className="flex flex-wrap gap-2">
+                                {ind.nps_a_devolver > 0 && <Tag tom="amarelo">{ind.nps_a_devolver} NP A DEVOLVER AO EMITENTE</Tag>}
+                                {ind.creditos_a_devolver > 0 && <Tag tom="laranja">CRÉDITOS A DEVOLVER: {brl(ind.creditos_a_devolver)}</Tag>}
+                            </div>
+                        )}
+                    </>
+                )}
+
+                {/* Reembolsos de atendimentos e coroas cancelados (09/10/2026) */}
+                <ReembolsosPendentes onAlterou={(m) => setMsg(m)} />
+
+                {/* Pesquisa na lista (23/11/2026) */}
+                <div className="relative">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#6B7488]" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><circle cx="10" cy="10" r="7" /><path d="M21 21l-6-6" /></svg>
+                    <input
+                        type="search"
+                        value={busca}
+                        onChange={(e) => setBusca(e.target.value)}
+                        placeholder="Pesquisar por nº da OS, falecido, responsável ou agente"
+                        aria-label="Pesquisar OS"
+                        className="h-12 w-full rounded-xl border-0 bg-[#FFFFFF] pl-12 pr-12 text-[16px] text-[#313C55] outline-none focus:ring-2 focus:ring-[#3D6A99]/20 dark:bg-[#1C2334] dark:text-white"
+                    />
+                    {busca && (
+                        <button type="button" onClick={() => setBusca("")} aria-label="Limpar pesquisa" className="absolute right-1 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-xl text-[20px] font-bold text-[#6B7488]">×</button>
+                    )}
+                </div>
+
+                <ListaCompactaOS
+                    titulo={`${linhasOS.length} OS`}
+                    total={linhasOS.length ? brl(totalLista) : undefined}
+                    carregando={loading}
+                    vazio={busca.trim() ? "Nenhuma OS encontrada para a pesquisa no período." : "Nenhuma OS no período."}
+                    linhas={linhasOS.map((l) => ({
+                        chave: l.os_id,
+                        numero: l.numero_os,
+                        situacao: situacaoDaOS(l),
+                        pagamento: pagamentoDaOS(l),
+                        // 24/11/2026: OS do plano mostra o valor como cobertura (não é cobrança da família)
+                        valor: l.tipo === "SOC" ? `Coberto ${brl(l.valor_total)}` : brl(l.valor_total),
+                        nome: l.falecido || "—",
+                        meta: metaFinanceiraOS(l),
+                    }))}
+                    onAbrir={(id) => setAberta(linhaDe(id))}
+                    onMais={(id) => {
+                        prepararPdfDaOS(id);
+                        setResumo(linhaDe(id));
+                    }}
+                />
+            </div>
+
+            {janelaRelatorios && <JanelaRelatorios filtro={filtro} onFechar={() => setJanelaRelatorios(false)} />}
+            {janelaFiltros && (
+                <JanelaFiltrosOS valor={filtro} mostrar={mostrar} onFechar={() => setJanelaFiltros(false)} onAplicar={(f) => (setFiltro(f), setJanelaFiltros(false))} />
+            )}
+
+            {resumo && (
+                <ResumoOS
+                    numero={resumo.numero_os}
+                    situacao={situacaoDaOS(resumo)}
+                    subtitulo={resumo.tipo_rotulo}
+                    onFechar={() => setResumo(null)}
+                    campos={[
+                        ["Falecido", resumo.falecido || "—"],
+                        ["Responsável", resumo.responsavel || "—"],
+                        ["Agente", resumo.agente || "—"],
+                        ["Aberta em", dataBROS(resumo.criado_em)],
+                        ...(resumo.assinada_em ? ([["Assinada em", dataBROS(resumo.assinada_em)]] as [string, React.ReactNode][]) : []),
+                        ["Total", brl(resumo.valor_total), true],
+                        ["Recebido", resumo.recebido ? brl(resumo.recebido) : "—"],
+                        ["Saldo", resumo.saldo === null ? (resumo.tipo === "SOC" ? "Coberto pelo plano" : "—") : brl(resumo.saldo), true],
+                        ...(pagamentoDaOS(resumo) ? ([["Pagamento", pagamentoDaOS(resumo)!.texto]] as [string, React.ReactNode][]) : []),
+                        ...(resumo.nota_promissoria ? ([["Nota promissória", tagNP(resumo.nota_promissoria)]] as [string, React.ReactNode][]) : []),
+                        ...(resumo.credito_a_devolver > 0 ? ([["Crédito a devolver", brl(resumo.credito_a_devolver)]] as [string, React.ReactNode][]) : []),
+                        ...(resumo.status === "CANCELADA" && Number(resumo.reembolso_valor) > 0
+                            ? ([["Reembolso", `${brl(resumo.reembolso_valor)} · ${resumo.reembolso_status === "FEITO" ? "feito" : "pendente"}`]] as [string, React.ReactNode][])
+                            : []),
+                    ]}
+                    aviso={resumo.status === "CANCELADA" ? "OS cancelada: não entra nos totais do painel." : undefined}
+                    acoes={[
+                        { rotulo: "PDF", icone: <Icone d={Ic.pdf} tam={18} />, onClick: () => void baixarPdfDaOS(resumo.os_id, resumo.numero_os).then((m) => m && setMsg(m)) },
+                        { rotulo: "Imprimir", icone: <Icone d={Ic.imprimir} tam={18} />, onClick: () => window.open(`${OS_API}?documento_os=1&os_id=${resumo.os_id}&formato=impressao`, "_blank") },
+                        { rotulo: "Abrir OS", icone: <Icone d={Ic.abrir} tam={18} />, primaria: true, onClick: () => (setAberta(resumo), setResumo(null)) },
+                    ]}
+                />
+            )}
+
+            {aberta && (
+                <DetalheOS
+                    linha={aberta}
+                    onFechar={() => setAberta(null)}
+                    onAlterou={(m) => {
+                        setMsg(m);
+                        void carregar();
+                    }}
+                />
+            )}
+        </main>
+    );
+}
+
+/** No celular, Relatórios e Convênios ficam no ⋮ ao lado de Exportar (no computador aparecem como botões). */
+function MaisAtalhos({ onRelatorios }: { onRelatorios: () => void }) {
+    const [aberto, setAberto] = useState(false);
+    return (
+        <div className="relative sm:hidden">
+            <button type="button" aria-label="Relatórios e Convênios" aria-expanded={aberto} onClick={() => setAberto((a) => !a)}
+                className="flex size-11 items-center justify-center rounded-xl border-[1.5px] border-[#C9D1DE] bg-white dark:border-white/25 dark:bg-[#232B3F]">
+                <Icone d={Ic.mais} />
+            </button>
+            {aberto && (
+                <>
+                    <div className="fixed inset-0 z-40" data-pai-sem-folga onClick={() => setAberto(false)} aria-hidden="true" />
+                    <div role="menu" className="absolute right-0 top-12 z-50 w-60 rounded-[14px] border border-[#E3E8F0] bg-white p-1.5 shadow-2xl dark:border-white/[0.12] dark:bg-[#232B3F]">
+                        <button type="button" role="menuitem" onClick={() => (setAberto(false), onRelatorios())} className="flex min-h-11 w-full items-center rounded-xl px-3 text-left text-[15px] font-bold hover:bg-[#EEF2F7] dark:hover:bg-white/10">Relatórios</button>
+                        <a role="menuitem" href="/convenio" className="flex min-h-11 items-center rounded-xl px-3 text-[15px] font-bold hover:bg-[#EEF2F7] dark:hover:bg-white/10">Convênios</a>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
+function DetalheOS({
+    linha,
+    onFechar,
+    onAlterou,
+}: {
+    linha: any;
+    onFechar: () => void;
+    onAlterou: (msg: string) => void;
+}) {
+    const [fin, setFin] = useState<any>(null);
+    const [tempo, setTempo] = useState<any[]>([]);
+    const [erro, setErro] = useState("");
+    const [salvando, setSalvando] = useState(false);
+    const [rec, setRec] = useState({
+        forma_pagamento: "PIX",
+        valor: "",
+        data_pagamento: hoje(),
+        observacao: "",
+        // 13/11/2026: cartão (NSU obrigatório), cheque e ISS retido vão para o contas a receber
+        nsu: "",
+        bandeira: "",
+        maquina: "424",
+        parcelas: "1",
+        cheque_banco: "",
+        cheque_numero: "",
+        cheque_bom_para: "",
+        iss_retido: "",
+        conta_chave: "ITAU",
+    });
+    const [estorno, setEstorno] = useState<any>(null);
+    const [motivoEstorno, setMotivoEstorno] = useState("");
+    const [conv, setConv] = useState<any>(null);
+    const [prefeituras, setPrefeituras] = useState<any[]>([]);
+
+    const osId = linha.os_id;
+    const [statusAtual, setStatusAtual] = useState<string>(linha.status);
+    const [reabrir, setReabrir] = useState(false);
+    const [motivoReabrir, setMotivoReabrir] = useState("");
+    // Fechar a OS pelo Financeiro (21/10/2026) e comprovante do recebimento (obrigatório, menos no dinheiro)
+    const [fecharOS, setFecharOS] = useState(false);
+    const [motivoFechar, setMotivoFechar] = useState("");
+    const [arquivo, setArquivo] = useState<File | null>(null);
+    const [inputArquivo, setInputArquivo] = useState(0);
+    const [versaoItens, setVersaoItens] = useState(0);
+    /** OS cobrada da família (Particular, diferenças e coroa): valores ajustáveis. */
+    const ehDaFamilia = ["PRT", "DIF_SOC", "DIF_PRF", "COR"].includes(linha.tipo);
+    // 23/11/2026: a OS da Prefeitura também reabre (ex.: pacote ou coroa lançados errado), com motivo, pelo mesmo "reabrir".
+    // 24/11/2026: a OS do plano (Soc) também reabre, para ajustar o que a Prefeitura passa a pagar num atendimento já concluído.
+    const podeReabrir = (ehDaFamilia || linha.tipo === "PRF" || linha.tipo === "SOC") && statusAtual === "FECHADA";
+
+    const carregar = useCallback(async () => {
+        setErro("");
+        try {
+            const [f, t] = await Promise.all([
+                osGet("financeiro_listar", { os_id: osId }),
+                osGet("linha_do_tempo", { os_id: osId }),
+            ]);
+            setFin(f.dados);
+            setTempo(t.dados || []);
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível carregar a OS.");
+        }
+    }, [osId]);
+
+    useEffect(() => {
+        void carregar();
+    }, [carregar]);
+
+    const executar = async (fn: () => Promise<any>, ok: string) => {
+        if (salvando) return;
+        setSalvando(true);
+        setErro("");
+        try {
+            const r = await fn();
+            onAlterou(r?.msg || ok);
+            await carregar();
+            return r;
+        } catch (e: any) {
+            setErro(e?.message || "Não foi possível concluir.");
+        } finally {
+            setSalvando(false);
+        }
+    };
+
+    const proposta = fin?.financeiro;
+    const saldo = fin?.saldo;
+    const saldoApos = Math.max(
+        0,
+        (saldo?.saldo_restante ?? linha.saldo ?? 0) -
+        valorDigitado(rec.valor),
+    );
+
+    const semComprovante = rec.forma_pagamento === "DINHEIRO";
+    const escolherArquivo = (f: File | null) => {
+        if (!f) return setArquivo(null);
+        if (!/^image\//.test(f.type) && f.type !== "application/pdf") {
+            setErro("O comprovante deve ser uma foto ou PDF.");
+            return;
+        }
+        if (f.size > 15 * 1024 * 1024) {
+            setErro("O comprovante deve ter no máximo 15 MB.");
+            return;
+        }
+        setErro("");
+        setArquivo(f);
+    };
+
+    // Status do pagamento ao vivo (recebimentos e estornos desta tela), só na OS cobrada da família
+    const totalPago = Number(saldo?.total_pago ?? linha.recebido ?? 0);
+    const restante = Number(saldo?.saldo_restante ?? linha.saldo ?? 0);
+    const pagamentoAtual: { texto: string; tom: "verde" | "amarelo" | "neutro" } | null =
+        ehDaFamilia && linha.status !== "CONVERTIDA" && linha.status !== "CANCELADA" && Number(linha.valor_total) > 0
+            ? totalPago > 0 && restante <= 0.005
+                ? { texto: "PAGO", tom: "verde" }
+                : totalPago > 0
+                  ? { texto: "PAGO PARCIAL", tom: "amarelo" }
+                  : { texto: "A RECEBER", tom: "neutro" }
+            : null;
+    const situacaoAtual =
+        statusAtual === "FECHADA"
+            ? linha.assinada_em
+                ? `assinada ${dataHoraBR(linha.assinada_em)}`
+                : "concluída · assinatura pendente"
+            : String(statusAtual || "").toLowerCase().replace("_", " ");
+
+    // 09/11/2026: OS paga pela Loja On-line (lançamento do site valendo e saldo zerado): já está paga,
+    // não pede para lançar recebimento; mostra o comprovante (recibo da loja) no lugar.
+    const pagamentoSite = (fin?.pagamentos || []).find((p: any) => p?.origem === "SITE" && !Number(p?.estornado));
+    const pedidoLojaPago = pagamentoSite ? pedidoLojaDoPagamento(pagamentoSite) : "";
+    const pagaPeloSite = Boolean(pagamentoSite) && totalPago > 0 && restante <= 0.005;
+
+    const podeReceber =
+        ["PRT", "DIF_SOC", "DIF_PRF", "COR", "PRF"].includes(linha.tipo) &&
+        linha.status !== "CONVERTIDA" &&
+        linha.status !== "CANCELADA" &&
+        !pagaPeloSite;
+
+    const ehCartaoRec = rec.forma_pagamento === "CARTAO_DEBITO" || rec.forma_pagamento === "CARTAO_CREDITO";
+    const lancar = () =>
+        executar(async () => {
+            if (ehCartaoRec && !rec.nsu.replace(/\D/g, "")) throw new Error("Cartão: informe o NSU do comprovante.");
+            if (ehCartaoRec && !rec.bandeira) throw new Error("Cartão: escolha a bandeira.");
+            if (rec.forma_pagamento === "CHEQUE" && (!rec.cheque_numero.trim() || !rec.cheque_bom_para)) throw new Error("Cheque: informe o número e o bom para.");
+            if (rec.forma_pagamento === "TRANSFERENCIA" && !rec.conta_chave) throw new Error("Transferência: escolha o banco em que o cliente depositou.");
+            let finId = proposta?.id;
+
+            if (!finId) {
+                const p = await osPost("financeiro_criar_proposta", {
+                    os_id: osId,
+                    valor_alvo: linha.valor_total,
+                    tipo_proposta: "MISTO",
+                });
+                finId = p.dados?.id;
+            }
+
+            // Multipart: o comprovante vai junto (obrigatório, menos no dinheiro — mesma regra do Concluir venda)
+            const fd = new FormData();
+            fd.append("financeiro_registrar_pagamento", "1");
+            fd.append("financeiro_id", String(finId));
+            fd.append("forma_pagamento", rec.forma_pagamento);
+            fd.append("data_pagamento", rec.data_pagamento);
+            fd.append("observacao", rec.observacao);
+            fd.append("valor", String(valorDigitado(rec.valor)));
+            if (ehCartaoRec) {
+                fd.append("nsu", rec.nsu);
+                fd.append("bandeira", rec.bandeira);
+                fd.append("maquina", rec.maquina);
+                fd.append("parcelas", rec.forma_pagamento === "CARTAO_CREDITO" ? rec.parcelas : "1");
+            }
+            if (rec.forma_pagamento === "CHEQUE") {
+                fd.append("cheque_banco", rec.cheque_banco);
+                fd.append("cheque_numero", rec.cheque_numero);
+                fd.append("cheque_bom_para", rec.cheque_bom_para);
+            }
+            if (rec.forma_pagamento === "PIX" || rec.forma_pagamento === "TRANSFERENCIA") fd.append("conta_chave", rec.conta_chave);
+            if (linha.tipo === "PRF" && valorDigitado(rec.iss_retido) > 0) fd.append("iss_retido", String(valorDigitado(rec.iss_retido)));
+            if (arquivo) fd.append("comprovante", arquivo, arquivo.name || "comprovante.jpg");
+            const r = await apiJson(OS_API, { method: "POST", body: fd });
+
+            setRec({
+                ...rec,
+                valor: "",
+                observacao: "",
+                nsu: "",
+                cheque_numero: "",
+                cheque_bom_para: "",
+                iss_retido: "",
+            });
+            setArquivo(null);
+            setInputArquivo((n) => n + 1);
+
+            return r;
+        }, "Recebimento lançado.");
+
+    const abrirConversao = async () => {
+        const r = await osGet("convenios_listar").catch(() => null);
+
+        setPrefeituras(
+            (r?.dados || []).filter(
+                (c: any) =>
+                    c.codigo &&
+                    c.tipo === "PREFEITURA" &&
+                    c.ativo,
+            ),
+        );
+
+        setConv({
+            convenio: "",
+            tanatopraxia_autorizada: "0",
+            translado_autorizado: "0",
+            motivo: "",
+            previa: null,
+        });
+    };
+
+    return (
+        <div
+            className="fixed inset-0 z-50 flex justify-end bg-[rgba(49,60,85,0.45)]"
+            onClick={onFechar}
+        >
+            <div
+                className="h-full w-full max-w-5xl overflow-y-auto bg-[#F4F6F9] p-6"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                        <div className="text-sm text-[#6B7488]">
+                            Financeiro › {linha.tipo_rotulo}
+                        </div>
+                        <h2 className="text-2xl font-extrabold">
+                            OS {linha.numero_os} · {linha.falecido || "—"}
+                        </h2>
+                        <div className="text-sm text-[#6B7488]">
+                            Responsável{" "}
+                            <b className="text-[#313C55]">
+                                {linha.responsavel || "—"}
+                            </b>{" "}
+                            · agente {linha.agente} · {situacaoAtual}
+                        </div>
+                        {pagamentoAtual && (
+                            <div className="mt-1">
+                                <Tag tom={pagamentoAtual.tom}>PAGAMENTO: {pagamentoAtual.texto}</Tag>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex gap-2">
+                        <a
+                            className="rounded-lg border border-[#E1E5EC] bg-white px-4 py-2 text-sm font-bold"
+                            target="_blank"
+                            rel="noreferrer"
+                            href={`${OS_API}?documento_os=1&os_id=${osId}&formato=visualizar`}
+                        >
+                            Ver folha da OS
+                        </a>
+
+                        {linha.tipo === "PRT" &&
+                            linha.status === "FECHADA" && (
+                                <Botao
+                                    onClick={() =>
+                                        void abrirConversao()
+                                    }
+                                >
+                                    Converter para Prefeitura
+                                </Botao>
+                            )}
+
+                        {statusAtual === "ABERTA" && linha.status !== "CANCELADA" && linha.status !== "CONVERTIDA" && (
+                            <Botao primario onClick={() => { setMotivoFechar(""); setFecharOS(true); }}>
+                                Fechar OS
+                            </Botao>
+                        )}
+
+                        <Botao onClick={onFechar}>Fechar</Botao>
+                    </div>
+                </div>
+
+                {fecharOS && (
+                    <Modal titulo={`Fechar ${linha.numero_os}`} onFechar={() => setFecharOS(false)}>
+                        <div className="text-sm text-[#313C55]">
+                            Para atendimento já finalizado com a OS ainda aberta. A OS fica concluída com os valores atuais e a{" "}
+                            <b>assinatura fica pendente</b> (colher com o responsável). Se houver saldo, ele continua a receber aqui, e a nota
+                            promissória sai quando o responsável assinar.
+                        </div>
+                        <label className="mt-3 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">Motivo *</label>
+                        <textarea
+                            className="mt-1 w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm"
+                            rows={3}
+                            value={motivoFechar}
+                            onChange={(e) => setMotivoFechar(e.target.value)}
+                            placeholder="Ex.: atendimento finalizado, OS ficou aberta no quadro"
+                        />
+                        <div className="mt-4 flex justify-end gap-2">
+                            <Botao onClick={() => setFecharOS(false)}>Cancelar</Botao>
+                            <Botao
+                                primario
+                                disabled={salvando || motivoFechar.trim().length < 5}
+                                onClick={() =>
+                                    void executar(async () => {
+                                        const r = await osPost("financeiro_fechar_os", { os_id: osId, motivo: motivoFechar.trim() });
+                                        setFecharOS(false);
+                                        setStatusAtual("FECHADA");
+                                        setVersaoItens((n) => n + 1);
+                                        return r;
+                                    }, "OS fechada.")
+                                }
+                            >
+                                Fechar OS
+                            </Botao>
+                        </div>
+                    </Modal>
+                )}
+
+                {erro && (
+                    <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                        {erro}
+                    </div>
+                )}
+
+                {/* OS cancelada (13/10/2026): atendimento ou pedido de coroa cancelado pela Gestão */}
+                {linha.status === "CANCELADA" && (
+                    <div className="mb-4 rounded-xl border-[1.5px] border-[#B42318]/50 bg-[#FDECEA] p-4 text-sm font-semibold text-[#B42318] dark:border-[#FF9C92]/50 dark:bg-[#FF9C92]/10 dark:text-[#FF9C92]">
+                        <div className="text-base font-extrabold">OS cancelada</div>
+                        Não recebe mais lançamentos e não entra nos totais do painel. O motivo está na linha do tempo.
+                        {Number(linha.reembolso_valor) > 0 && (
+                            <> Reembolso ao cliente: <b>{brl(linha.reembolso_valor)}</b> ({linha.reembolso_status === "FEITO" ? "feito" : "pendente"}).</>
+                        )}
+                    </div>
+                )}
+
+                {/* Itens da OS: alterar valores (ícone de ajuste e desconto geral) com a OS aberta; assinada → Reabrir com motivo. */}
+                <div className="mb-4 rounded-xl border border-[#E1E5EC] bg-white p-4">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                        <div className="flex-1 text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">{linha.tipo === "PRF" ? "Pacotes e serviços da OS" : "Itens da OS"}</div>
+                        {podeReabrir && (
+                            <Botao onClick={() => { setMotivoReabrir(""); setReabrir(true); }}>Reabrir OS</Botao>
+                        )}
+                    </div>
+                    {statusAtual === "FECHADA" && ehDaFamilia && (
+                        <div className="mb-3 rounded-lg border border-[#F2CB3F] bg-[#FCF3CC] p-3 text-sm font-semibold text-[#313C55]">
+                            OS assinada: para alterar valores, reabra. A assinatura e a nota promissória anteriores deixam de valer.
+                        </div>
+                    )}
+                    {linha.tipo === "PRF" ? (
+                        /* OS da Prefeitura: pacote(s) e serviços de contrato com o valor lançado, e os itens usados embaixo de cada um */
+                        <ComposicaoContrato osId={osId} versao={versaoItens} />
+                    ) : (
+                        <ItensOSAjuste
+                            osId={osId}
+                            editavel={statusAtual === "ABERTA" && ehDaFamilia}
+                            cobertoPlano={linha.tipo === "SOC"}
+                            versao={versaoItens}
+                            onMudou={() => onAlterou("Valores da OS atualizados.")}
+                        />
+                    )}
+                </div>
+
+                {reabrir && (
+                    <Modal titulo={`Reabrir ${linha.numero_os}`} onFechar={() => setReabrir(false)}>
+                        <div className="text-sm text-[#313C55]">
+                            {linha.tipo === "PRF"
+                                ? "A OS volta a ficar aberta. Corrija o registro do atendimento ou o pedido de coroa e feche a OS de novo."
+                                : "A assinatura e a nota promissória desta OS deixam de valer. Depois de alterar, o responsável assina de novo."}
+                        </div>
+                        <label className="mt-3 block text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">Motivo *</label>
+                        <textarea
+                            className="mt-1 w-full rounded-lg border border-[#E1E5EC] bg-white px-3 py-2 text-sm"
+                            rows={3}
+                            value={motivoReabrir}
+                            onChange={(e) => setMotivoReabrir(e.target.value)}
+                            placeholder="Ex.: família pediu troca da urna"
+                        />
+                        <div className="mt-4 flex justify-end gap-2">
+                            <Botao onClick={() => setReabrir(false)}>Cancelar</Botao>
+                            <Botao
+                                primario
+                                disabled={salvando || motivoReabrir.trim().length < 5}
+                                onClick={() =>
+                                    void executar(async () => {
+                                        const r = await osPost("reabrir", { os_id: osId, motivo: motivoReabrir.trim() });
+                                        setReabrir(false);
+                                        setStatusAtual("ABERTA");
+                                        setVersaoItens((n) => n + 1);
+                                        return r;
+                                    }, "OS reaberta.")
+                                }
+                            >
+                                Reabrir
+                            </Botao>
+                        </div>
+                    </Modal>
+                )}
+
+                <div className="mb-4 flex flex-col gap-3 lg:flex-row">
+                    <Kpi
+                        rotulo={linha.tipo === "SOC" ? "Coberto pelo plano" : "Total da OS"}
+                        valor={brl(linha.valor_total)}
+                        cor={COR.navy}
+                    />
+                    <Kpi
+                        rotulo="Recebido"
+                        valor={brl(
+                            saldo?.total_pago ?? linha.recebido,
+                        )}
+                        cor={COR.verde}
+                        sub={`${(fin?.pagamentos || []).filter((p: any) => !Number(p.estornado)).length} lançamento(s)`}
+                    />
+                    <Kpi
+                        rotulo="Saldo"
+                        valor={brl(
+                            saldo?.saldo_restante ?? linha.saldo,
+                        )}
+                        cor={COR.amarelo}
+                        sub={
+                            proposta
+                                ? `proposta ${String(proposta.tipo_proposta).toLowerCase()} · ${String(proposta.status).toLowerCase().replace("_", " ")}`
+                                : "sem proposta"
+                        }
+                    />
+
+                    <div
+                        className="flex-[1.4] rounded-xl border border-[#E1E5EC] bg-white p-4"
+                        style={{
+                            borderTop: `4px solid ${COR.azul}`,
+                        }}
+                    >
+                        <div className="text-[11px] font-extrabold uppercase tracking-wider text-[#6B7488]">
+                            Nota promissória
+                        </div>
+
+                        {linha.nota_promissoria ? (
+                            <>
+                                <div className="mt-1 flex items-center gap-2">
+                                    <span className="whitespace-nowrap text-2xl font-extrabold">
+                                        {brl(
+                                            linha.nota_promissoria.valor,
+                                        )}
+                                    </span>
+                                    {tagNP(linha.nota_promissoria)}
+                                </div>
+
+                                <div className="text-xs text-[#6B7488]">
+                                    à vista · via única
+                                </div>
+
+                                {["BAIXADA", "SUBSTITUIDA"].includes(
+                                    linha.nota_promissoria.status,
+                                ) &&
+                                    !linha.nota_promissoria
+                                        .devolvida && (
+                                        <Botao
+                                            className="mt-2"
+                                            disabled={salvando}
+                                            onClick={() =>
+                                                void executar(
+                                                    () =>
+                                                        osPost(
+                                                            "financeiro_devolver_np",
+                                                            {
+                                                                os_id: osId,
+                                                            },
+                                                        ),
+                                                    "Devolução registrada.",
+                                                )
+                                            }
+                                        >
+                                            Registrar devolução ao
+                                            emitente
+                                        </Botao>
+                                    )}
+                            </>
+                        ) : (
+                            <div className="mt-1 text-sm text-[#6B7488]">
+                                Sem nota promissória
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {linha.credito_a_devolver > 0 && (
+                    <div className="mb-4 flex items-center justify-between rounded-xl border border-[#F2CB3F] bg-[#FFF8E1] p-4 text-sm">
+                        <span>
+                            Crédito a devolver à família:{" "}
+                            <b>
+                                {brl(
+                                    linha.credito_a_devolver,
+                                )}
+                            </b>{" "}
+                            (pago a mais na conversão)
+                        </span>
+
+                        <Botao
+                            disabled={salvando}
+                            onClick={() =>
+                                void executar(
+                                    () =>
+                                        osPost(
+                                            "financeiro_devolver_credito",
+                                            { os_id: osId },
+                                        ),
+                                    "Devolução do crédito registrada.",
+                                )
+                            }
+                        >
+                            Registrar devolução
+                        </Botao>
+                    </div>
+                )}
+
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                    <div className="flex min-w-0 flex-1 flex-col gap-4">
+                        <div className="rounded-xl border border-[#E1E5EC] bg-white p-4">
+                            <div className="mb-2 text-lg font-extrabold">
+                                Lançamentos
+                            </div>
+
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b border-[#E1E5EC] text-left text-[11px] uppercase tracking-wider text-[#6B7488]">
+                                        <th className="py-2">
+                                            Data
+                                        </th>
+                                        <th>Forma</th>
+                                        <th className="text-right">
+                                            Valor
+                                        </th>
+                                        <th className="pl-3">
+                                            Observação
+                                        </th>
+                                        <th />
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    {(fin?.pagamentos || [])
+                                        .length === 0 && (
+                                            <tr>
+                                                <td
+                                                    colSpan={5}
+                                                    className="py-4 text-[#6B7488]"
+                                                >
+                                                    Nenhum recebimento.
+                                                </td>
+                                            </tr>
+                                        )}
+
+                                    {(fin?.pagamentos || []).map(
+                                        (p: any) => (
+                                            <tr
+                                                key={p.id}
+                                                className={`border-b border-[#E1E5EC] ${Number(
+                                                    p.estornado,
+                                                )
+                                                        ? "text-[#6B7488] line-through"
+                                                        : ""
+                                                    }`}
+                                            >
+                                                <td className="py-2">
+                                                    {dataBR(
+                                                        p.data_pagamento,
+                                                    )}
+                                                </td>
+                                                <td>
+                                                    {String(
+                                                        p.forma_pagamento,
+                                                    ).replace(
+                                                        "_",
+                                                        " ",
+                                                    )}
+                                                    {/* parcelas do cartão e origem (conclusão da venda / site) — 09/10/2026 */}
+                                                    {Number(p.parcelas) > 1 ? ` · ${p.parcelas}x` : ""}
+                                                    {p.origem === "CONCLUSAO" ? <span className="ml-1 text-xs text-[#6B7488]">(na conclusão)</span> : p.origem === "SITE" ? <span className="ml-1 text-xs text-[#6B7488]">(site)</span> : null}
+                                                </td>
+                                                <td className="whitespace-nowrap text-right font-bold">
+                                                    {brl(p.valor)}
+                                                </td>
+                                                <td className="pl-3 text-xs">
+                                                    {p.observacao || ""}
+                                                    {p.origem === "SITE" && pedidoLojaDoPagamento(p) && !(p.comprovantes || []).length ? (
+                                                        <BotaoReciboLancamento pedidoLoja={pedidoLojaDoPagamento(p)} />
+                                                    ) : null}
+                                                    {(
+                                                        p.comprovantes ||
+                                                        []
+                                                    ).map(
+                                                        (
+                                                            c: any,
+                                                        ) => (
+                                                            <a
+                                                                key={
+                                                                    c.id ||
+                                                                    c.arquivo_url
+                                                                }
+                                                                className="ml-2 font-bold text-[#3D6A99] dark:text-[#A9C3E0]"
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                href={urlComprovante(
+                                                                    c.arquivo_url,
+                                                                )}
+                                                            >
+                                                                comprovante
+                                                            </a>
+                                                        ),
+                                                    )}
+                                                </td>
+                                                <td className="text-right">
+                                                    {!Number(
+                                                        p.estornado,
+                                                    ) && (
+                                                            <button
+                                                                type="button"
+                                                                className="text-xs font-bold text-[#C0392B]"
+                                                                onClick={() => {
+                                                                    setEstorno(
+                                                                        p,
+                                                                    );
+                                                                    setMotivoEstorno(
+                                                                        "",
+                                                                    );
+                                                                }}
+                                                            >
+                                                                Estornar
+                                                            </button>
+                                                        )}
+                                                </td>
+                                            </tr>
+                                        ),
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="rounded-xl border border-[#E1E5EC] bg-white p-4">
+                            <div className="mb-2 flex justify-between">
+                                <span className="text-lg font-extrabold">
+                                    Linha do tempo
+                                </span>
+                                <span className="text-xs text-[#6B7488]">
+                                    todas as OS do atendimento
+                                </span>
+                            </div>
+
+                            {tempo.length === 0 && (
+                                <div className="text-sm text-[#6B7488]">
+                                    Sem eventos.
+                                </div>
+                            )}
+
+                            {tempo.map(
+                                (e: any, i: number) => (
+                                    <div
+                                        key={i}
+                                        className="flex gap-3 border-b border-[#E1E5EC] py-2 text-sm last:border-b-0"
+                                    >
+                                        <span
+                                            className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
+                                            style={{
+                                                background:
+                                                    [
+                                                        "ASSINADA",
+                                                        "RECEBIMENTO",
+                                                        "NP_BAIXADA",
+                                                    ].includes(
+                                                        e.tipo,
+                                                    )
+                                                        ? COR.verde
+                                                        : [
+                                                            "NP_EMITIDA",
+                                                            "DOCUMENTO",
+                                                        ].includes(
+                                                            e.tipo,
+                                                        )
+                                                            ? COR.azul
+                                                            : [
+                                                                "DESCONTO",
+                                                                "ESTORNO",
+                                                                "CONVERTIDA",
+                                                            ].includes(
+                                                                e.tipo,
+                                                            )
+                                                                ? COR.amarelo
+                                                                : COR.muted,
+                                            }}
+                                        />
+
+                                        <span className="w-28 shrink-0 text-[#6B7488]">
+                                            {dataHoraBR(e.data)}
+                                        </span>
+
+                                        <span className="flex-1">
+                                            <b className="mr-1 text-xs">
+                                                {e.os}
+                                            </b>
+                                            {e.descricao}
+                                        </span>
+
+                                        <span className="text-xs text-[#6B7488]">
+                                            {e.usuario || ""}
+                                        </span>
+                                    </div>
+                                ),
+                            )}
+                        </div>
+                    </div>
+
+                    {pagaPeloSite && (
+                        <div className="w-full shrink-0 rounded-xl border border-[#E1E5EC] bg-white p-4 lg:w-[310px]">
+                            <div className="mb-2 text-lg font-extrabold">Pago pela Loja On-line</div>
+                            <div className="mb-3 rounded-lg bg-[#EEF5D6] px-3 py-2 text-sm text-[#313C55]">
+                                Pagamento confirmado pela loja{pedidoLojaPago ? ` (pedido nº ${pedidoLojaPago})` : ""}. Não é preciso lançar recebimento.
+                            </div>
+                            {/* 23/11/2026: no cartão estreito (310 px) os três botões ficavam sobrepostos; aqui ficam um embaixo do outro. */}
+                            {pedidoLojaPago ? (<div className="[&_.grid]:grid-cols-1 [&_button]:min-h-11 [&_button]:whitespace-normal"><BotoesReciboLoja pedidoLojaId={pedidoLojaPago} /></div>) : null}
+                        </div>
+                    )}
+
+                    {podeReceber && (
+                        <div className="w-full shrink-0 rounded-xl border border-[#E1E5EC] bg-white p-4 lg:w-[310px]">
+                            <div className="mb-3 text-lg font-extrabold">
+                                Registrar recebimento
+                            </div>
+
+                            <div className="mb-3 grid grid-cols-2 gap-2">
+                                <Campo rotulo="Forma">
+                                    <select
+                                        className={inputCls}
+                                        value={
+                                            rec.forma_pagamento
+                                        }
+                                        onChange={(e) =>
+                                            setRec({
+                                                ...rec,
+                                                forma_pagamento:
+                                                    e.target.value,
+                                            })
+                                        }
+                                    >
+                                        {FORMAS.map((f) => (
+                                            <option
+                                                key={f}
+                                                value={f}
+                                            >
+                                                {f.replace("_", " ")}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </Campo>
+
+                                <Campo rotulo="Data">
+                                    <input
+                                        type="date"
+                                        className={inputCls}
+                                        value={
+                                            rec.data_pagamento
+                                        }
+                                        max={hoje()}
+                                        onChange={(e) =>
+                                            setRec({
+                                                ...rec,
+                                                data_pagamento:
+                                                    e.target.value,
+                                            })
+                                        }
+                                    />
+                                </Campo>
+                            </div>
+
+                            <div className="mb-3">
+                                <Campo rotulo="Valor">
+                                    <input
+                                        inputMode="decimal"
+                                        className={inputCls}
+                                        placeholder="0,00"
+                                        value={rec.valor}
+                                        onChange={(e) =>
+                                            setRec({
+                                                ...rec,
+                                                valor: e.target.value,
+                                            })
+                                        }
+                                    />
+                                </Campo>
+                            </div>
+
+                            {rec.forma_pagamento === "PIX" || rec.forma_pagamento === "TRANSFERENCIA" ? (
+                                <div className="mb-3">
+                                    <Campo rotulo={rec.forma_pagamento === "PIX" ? "Pix recebido por" : "Banco da transferência"}>
+                                        <select className={inputCls} value={rec.conta_chave} onChange={(e) => setRec({ ...rec, conta_chave: e.target.value })}>
+                                            {rec.forma_pagamento === "PIX" ? (
+                                                <>
+                                                    <option value="ITAU">Pix CNPJ · Itaú</option>
+                                                    <option value="SICREDI">Link de pagamento · Sicredi</option>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <option value="ITAU">Itaú</option>
+                                                    <option value="SICREDI">Sicredi</option>
+                                                    <option value="BB">Banco do Brasil</option>
+                                                </>
+                                            )}
+                                        </select>
+                                    </Campo>
+                                </div>
+                            ) : null}
+
+                            {ehCartaoRec ? (
+                                <div className="mb-3 grid grid-cols-2 gap-2">
+                                    <Campo rotulo="NSU / DOC *">
+                                        <input inputMode="numeric" className={inputCls} placeholder="do comprovante" value={rec.nsu} onChange={(e) => setRec({ ...rec, nsu: e.target.value })} />
+                                    </Campo>
+                                    <Campo rotulo="Bandeira">
+                                        <select className={inputCls} value={rec.bandeira} onChange={(e) => setRec({ ...rec, bandeira: e.target.value })}>
+                                            <option value="">Escolha</option>
+                                            {["Visa", "Master", "Elo", "Amex", "Hipercard"].map((b) => (
+                                                <option key={b}>{b}</option>
+                                            ))}
+                                        </select>
+                                    </Campo>
+                                    <Campo rotulo="Máquina">
+                                        <select className={inputCls} value={rec.maquina} onChange={(e) => setRec({ ...rec, maquina: e.target.value })}>
+                                            <option value="424">…424 · OS</option>
+                                            <option value="423">…423 · escritório</option>
+                                        </select>
+                                    </Campo>
+                                    {rec.forma_pagamento === "CARTAO_CREDITO" ? (
+                                        <Campo rotulo="Parcelas">
+                                            <select className={inputCls} value={rec.parcelas} onChange={(e) => setRec({ ...rec, parcelas: e.target.value })}>
+                                                {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((n) => (
+                                                    <option key={n} value={n}>
+                                                        {n === "1" ? "À vista" : `${n}x`}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </Campo>
+                                    ) : null}
+                                </div>
+                            ) : null}
+
+                            {rec.forma_pagamento === "CHEQUE" ? (
+                                <div className="mb-3 grid grid-cols-2 gap-2">
+                                    <Campo rotulo="Número *">
+                                        <input className={inputCls} value={rec.cheque_numero} onChange={(e) => setRec({ ...rec, cheque_numero: e.target.value })} />
+                                    </Campo>
+                                    <Campo rotulo="Bom para *">
+                                        <input type="date" className={inputCls} value={rec.cheque_bom_para} onChange={(e) => setRec({ ...rec, cheque_bom_para: e.target.value })} />
+                                    </Campo>
+                                    <Campo rotulo="Banco do cheque">
+                                        <input className={inputCls} value={rec.cheque_banco} onChange={(e) => setRec({ ...rec, cheque_banco: e.target.value })} />
+                                    </Campo>
+                                </div>
+                            ) : null}
+
+                            {linha.tipo === "PRF" ? (
+                                <div className="mb-3">
+                                    <Campo rotulo="ISS retido pela Prefeitura">
+                                        <input inputMode="decimal" className={inputCls} placeholder="0,00" value={rec.iss_retido} onChange={(e) => setRec({ ...rec, iss_retido: e.target.value })} />
+                                    </Campo>
+                                    <div className="mt-1 text-xs text-[#5B6478]">Lance o valor cheio da NF. O ISS retido fica registrado e o banco recebe o valor sem ele.</div>
+                                </div>
+                            ) : null}
+
+                            <div className="mb-3">
+                                <Campo rotulo="Observação">
+                                    <textarea
+                                        className={inputCls}
+                                        rows={2}
+                                        value={rec.observacao}
+                                        onChange={(e) =>
+                                            setRec({
+                                                ...rec,
+                                                observacao:
+                                                    e.target.value,
+                                            })
+                                        }
+                                    />
+                                </Campo>
+                            </div>
+
+                            <div className="mb-3">
+                                <Campo rotulo={semComprovante ? "Comprovante (opcional no dinheiro)" : "Comprovante *"}>
+                                    <input
+                                        key={inputArquivo}
+                                        type="file"
+                                        accept="image/*,application/pdf"
+                                        className="block w-full text-sm text-[#313C55] file:mr-3 file:rounded-lg file:border-0 file:bg-[#313C55] file:px-3 file:py-2 file:text-sm file:font-bold file:text-white"
+                                        onChange={(e) => escolherArquivo(e.target.files?.[0] || null)}
+                                    />
+                                </Campo>
+                                <div className="mt-1 text-xs text-[#6B7488]">
+                                    {semComprovante ? "Dinheiro: sem comprovante (o Financeiro confere pelo caixa)." : "Foto ou PDF, até 15 MB."}
+                                </div>
+                            </div>
+
+                            <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-sm">
+                                Saldo após o lançamento:{" "}
+                                <b>{brl(saldoApos)}</b>
+                                <br />
+                                <span className="text-[#6B7488]">
+                                    A NP continua aberta até o saldo
+                                    zerar.
+                                </span>
+                            </div>
+
+                            <Botao
+                                primario
+                                disabled={salvando || !rec.valor || (!semComprovante && !arquivo)}
+                                onClick={() => void lancar()}
+                            >
+                                {salvando
+                                    ? "Lançando…"
+                                    : "Lançar recebimento"}
+                            </Botao>
+                        </div>
+                    )}
+                </div>
+
+                {estorno && (
+                    <Modal
+                        titulo="Estornar recebimento"
+                        sub="Somente administrador · o lançamento fica no histórico, marcado como estornado"
+                        onFechar={() => setEstorno(null)}
+                    >
+                        <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3">
+                            {dataBR(estorno.data_pagamento)} ·{" "}
+                            {String(
+                                estorno.forma_pagamento,
+                            ).replace("_", " ")}{" "}
+                            · <b>{brl(estorno.valor)}</b>
+                        </div>
+
+                        <Campo rotulo="Motivo (obrigatório)">
+                            <textarea
+                                className={inputCls}
+                                rows={2}
+                                value={motivoEstorno}
+                                onChange={(e) =>
+                                    setMotivoEstorno(
+                                        e.target.value,
+                                    )
+                                }
+                            />
+                        </Campo>
+
+                        <div className="my-3 rounded-lg border border-[#F2CB3F] bg-[#FFF8E1] p-3 text-sm">
+                            Depois do estorno o saldo volta e a
+                            nota promissória volta a ABERTA.
+                        </div>
+
+                        <div className="flex justify-end gap-2">
+                            <Botao onClick={() => setEstorno(null)}>
+                                Cancelar
+                            </Botao>
+
+                            <Botao
+                                perigo
+                                disabled={
+                                    salvando ||
+                                    !motivoEstorno.trim()
+                                }
+                                onClick={() =>
+                                    void executar(
+                                        () =>
+                                            osPost(
+                                                "financeiro_estornar_pagamento",
+                                                {
+                                                    pagamento_id:
+                                                        estorno.id,
+                                                    motivo: motivoEstorno,
+                                                },
+                                            ),
+                                        "Estorno registrado.",
+                                    ).then(() =>
+                                        setEstorno(null),
+                                    )
+                                }
+                            >
+                                Confirmar estorno
+                            </Botao>
+                        </div>
+                    </Modal>
+                )}
+
+                {conv && (
+                    <Modal
+                        titulo="Converter para Prefeitura + Diferença"
+                        sub={`Somente administrador · a OS ${linha.numero_os} fica no histórico como CONVERTIDA`}
+                        onFechar={() => setConv(null)}
+                    >
+                        <div className="mb-3 grid grid-cols-1 gap-2">
+                            <Campo rotulo="Prefeitura">
+                                <select
+                                    className={inputCls}
+                                    value={conv.convenio}
+                                    onChange={(e) =>
+                                        setConv({
+                                            ...conv,
+                                            convenio:
+                                                e.target.value,
+                                            previa: null,
+                                        })
+                                    }
+                                >
+                                    <option value="">
+                                        Selecione
+                                    </option>
+
+                                    {prefeituras.map((p: any) => (
+                                        <option
+                                            key={p.codigo}
+                                            value={p.codigo}
+                                        >
+                                            {p.nome}
+                                        </option>
+                                    ))}
+                                </select>
+                            </Campo>
+                        </div>
+
+                        {[
+                            [
+                                "tanatopraxia_autorizada",
+                                "A Prefeitura autorizou a tanatopraxia?",
+                            ],
+                            [
+                                "translado_autorizado",
+                                "A Prefeitura autorizou o translado?",
+                            ],
+                        ].map(([k, r]) => (
+                            <div
+                                key={k}
+                                className="mb-2 flex items-center justify-between rounded-lg border border-[#F2CB3F] bg-[#FFF8E1] px-3 py-2 text-sm font-bold"
+                            >
+                                <span>{r}</span>
+
+                                <span className="inline-flex overflow-hidden rounded-lg">
+                                    {[
+                                        ["1", "Sim"],
+                                        ["0", "Não"],
+                                    ].map(([v, t]) => (
+                                        <button
+                                            key={v}
+                                            type="button"
+                                            onClick={() =>
+                                                setConv({
+                                                    ...conv,
+                                                    [k]: v,
+                                                    previa: null,
+                                                })
+                                            }
+                                            className={`px-3 py-1 ${conv[k] === v
+                                                    ? "bg-[#313C55] text-white"
+                                                    : "border border-[#E1E5EC] bg-white text-[#6B7488]"
+                                                }`}
+                                        >
+                                            {t}
+                                        </button>
+                                    ))}
+                                </span>
+                            </div>
+                        ))}
+
+                        <div className="my-3">
+                            <Campo rotulo="Motivo (obrigatório)">
+                                <textarea
+                                    className={inputCls}
+                                    rows={2}
+                                    value={conv.motivo}
+                                    onChange={(e) =>
+                                        setConv({
+                                            ...conv,
+                                            motivo: e.target.value,
+                                        })
+                                    }
+                                />
+                            </Campo>
+                        </div>
+
+                        {conv.previa ? (
+                            <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-sm">
+                                <table className="mb-2 w-full text-xs">
+                                    <thead>
+                                        <tr className="text-left text-[#6B7488]">
+                                            <th>Item</th>
+                                            <th className="text-right">
+                                                Lançado
+                                            </th>
+                                            <th className="pl-2">
+                                                Regra
+                                            </th>
+                                            <th className="text-right">
+                                                Família
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {conv.previa.itens.map(
+                                            (
+                                                i: any,
+                                                n: number,
+                                            ) => (
+                                                <tr
+                                                    key={n}
+                                                    className="border-t border-[#E1E5EC]"
+                                                >
+                                                    <td className="py-1">
+                                                        {i.item}
+                                                    </td>
+                                                    <td className="text-right">
+                                                        {brl(
+                                                            i.lancado,
+                                                        )}
+                                                    </td>
+                                                    <td className="pl-2 text-[#6B7488]">
+                                                        {i.regra}
+                                                    </td>
+                                                    <td className="text-right font-bold">
+                                                        {brl(
+                                                            i.diferenca,
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ),
+                                        )}
+                                    </tbody>
+                                </table>
+
+                                <div>
+                                    Prefeitura (pacote + serviços
+                                    autorizados):{" "}
+                                    <b>
+                                        {brl(
+                                            conv.previa
+                                                .valor_prefeitura,
+                                        )}
+                                    </b>
+                                </div>
+
+                                <div>
+                                    Família (diferença por item):{" "}
+                                    <b>
+                                        {brl(
+                                            conv.previa
+                                                .valor_familia,
+                                        )}
+                                    </b>{" "}
+                                    · já pago{" "}
+                                    {brl(conv.previa.ja_pago)}
+                                </div>
+
+                                <div className="mt-1 font-bold">
+                                    {conv.previa.precisa_assinar
+                                        ? `Novo saldo ${brl(conv.previa.novo_saldo)} — o responsável assina a Dif.Prf com a nova NP; a NP antiga fica SUBSTITUÍDA.`
+                                        : conv.previa
+                                            .credito_a_devolver >
+                                            0
+                                            ? `Crédito a devolver à família: ${brl(conv.previa.credito_a_devolver)}.`
+                                            : "A diferença já está quitada."}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-xs leading-5">
+                                A diferença é calculada{" "}
+                                <b>por item</b>: item do pacote com
+                                o modelo padrão fica coberto; item
+                                trocado paga o valor lançado menos
+                                o valor do item no contrato; item
+                                fora do pacote ou serviço não
+                                autorizado fica inteiro na Dif.Prf.
+                                Veja a prévia antes de confirmar.
+                            </div>
+                        )}
+
+                        <div className="flex justify-end gap-2">
+                            <Botao onClick={() => setConv(null)}>
+                                Cancelar
+                            </Botao>
+
+                            {!conv.previa ? (
+                                <Botao
+                                    primario
+                                    disabled={
+                                        salvando ||
+                                        !conv.convenio
+                                    }
+                                    onClick={() =>
+                                        void osGet(
+                                            "converter_prefeitura",
+                                            {
+                                                os_id: osId,
+                                                convenio:
+                                                    conv.convenio,
+                                                tanatopraxia_autorizada:
+                                                    conv.tanatopraxia_autorizada,
+                                                translado_autorizado:
+                                                    conv.translado_autorizado,
+                                                simular: "1",
+                                            },
+                                        )
+                                            .then((r) =>
+                                                setConv({
+                                                    ...conv,
+                                                    previa: r.dados,
+                                                }),
+                                            )
+                                            .catch((e) =>
+                                                setErro(
+                                                    e?.message ||
+                                                    "Não foi possível calcular a prévia.",
+                                                ),
+                                            )
+                                    }
+                                >
+                                    Ver prévia
+                                </Botao>
+                            ) : (
+                                <Botao
+                                    primario
+                                    disabled={
+                                        salvando ||
+                                        !conv.motivo.trim()
+                                    }
+                                    onClick={() =>
+                                        void executar(
+                                            () =>
+                                                osPost(
+                                                    "converter_prefeitura",
+                                                    {
+                                                        os_id: osId,
+                                                        convenio:
+                                                            conv.convenio,
+                                                        tanatopraxia_autorizada:
+                                                            conv.tanatopraxia_autorizada,
+                                                        translado_autorizado:
+                                                            conv.translado_autorizado,
+                                                        motivo: conv.motivo,
+                                                    },
+                                                ),
+                                            "OS convertida.",
+                                        ).then((r) =>
+                                            r && onFechar(),
+                                        )
+                                    }
+                                >
+                                    Confirmar conversão
+                                </Botao>
+                            )}
+                        </div>
+                    </Modal>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/* ====================================================================== */
+/* OS da Prefeitura no Financeiro: cada pacote / serviço de contrato com o valor lançado e, embaixo, só os itens usados no atendimento. */
+
+type GrupoContrato = {
+    tipo: "PACOTE" | "CONTRATO" | "SEM_VALOR";
+    titulo: string;
+    subtitulo: string;
+    valor: number;
+    itens: { nome: string; categoria: string; quantidade: number; detalhe: string }[];
+};
+
+function ComposicaoContrato({ osId, versao = 0 }: { osId: number; versao?: number }) {
+    const [d, setD] = useState<{ grupos: GrupoContrato[]; soma: number; valor_total: number } | null>(null);
+    const [erro, setErro] = useState("");
+    useEffect(() => {
+        let vivo = true;
+        osGet("composicao_contrato_os", { os_id: osId })
+            .then((r) => vivo && (setD(r.dados), setErro("")))
+            .catch((e) => vivo && setErro(e?.message || "Não foi possível carregar a composição da OS."));
+        return () => {
+            vivo = false;
+        };
+    }, [osId, versao]);
+
+    if (erro) return <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</div>;
+    if (!d) return <div className="py-2 text-sm text-[#6B7488]">Carregando…</div>;
+    if (!d.grupos.length) return <div className="py-2 text-sm text-[#6B7488]">Nenhum pacote ou serviço lançado nesta OS.</div>;
+    const diverge = Math.abs(Number(d.soma) - Number(d.valor_total)) > 0.005;
+
+    return (
+        <div>
+            <div className="flex flex-col gap-2.5">
+                {d.grupos.map((g, i) => (
+                    <div key={i} className="rounded-xl border border-[#E1E5EC] bg-white">
+                        <div className="flex items-start gap-3 border-b border-[#E1E5EC] px-4 py-3">
+                            <div className="min-w-0 flex-1">
+                                <div className="text-[15px] font-extrabold leading-tight text-[#313C55]">{g.titulo}</div>
+                                <div className="text-xs text-[#6B7488]">{g.subtitulo}</div>
+                            </div>
+                            <div className="whitespace-nowrap text-lg font-extrabold text-[#313C55]">{g.tipo === "SEM_VALOR" ? "—" : brl(g.valor)}</div>
+                        </div>
+                        {g.itens.length ? (
+                            <ul className="px-4 py-2 text-sm">
+                                {g.itens.map((it, j) => (
+                                    <li key={j} className="flex items-baseline gap-2 py-0.5">
+                                        <span className="text-[#6B7488]">•</span>
+                                        <span className="min-w-0 flex-1">
+                                            <b className="font-bold text-[#313C55]">{it.nome}</b>
+                                            <span className="text-xs text-[#6B7488]">
+                                                {" "}· {it.categoria}
+                                                {it.quantidade > 1 ? ` · ${it.quantidade} un.` : ""}
+                                                {it.detalhe ? ` · ${it.detalhe}` : ""}
+                                            </span>
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <div className="px-4 py-2 text-xs text-[#6B7488]">Nenhum item do atendimento neste pacote.</div>
+                        )}
+                    </div>
+                ))}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-3 text-right">
+                {diverge ? (
+                    <span className="rounded-lg bg-[#FCF3CC] px-2.5 py-1 text-xs font-bold text-[#313C55]">
+                        Soma dos pacotes e serviços: {brl(d.soma)} (diferente do total gravado)
+                    </span>
+                ) : null}
+                <span className="text-lg font-extrabold text-[#313C55]">Total da OS: {brl(d.valor_total)}</span>
+            </div>
+        </div>
+    );
+}
+
+function Modal({
+    titulo,
+    sub,
+    children,
+    onFechar,
+}: {
+    titulo: string;
+    sub?: string;
+    children: React.ReactNode;
+    onFechar: () => void;
+}) {
+    /* 23/11/2026: por portal no <body> (o cabeçalho do app ficava por cima) e com rolagem própria (o botão de confirmar ficava fora da tela). */
+    if (typeof document === "undefined") return null;
+    return createPortal(
+        <div
+            data-os-tela
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-[rgba(49,60,85,0.45)] p-4"
+            onClick={onFechar}
+        >
+            <div
+                className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl bg-white p-6 text-[#313C55] shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="text-xl font-extrabold">
+                    {titulo}
+                </div>
+                {sub && (
+                    <div className="mb-4 text-sm text-[#6B7488]">
+                        {sub}
+                    </div>
+                )}
+                {children}
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
+/** 09/11/2026: link "comprovante" do lançamento pago pelo site — abre o recibo do pedido da loja. */
+function BotaoReciboLancamento({ pedidoLoja }: { pedidoLoja: string }) {
+    const [gerando, setGerando] = useState(false);
+    const abrir = async () => {
+        const aba = window.open("", "_blank");
+        setGerando(true);
+        try {
+            const { obterReciboLoja } = await import("@/app/coroa-de-flores/reciboLoja");
+            const r = await obterReciboLoja(pedidoLoja);
+            const url = URL.createObjectURL(r.blob);
+            if (aba) aba.location.href = url;
+            else window.location.href = url;
+            setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        } catch (e: any) {
+            aba?.close();
+            alert(e?.message || "Não foi possível abrir o comprovante da loja.");
+        } finally {
+            setGerando(false);
+        }
+    };
+    return (
+        <button type="button" className="ml-2 font-bold text-[#3D6A99] dark:text-[#A9C3E0]" disabled={gerando} onClick={() => void abrir()}>
+            {gerando ? "gerando…" : "comprovante"}
+        </button>
+    );
+}

@@ -479,6 +479,8 @@ function DetalheOS({
     const [estorno, setEstorno] = useState<any>(null);
     const [motivoEstorno, setMotivoEstorno] = useState("");
     const [conv, setConv] = useState<any>(null);
+    // 25/11/2026: autorização da Prefeitura que chegou depois da conversão (translado/tanatopraxia da Dif.Prf → Prf)
+    const [autPrf, setAutPrf] = useState<{ servico: "TRANSLADO" | "TANATOPRAXIA"; motivo: string } | null>(null);
     const [prefeituras, setPrefeituras] = useState<any[]>([]);
 
     const osId = linha.os_id;
@@ -713,6 +715,12 @@ function DetalheOS({
                                     Converter para Prefeitura
                                 </Botao>
                             )}
+
+                        {linha.tipo === "PRF" && linha.os_origem_id && statusAtual === "ABERTA" && (
+                            <Botao onClick={() => setAutPrf({ servico: "TRANSLADO", motivo: "" })}>
+                                Autorizar serviço da Prefeitura
+                            </Botao>
+                        )}
 
                         {statusAtual === "ABERTA" && linha.status !== "CANCELADA" && linha.status !== "CONVERTIDA" && (
                             <Botao primario onClick={() => { setMotivoFechar(""); setFecharOS(true); }}>
@@ -1424,6 +1432,75 @@ function DetalheOS({
                                 }
                             >
                                 Confirmar estorno
+                            </Botao>
+                        </div>
+                    </Modal>
+                )}
+
+                {autPrf && (
+                    <Modal
+                        titulo="Autorizar serviço da Prefeitura"
+                        sub={`OS ${linha.numero_os} · gerada por conversão`}
+                        onFechar={() => setAutPrf(null)}
+                    >
+                        <div className="mb-3 rounded-lg bg-[#F4F6F9] p-3 text-xs leading-5">
+                            Para quando a Prefeitura autoriza o serviço <b>depois</b> da conversão. Ele sai da Dif.Prf e entra nesta OS
+                            pelo preço de contrato (translado: km × valor do km). Tanatopraxia avançada ou embalsamamento: a família continua
+                            pagando só o que passa da tanatopraxia de contrato. A Dif.Prf precisa estar aberta.
+                        </div>
+
+                        <div className="mb-2 flex items-center justify-between rounded-lg border border-[#F2CB3F] bg-[#FFF8E1] px-3 py-2 text-sm font-bold">
+                            <span>Serviço autorizado</span>
+                            <span className="inline-flex overflow-hidden rounded-lg">
+                                {([
+                                    ["TRANSLADO", "Translado"],
+                                    ["TANATOPRAXIA", "Tanatopraxia"],
+                                ] as const).map(([v, t]) => (
+                                    <button
+                                        key={v}
+                                        type="button"
+                                        onClick={() => setAutPrf({ ...autPrf, servico: v })}
+                                        className={`px-3 py-1 ${autPrf.servico === v
+                                            ? "bg-[#313C55] text-white"
+                                            : "border border-[#E1E5EC] bg-white text-[#6B7488]"
+                                            }`}
+                                    >
+                                        {t}
+                                    </button>
+                                ))}
+                            </span>
+                        </div>
+
+                        <div className="my-3">
+                            <Campo rotulo="Motivo (obrigatório)">
+                                <textarea
+                                    className={inputCls}
+                                    rows={2}
+                                    value={autPrf.motivo}
+                                    placeholder="Ex.: Prefeitura autorizou o translado depois da conversão"
+                                    onChange={(e) => setAutPrf({ ...autPrf, motivo: e.target.value })}
+                                />
+                            </Campo>
+                        </div>
+
+                        <div className="flex justify-end gap-2">
+                            <Botao onClick={() => setAutPrf(null)}>Cancelar</Botao>
+                            <Botao
+                                primario
+                                disabled={salvando || !autPrf.motivo.trim()}
+                                onClick={() =>
+                                    void executar(
+                                        () =>
+                                            osPost("autorizar_servico_prefeitura", {
+                                                os_id: osId,
+                                                servico: autPrf.servico,
+                                                motivo: autPrf.motivo.trim(),
+                                            }),
+                                        "Serviço passado para a Prefeitura.",
+                                    ).then((r) => r && setAutPrf(null))
+                                }
+                            >
+                                Confirmar
                             </Botao>
                         </div>
                     </Modal>
