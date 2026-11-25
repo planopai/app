@@ -6,8 +6,9 @@
  *  - Celular (60 px): título da tela, pílula Online, tema e sino. O menu é a barra de baixo; o botão ☰ só aparece
  *    nas telas em que a barra de baixo não está (ex.: Chat da Aurora).
  * Não há mais os botões de Início e de Chat (já estão nos atalhos), a seta de voltar nem o seletor de cores.
- * 25/11/2026: ícone fixo da Aurora (amarelo), em todas as telas, no computador e no celular. Abre o painel da Aurora
- * (app-shell.tsx) pelo evento "pai-aurora"; o botão flutuante do canto saiu.
+ * 25/11/2026: ícone fixo da Aurora, em todas as telas, no computador e no celular, no mesmo estilo dos outros ícones.
+ * Abre o painel da Aurora (app-shell.tsx) pelo evento "pai-aurora". Nas páginas de navegação (Início e entradas dos
+ * módulos) o botão flutuante do canto também aparece: o cabeçalho avisa o app-shell pelo evento "pai-aurora-flutuante".
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -90,6 +91,12 @@ export function SiteHeader() {
   /* 25/11/2026: Aurora fixa no cabeçalho (o painel fica no app-shell) */
   const noChat = pathname === "/chat" || pathname.startsWith("/chat/");
   const [auroraAberta, setAuroraAberta] = useState(false);
+  // páginas de navegação: o Início e a entrada de um módulo (só a lista de opções, sem estar dentro de uma tela)
+  const paginaDeNavegacao = pathname === "/" || (!!modulo && !item && !fixo && pathname === (modulo.hub.href.replace(/\/+$/, "") || "/"));
+  useEffect(() => {
+    (window as any).__paiAuroraFlutuante = paginaDeNavegacao;
+    window.dispatchEvent(new CustomEvent("pai-aurora-flutuante", { detail: { mostrar: paginaDeNavegacao } }));
+  }, [paginaDeNavegacao, pathname]);
   useEffect(() => {
     const estado = (e: Event) => setAuroraAberta(!!(e as CustomEvent).detail?.aberta);
     window.addEventListener("pai-aurora-estado", estado);
@@ -174,13 +181,11 @@ export function SiteHeader() {
               aria-label={auroraAberta ? "Fechar a Aurora" : "Abrir a Aurora"}
               aria-expanded={auroraAberta}
               title="Aurora"
-              className={`grid size-10 shrink-0 place-items-center rounded-xl border-2 transition md:size-11 ${
-                auroraAberta
-                  ? "border-[#313C55] bg-[#313C55] text-[#F2CB3F] dark:border-[#F2CB3F]"
-                  : "border-[#F2CB3F] bg-[#FFF4C2] text-[#313C55] hover:bg-[#FBE7A1] dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F] dark:hover:bg-[#F2CB3F]/25"
+              className={`grid size-10 shrink-0 place-items-center rounded-lg md:size-11 ${
+                auroraAberta ? "bg-[#E9EFF6] text-[#313C55] dark:bg-[#3D6A99]/20 dark:text-white" : "hover:bg-accent"
               }`}
             >
-              <IconeAurora size={22} strokeWidth={2} />
+              <IconeAurora size={21} />
             </button>
           )}
 
