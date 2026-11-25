@@ -331,7 +331,7 @@ export function AbaCanais({ avisar }: { avisar: (m: string, erro?: boolean) => v
                                     {n.estado === "open" ? (
                                         <button type="button" className={btnSec} disabled={ocupado} onClick={() => acao("numero_desconectar", n, `Desconectar o número ${n.nome}? Para voltar, será preciso ler um QR Code novo.`)}>Desconectar</button>
                                     ) : null}
-                                    <button type="button" className={btnPerigo} disabled={ocupado} onClick={() => acao("numero_excluir", n, `Excluir o número ${n.nome}? Ele sai do conector; as mensagens já recebidas ficam guardadas.`)}>Excluir</button>
+                                    <button type="button" className={btnPerigo} disabled={ocupado} onClick={() => acao("numero_excluir", n, `Excluir o número ${n.nome}?\n\nPara trocar de aparelho ou reconectar o mesmo chip, use "Desconectar" e leia o QR Code de novo. Excluir é para quando o chip deixa de ser usado.\n\nAs conversas ficam guardadas e, se este mesmo chip for conectado de novo, voltam sozinhas para ele.`)}>Excluir</button>
                                 </div>
                             </div>
                         );

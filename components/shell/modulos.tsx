@@ -162,7 +162,7 @@ export const MODULOS: Modulo[] = [
         selo: "estoque",
         hub: { href: "/modulo-estoque", slug: "modulo-estoque" },
         itens: [
-            { id: "estoque", titulo: "Estoque", desc: "Produtos, entradas e conferência", href: "/estoque", slugs: ["estoque", "geral"], icone: IconPackage, selo: "estoque", alternativas: [{ slug: "estoque", href: "/estoque" }, { slug: "geral", href: "/geral" }] },
+            { id: "estoque", titulo: "Estoque", desc: "Produtos, transferências e conferência", href: "/estoque", slugs: ["estoque", "geral"], icone: IconPackage, selo: "estoque", alternativas: [{ slug: "estoque", href: "/estoque" }, { slug: "geral", href: "/geral" }] },
             { id: "entrada-estoque", titulo: "Entrada de Mercadoria", desc: "Nota do fornecedor, itens e pagamento", href: "/entrada-estoque", slugs: ["entrada-estoque"], icone: IconPackageImport }, // 25/11/2026
             { id: "consulta", titulo: "Consulta", desc: "Pesquisa rápida de itens", href: "/produtos", slugs: ["produtos"], icone: IconSearch },
             { id: "assistencia", titulo: "Assistência", desc: "Administração de materiais", href: "/assistencia", slugs: ["assistencia"], icone: IconBuildingStore },

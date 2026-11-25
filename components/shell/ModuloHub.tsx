@@ -62,6 +62,8 @@ const CARTOES: Record<string, Cartao[]> = {
         { rotulo: "Propostas paradas", chave: "propostasAtrasadas", sub: "há mais de 1 dia útil", href: "/propostas-adesao", estilo: "alerta" },
     ],
 };
+// 25/11/2026: as Propostas de Adesão foram para o Comercial (Adesões): os cartões aparecem lá também.
+CARTOES.comercial = [...(CARTOES.comercial || []), ...CARTOES.administrativo];
 // 17/11/2026: Requisições e Estoque viraram um módulo só (id "estoque"): mostra os cartões dos dois.
 CARTOES.estoque = [...CARTOES.requisicoes, ...CARTOES.estoque];
 
