@@ -815,6 +815,23 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
 
 /* ---------------- gravador de áudio ---------------- */
 /**
+ * 25/11/2026: mensagem certa para cada falha do microfone (antes, qualquer erro virava "sem acesso", mesmo sem microfone
+ * ligado no computador ou com ele ocupado por outro programa). O detalhe também vai para o console (F12) para o suporte.
+ */
+function erroMicrofone(e: unknown): string {
+    const nome = (e as { name?: string })?.name || "";
+    console.error("[microfone]", e);
+    if (!navigator.mediaDevices?.getUserMedia) return "Este navegador não permite gravar áudio aqui. Use o Chrome ou o Edge atualizados.";
+    if (nome === "NotAllowedError" || nome === "SecurityError" || nome === "PermissionDeniedError")
+        return "O microfone está bloqueado. Libere no cadeado ao lado do endereço (ou ⋮ › Informações do app) e, no Windows, em Configurações › Privacidade e segurança › Microfone.";
+    if (nome === "NotFoundError" || nome === "DevicesNotFoundError" || nome === "OverconstrainedError")
+        return "Nenhum microfone encontrado neste aparelho. Conecte um fone com microfone (ou webcam) e confira em Configurações › Sistema › Som › Entrada.";
+    if (nome === "NotReadableError" || nome === "TrackStartError" || nome === "AbortError")
+        return "O microfone está sendo usado por outro programa (ex.: chamada no Teams, Zoom ou WhatsApp) ou não respondeu. Feche o outro programa e tente de novo.";
+    return `Não foi possível começar a gravar (${nome || (e as Error)?.message || "erro desconhecido"}). Atualize a página e tente de novo.`;
+}
+
+/**
  * Conversa com cliente do WhatsApp (mp3 = true): capta o microfone direto e entrega MP3, o formato que o WhatsApp
  * sempre aceita (o MP4 do Safari e o WebM do Chrome são recusados pela Meta). Conversa da equipe: MediaRecorder, como antes.
  */
@@ -843,7 +860,7 @@ function Gravador({ onPronto, onCancelar, mp3 = false }: { onPronto: (b: Blob, m
                 setSeg(s2);
                 if (s2 >= 300) pararMp3(); // limite de 5 minutos
             }, 500);
-        }).catch(() => setErro("Sem acesso ao microfone. Libere o microfone para o app nas configurações do aparelho."));
+        }).catch((e) => setErro(erroMicrofone(e)));
         const pararMp3 = async () => {
             const g = gravMp3.current;
             if (!g) return;
@@ -898,7 +915,7 @@ function Gravador({ onPronto, onCancelar, mp3 = false }: { onPronto: (b: Blob, m
                 setSeg(s2);
                 if (s2 >= 300 && r.state === "recording") r.stop(); // limite de 5 minutos
             }, 500);
-        }).catch(() => setErro("Sem acesso ao microfone. Libere o microfone para o app nas configurações do aparelho."));
+        }).catch((e) => setErro(erroMicrofone(e)));
         return () => {
             if (t) clearInterval(t);
             if (rec.current?.state === "recording") {
