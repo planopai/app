@@ -9,6 +9,7 @@ import {
     IconChevronRight,
     IconFileText,
     IconFlower,
+    IconMessages,
     IconPlus,
     IconSearch,
     IconStar,
@@ -231,18 +232,25 @@ export default function HomePage() {
                             </p>
                         </div>
 
-                        <div className="relative flex flex-wrap gap-3 pr-20 sm:pr-28 lg:mr-44 lg:pr-0">
+                        {/* 25/11/2026: botão do Messenger. No celular, "Novo atendimento" ocupa a linha e os outros dois ficam lado a lado. */}
+                        <div className="relative grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:gap-3 sm:pr-28 lg:mr-44 lg:pr-0">
                             {pronto && has("acompanhamento") ? (
-                                <Link href="/acompanhamento" className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-[14px] bg-[#F2CB3F] px-5 text-[15px] font-extrabold text-[#313C55]">
+                                <Link href="/acompanhamento" className="col-span-2 inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[14px] bg-[#F2CB3F] px-5 text-[15px] font-extrabold text-[#313C55]">
                                     <IconPlus size={18} />
                                     Novo atendimento
                                 </Link>
                             ) : null}
                             {/* 13/10/2026: atalho do Orçamento (página "orcamento"). 15/10/2026: abre a lista dos salvos; o novo é criado lá. */}
                             {pronto && has("orcamento") ? (
-                                <Link href="/orcamento" className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-[14px] border-[1.5px] border-white px-4 text-[15px] font-extrabold text-white hover:bg-white/10">
+                                <Link href="/orcamento" className="inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[14px] border-[1.5px] border-white px-4 text-[15px] font-extrabold text-white hover:bg-white/10">
                                     <IconFileText size={18} />
                                     Orçamentos
+                                </Link>
+                            ) : null}
+                            {temMessenger ? (
+                                <Link href="/messenger" className="inline-flex h-11 items-center justify-center gap-2 whitespace-nowrap rounded-[14px] border-[1.5px] border-white px-4 text-[15px] font-extrabold text-white hover:bg-white/10">
+                                    <IconMessages size={18} />
+                                    Messenger
                                 </Link>
                             ) : null}
                         </div>
