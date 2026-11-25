@@ -383,7 +383,7 @@ export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
                 : "";
 
     return {
-        ops: OPS.map((o) => ({ ...o, sel: o.k === op, go: () => (setOp(o.k), setErro(""), setProd(null), setQtd("1"), setCustoU("")) })),
+        ops: OPS.filter((o) => o.k !== "entrada").map((o) => ({ ...o, sel: o.k === op, go: () => (setOp(o.k), setErro(""), setProd(null), setQtd("1"), setCustoU("")) })), // 25/11/2026: a Entrada virou a tela /entrada-estoque
         op,
         isT: op === "transf",
         isE: op === "entrada",

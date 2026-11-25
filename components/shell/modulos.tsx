@@ -71,6 +71,7 @@ import { IconReceipt, IconCreditCard, IconAdjustmentsDollar } from "@tabler/icon
 import { IconBuildingBank } from "@tabler/icons-react"; // 12/11/2026: Tesouraria
 import { IconCash } from "@tabler/icons-react"; // 12/11/2026: Contas a receber
 import { IconReportMoney, IconChartLine, IconTargetArrow } from "@tabler/icons-react"; // 17/11/2026: DRE, Fluxo de Caixa e Provisão
+import { IconPackageImport } from "@tabler/icons-react"; // 25/11/2026: Entrada de Mercadoria
 
 export type Icone = React.ElementType<any>;
 
@@ -162,6 +163,7 @@ export const MODULOS: Modulo[] = [
         hub: { href: "/modulo-estoque", slug: "modulo-estoque" },
         itens: [
             { id: "estoque", titulo: "Estoque", desc: "Produtos, entradas e conferência", href: "/estoque", slugs: ["estoque", "geral"], icone: IconPackage, selo: "estoque", alternativas: [{ slug: "estoque", href: "/estoque" }, { slug: "geral", href: "/geral" }] },
+            { id: "entrada-estoque", titulo: "Entrada de Mercadoria", desc: "Nota do fornecedor, itens e pagamento", href: "/entrada-estoque", slugs: ["entrada-estoque"], icone: IconPackageImport }, // 25/11/2026
             { id: "consulta", titulo: "Consulta", desc: "Pesquisa rápida de itens", href: "/produtos", slugs: ["produtos"], icone: IconSearch },
             { id: "assistencia", titulo: "Assistência", desc: "Administração de materiais", href: "/assistencia", slugs: ["assistencia"], icone: IconBuildingStore },
             { id: "catalogo", titulo: "Catálogo", desc: "Itens e valores", href: "/catalogo", slugs: ["catalogo"], icone: IconBook },

@@ -671,7 +671,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
         if (m._aguardando) leitura = <ContagemEnvio ate={m._aguardando} />;
         else if (m._enviando) leitura = <Tiques estado="enviando" />;
         else if (m._falhaLocal) leitura = <span className="font-extrabold text-[#B42318] dark:text-[#FF9C92]">Não enviada</span>;
-        else if (conversa.tipo === "externo") {
+        else if (conversa.tipo === "externo" || conversa.tipo === "parceiro") { // 25/11/2026: WhatsApp Web também mostra enviada/entregue/lida/Falhou
             const st = m.status_envio;
             leitura = st === "falhou" ? <span className="font-extrabold text-[#B42318] dark:text-[#FF9C92]" title={m.erro_envio || ""}>Falhou</span>
                 : <Tiques estado={st === "lida" ? "lida" : st === "entregue" ? "entregue" : "enviada"} />;

@@ -29,10 +29,13 @@ const hhmm = (iso: string) => {
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
+// 25/11/2026: a Entrada saiu da aba Movimentações do Estoque e virou a tela Entrada de Mercadoria (/entrada-estoque,
+// chave entrada-estoque). modo "estoque" = Transferência e Confecção; modo "entrada" = só a Entrada.
+export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void, modo: "estoque" | "entrada" = "estoque") {
     const { depositos, usuarios, me, produtosAtivos, prodById, saldosMap, refreshInit, custosMediosMoveis } = n;
+    const opsDoModo = OPS.filter((o) => (modo === "entrada" ? o.k === "entrada" : o.k !== "entrada"));
 
-    const [op, setOp] = useState<Operacao>("transf");
+    const [op, setOp] = useState<Operacao>(modo === "entrada" ? "entrada" : "transf");
     const [erro, setErro] = useState("");
     const [busy, setBusy] = useState(false);
     const [confirmar, setConfirmar] = useState(false);
@@ -406,7 +409,7 @@ export function useMovimentacoes(n: EstoqueDados, avisar: (t: string) => void) {
                 : "";
 
     return {
-        ops: OPS.map((o) => ({ ...o, sel: o.k === op, go: () => (setOp(o.k), setErro(""), setProd(null), setQtd("1"), setCustoU("")) })),
+        ops: opsDoModo.map((o) => ({ ...o, sel: o.k === op, go: () => (setOp(o.k), setErro(""), setProd(null), setQtd("1"), setCustoU("")) })),
         op,
         isT: op === "transf",
         isE: op === "entrada",

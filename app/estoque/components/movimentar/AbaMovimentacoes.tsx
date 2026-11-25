@@ -471,13 +471,15 @@ export function AbaMovimentacoes({ v, m }: { v: MovimentacoesV; m: boolean }) {
     if (m) {
         return (
             <section style={{ display: "flex", flexDirection: "column", gap: "12px" }} aria-label="Movimentações">
-                <div className="segb">
-                    {v.ops.map((o) => (
-                        <button type="button" key={o.k} aria-pressed={o.sel} onClick={o.go}>
-                            {o.l}
-                        </button>
-                    ))}
-                </div>
+                {v.ops.length > 1 && (
+                    <div className="segb">
+                        {v.ops.map((o) => (
+                            <button type="button" key={o.k} aria-pressed={o.sel} onClick={o.go}>
+                                {o.l}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 <div className="box" style={{ padding: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
                     {v.isT && (
                         <>
@@ -582,7 +584,8 @@ export function AbaMovimentacoes({ v, m }: { v: MovimentacoesV; m: boolean }) {
 
     return (
         <section style={{ display: "flex", flexDirection: "column", gap: "14px" }} aria-label="Movimentações">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: "10px" }}>
+            {v.ops.length > 1 && (
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${v.ops.length},minmax(0,1fr))`, gap: "10px" }}>
                 {v.ops.map((o) => (
                     <button type="button" key={o.k} className="opt" aria-pressed={o.sel} onClick={o.go}>
                         <span className="chip">
@@ -595,11 +598,14 @@ export function AbaMovimentacoes({ v, m }: { v: MovimentacoesV; m: boolean }) {
                     </button>
                 ))}
             </div>
+            )}
 
             <div className="box" style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: "10px" }}>
-                    <h2 style={{ margin: "0", fontSize: "19px", fontWeight: "800" }}>{v.opTitulo}</h2>
-                </div>
+                {v.ops.length > 1 && (
+                    <div style={{ display: "flex", alignItems: "baseline", gap: "10px" }}>
+                        <h2 style={{ margin: "0", fontSize: "19px", fontWeight: "800" }}>{v.opTitulo}</h2>
+                    </div>
+                )}
 
                 {v.isT && (
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: "12px" }}>

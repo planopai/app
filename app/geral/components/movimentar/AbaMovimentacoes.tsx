@@ -541,7 +541,7 @@ export function AbaMovimentacoes({ v, m }: { v: MovimentacoesV; m: boolean }) {
 
     return (
         <section style={{ display: "flex", flexDirection: "column", gap: "14px" }} aria-label="Movimentações">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: "10px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${v.ops.length},minmax(0,1fr))`, gap: "10px" }}>
                 {v.ops.map((o) => (
                     <button type="button" key={o.k} className="opt" aria-pressed={o.sel} onClick={o.go}>
                         <span className="chip">

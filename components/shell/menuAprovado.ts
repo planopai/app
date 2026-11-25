@@ -26,7 +26,7 @@ export const MENU_APROVADO: ConfigMenu = {
         ]),
         m("estoque", "Requisições e Estoque", "Pedir, separar, guardar e contar produtos", "package", [
             ["dashboard-requisicoes", "Requisições"], ["solicitar-produto", "Requisições"], ["minhas-solicitacoes", "Requisições"], ["requisicoes", "Requisições"],
-            ["estoque", "Estoque"], ["dashboard-estoque", "Estoque"], ["consulta", "Estoque"], ["assistencia", "Estoque"], ["catalogo", "Estoque"],
+            ["estoque", "Estoque"], ["entrada-estoque", "Estoque"], ["dashboard-estoque", "Estoque"], ["consulta", "Estoque"], ["assistencia", "Estoque"], ["catalogo", "Estoque"],
             ["config-catalogo", "Estoque"], ["relatorio-sintetico", "Estoque"],
         ]),
         m("financeiro", "Financeiro", "OS, contas, caixas e resultados", "currency-dollar", [
