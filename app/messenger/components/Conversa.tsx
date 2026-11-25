@@ -560,11 +560,35 @@ function DadosMensagem({ m, conversa, eu, minha, onFechar }: { m: Mensagem; conv
 }
 
 /** Trecho da mensagem respondida, dentro do balão (como no WhatsApp). */
+/**
+ * 25/11/2026: cor fixa de cada pessoa nas conversas (nome, citação e iniciais), como no WhatsApp — a mesma pessoa tem
+ * sempre a mesma cor. Cada par é [tema claro, tema escuro], com contraste para ler nos dois.
+ */
+const CORES_PESSOAS: [string, string][] = [
+    ["#2563EB", "#7FB2FF"], ["#C2410C", "#FFA36B"], ["#7C3AED", "#C4A5FF"], ["#047857", "#5EE0B0"], ["#B91C1C", "#FF8A8A"],
+    ["#0E7490", "#67D8EE"], ["#A16207", "#F5C451"], ["#BE185D", "#FF8CC6"], ["#4D7C0F", "#B3E15C"], ["#4338CA", "#A5B0FF"],
+];
+function corDaPessoa(m: Pick<Mensagem, "autor_usuario_id" | "autor_contato_id" | "autor_nome">): [string, string] {
+    const chave = m.autor_usuario_id ? `u${m.autor_usuario_id}` : m.autor_contato_id ? `c${m.autor_contato_id}` : `n${m.autor_nome || ""}`;
+    let h = 0;
+    for (let i = 0; i < chave.length; i++) h = (h * 31 + chave.charCodeAt(i)) >>> 0;
+    return CORES_PESSOAS[h % CORES_PESSOAS.length];
+}
+/** style com as variáveis --cor-c (claro) e --cor-e (escuro), para usar com text-[var(--cor-c)] dark:text-[var(--cor-e)]. */
+function estiloCor(c: [string, string]): React.CSSProperties {
+    return { ["--cor-c" as string]: c[0], ["--cor-e" as string]: c[1] } as React.CSSProperties;
+}
+function iniciais(nome?: string | null) {
+    const p = (nome || "").trim().split(/\s+/).filter(Boolean);
+    return ((p[0]?.[0] || "?") + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
+}
+
 function Citacao({ m, eu }: { m: Mensagem | null | undefined; eu: number }) {
     const autor = !m ? "" : m.autor_tipo === "usuario" && m.autor_usuario_id === eu ? "Você" : m.autor_nome || "—";
+    const cor = m && autor !== "Você" && m.autor_tipo !== "sistema" ? corDaPessoa(m) : null;
     return (
-        <div className="mb-1 rounded-md border-l-4 border-[#3D6A99] bg-black/5 px-2.5 py-1.5 text-[14px] dark:border-[#A9BED6] dark:bg-white/10">
-            <div className="font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{autor || "Mensagem"}</div>
+        <div style={cor ? estiloCor(cor) : undefined} className={`mb-1 rounded-md border-l-4 bg-black/5 px-2.5 py-1.5 text-[14px] dark:bg-white/10 ${cor ? "border-[var(--cor-c)] dark:border-[var(--cor-e)]" : "border-[#3D6A99] dark:border-[#A9BED6]"}`}>
+            <div className={`font-extrabold ${cor ? "text-[var(--cor-c)] dark:text-[var(--cor-e)]" : "text-[#3D6A99] dark:text-[#A9BED6]"}`}>{autor || "Mensagem"}</div>
             <div className="line-clamp-2 break-words text-[#4A5468] dark:text-[#C9D1DE]">{m ? previa(m) : "Mensagem anterior"}</div>
         </div>
     );
@@ -671,11 +695,15 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
         toqueLongo.current = null;
     };
     const cantos = primeiraDoBloco ? (minha ? "rounded-[10px] rounded-tr-none" : "rounded-[10px] rounded-tl-none") : "rounded-[10px]";
+    // 25/11/2026: cor fixa da pessoa; no grupo, iniciais ao lado do bloco; "biquinho" na primeira bolha de cada bloco
+    const cor = corDaPessoa(m);
+    const comAvatar = conversa.tipo === "grupo" && !minha;
+    const corBolha = m.interna ? null : minha ? "border-r-[#E3EFC0] dark:border-r-[#3D6A99]" : "border-r-white dark:border-r-[#232B3F]";
     return (
         <div
             id={`msg-${m.id}`}
             // no celular o toque longo abre o menu sem selecionar o texto (copiar fica no menu); no computador dá para selecionar
-            className={`group relative max-w-[85%] select-none md:max-w-[75%] md:select-text ${minha ? "self-end" : "self-start"} ${primeiraDoBloco ? "mt-1.5" : ""} ${destaque === "atual" ? "rounded-[12px] ring-2 ring-[#F2CB3F] ring-offset-2 ring-offset-transparent" : ""}`}
+            className={`group relative max-w-[85%] select-none md:max-w-[68%] md:select-text ${minha ? "self-end" : "self-start"} ${comAvatar ? "ml-10" : ""} ${primeiraDoBloco ? "mt-3" : ""} ${destaque === "atual" ? "rounded-[12px] ring-2 ring-[#F2CB3F] ring-offset-2 ring-offset-transparent" : ""}`}
             style={{ transform: puxar ? `translateX(${puxar}px)` : undefined, transition: toque.current ? undefined : "transform .2s", touchAction: "pan-y", WebkitTouchCallout: "none" }}
             onTouchStart={(e) => {
                 if (podeResponder) toque.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, horizontal: null };
@@ -707,6 +735,12 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                 if (passou && onResponder) onResponder(m); // deslizar para a direita = responder (como no WhatsApp)
             }}
         >
+            {comAvatar && primeiraDoBloco && (
+                <span aria-hidden="true" className="absolute -left-10 top-0 flex h-[30px] w-[30px] items-center justify-center rounded-full text-[12px] font-extrabold text-white" style={{ background: cor[0] }}>{iniciais(m.autor_nome)}</span>
+            )}
+            {primeiraDoBloco && corBolha && (
+                <span aria-hidden="true" className={`absolute top-0 h-0 w-0 border-b-[10px] border-b-transparent ${minha ? `-right-[7px] border-l-[8px] ${corBolha.replace(/border-r-/g, "border-l-")}` : `-left-[7px] border-r-[8px] ${corBolha}`}`} />
+            )}
             {puxar > 0 && (
                 <span className="absolute -left-9 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/10 text-[#3D6A99] dark:bg-white/15 dark:text-[#A9BED6]" style={{ opacity: Math.min(1, puxar / 55) }} aria-hidden="true">
                     <Icone nome="responder" className="h-4 w-4" />
@@ -725,7 +759,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                         <Icone nome="chevron" className="h-4 w-4" />
                     </button>
                 )}
-                {(!minha || daEquipe) && conversa.tipo !== "individual" && primeiraDoBloco && <div className="mb-0.5 text-[14.5px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">{m.autor_nome || "—"}</div>}
+                {(!minha || daEquipe) && conversa.tipo !== "individual" && primeiraDoBloco && <div style={estiloCor(cor)} className="mb-0.5 text-[14.5px] font-extrabold text-[var(--cor-c)] dark:text-[var(--cor-e)]">{m.autor_nome || "—"}</div>}
                 {m.apagada ? (
                     <span className="italic text-[#6B7488] dark:text-[#C9D1DE]">Mensagem apagada</span>
                 ) : (
