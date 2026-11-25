@@ -201,13 +201,13 @@ export const MODULOS: Modulo[] = [
         hub: { href: "/plano", slug: "plano" },
         itens: [
             { id: "associados", titulo: "Associados", desc: "Cadastro de associados", href: "/associados", slugs: ["associados"], icone: IconUsersGroup },
-            { id: "novos-planos", titulo: "Novos planos", desc: "Adesões feitas pelo site", href: "/novos-planos", slugs: ["novos-planos"], icone: IconUserPlus },
+            // 25/11/2026: "novos-planos" saiu do menu (tela unificada no Comercial; o endereço antigo redireciona)
             { id: "parceiros", titulo: "Parceiros", desc: "Descontos e rede de parceiros", href: "/parceiros", slugs: ["parceiros"], icone: IconHeartHandshake },
             { id: "medicos", titulo: "Médicos", desc: "Rede de atendimento", href: "/medicos", slugs: ["medicos"], icone: IconStethoscope },
             { id: "sorteios", titulo: "Sorteios", desc: "Sorteios para associados", href: "/sorteios", slugs: ["sorteios"], icone: IconGift },
             { id: "noticias", titulo: "Notícias", desc: "Mensagens para o app dos clientes", href: "/noticias", slugs: ["noticias"], icone: IconNews },
             // 06/11/2026: Propostas de adesão vieram da Comunicação.
-            { id: "messenger-propostas", titulo: "Propostas de adesão", desc: "Planos vendidos pelo WhatsApp para lançar na Unymos", href: "/messenger-propostas", slugs: ["messenger-propostas"], icone: IconClipboardPlus },
+            // 25/11/2026: "messenger-propostas" saiu do menu (tela unificada no Comercial; o endereço antigo redireciona)
         ],
     },
     // 18/11/2026: módulo Contratos (substituir a Unymos no plano). Entrada em /modulo/contratos, para quem vê alguma tela dele.
@@ -237,7 +237,7 @@ export const MODULOS: Modulo[] = [
             // 06/11/2026: vieram da Comunicação (decisão de 03/11/2026).
             { id: "messenger-comprovantes", titulo: "Comprovantes", desc: "Comprovantes do WhatsApp e baixas", href: "/messenger-comprovantes", slugs: ["messenger-comprovantes"], icone: IconFileInvoice },
             { id: "messenger-ocorrencias", titulo: "Ocorrências", desc: "Problemas levantados pela Aurora", href: "/messenger-ocorrencias", slugs: ["messenger-ocorrencias"], icone: IconAlertTriangle },
-            { id: "messenger-funil", titulo: "Funil de vendas", desc: "Leads do WhatsApp até o contrato", href: "/messenger-funil", slugs: ["messenger-funil"], icone: IconUserPlus },
+            // 25/11/2026: "messenger-funil" saiu do menu (tela unificada no Comercial; o endereço antigo redireciona)
             { id: "messenger-disparos", titulo: "Monitor de disparos", desc: "Campanhas e lembretes pelo WhatsApp", href: "/messenger-disparos", slugs: ["messenger-disparos"], icone: IconBell },
             // 19/11/2026: ambiente de vendas (autorizado). Vendas vai para o módulo Comercial pelo Organizar menu.
             { id: "propostas-adesao", titulo: "Propostas de Adesão", desc: "Sala de espera dos contratos novos", href: "/propostas-adesao", slugs: ["propostas-adesao"], icone: IconClipboardPlus, selo: "propostas" },

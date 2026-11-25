@@ -91,9 +91,10 @@ export default function HistoricoClientes({ embutido = false, onVoltar }: { embu
                     <button type="submit" className="h-11 rounded-xl bg-[#313C55] px-5 text-sm font-extrabold text-white dark:bg-[#3D6A99]">Buscar</button>
                 </form>
                 {erro && <div className="rounded-xl border border-[#B42318] bg-[#FDECEA] px-4 py-2 text-sm font-bold text-[#B42318] dark:border-[#FF9C92]/60 dark:bg-[#FF9C92]/15 dark:text-[#FF9C92]">{erro}</div>}
-                <div className="grid min-h-[600px] overflow-hidden rounded-2xl border border-[#E1E5EC] bg-white md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] dark:border-white/12 dark:bg-[#232B3F]">
-                    <div className={`${sel ? "hidden md:flex" : "flex"} flex-col border-r border-[#E1E5EC] dark:border-white/12`}>
-                        <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_60px] gap-3 bg-[#F6F8FB] px-4 py-2.5 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] md:grid dark:bg-[#1C2334] dark:text-[#AEB9CF]">
+                {/* 25/11/2026: altura fixa da tela (lista e conversa rolam cada uma por dentro); antes crescia sem limite e a conversa não rolava */}
+                <div className="grid h-[calc(100dvh-230px)] min-h-[420px] grid-rows-[minmax(0,1fr)] overflow-hidden rounded-2xl md:h-[calc(100dvh-300px)] border border-[#E1E5EC] bg-white md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] dark:border-white/12 dark:bg-[#232B3F]">
+                    <div className={`${sel ? "hidden md:flex" : "flex"} min-h-0 flex-col overflow-y-auto border-r border-[#E1E5EC] dark:border-white/12`}>
+                        <div className="sticky top-0 z-10 hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_120px_60px] gap-3 bg-[#F6F8FB] px-4 py-2.5 text-[11px] font-extrabold uppercase tracking-wider text-[#5B6478] md:grid dark:bg-[#1C2334] dark:text-[#AEB9CF]">
                             <span>Cliente</span><span>Responsável</span><span>Encerrado</span><span className="text-right">Msgs</span>
                         </div>
                         {lista.map((a) => (

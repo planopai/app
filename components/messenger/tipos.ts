@@ -99,7 +99,7 @@ export type Perfil = {
     notificacoes_canal?: "ably" | "onesignal";
 };
 
-export type Aba = "tudo" | "equipe" | "grupos" | "clientes" | "externos";
+export type Aba = "tudo" | "equipe" | "grupos" | "clientes"; // 25/11/2026: a aba Externos saiu (WhatsApp Web fica em Clientes)
 
 /* ---------- pacote 4A (15/10/2026): setores e etiquetas ---------- */
 /** Contrato da Unymos vinculado ao contato (selo na conversa); situação e etiquetas vêm da cópia diária. */

@@ -41,15 +41,17 @@ export const MENU_APROVADO: ConfigMenu = {
         ]),
         m("plano", "Plano", "Associados, adesões e a rede de benefícios", "shield-lock", [
             ["associados"],
-            ["novos-planos", "Adesões"], ["messenger-propostas", "Adesões"],
             ["parceiros", "Rede de Descontos"], ["medicos", "Rede de Descontos"], ["relatorio-guias", "Rede de Descontos"],
             ["sorteios", "Comunicação com o Associado"], ["noticias", "Comunicação com o Associado"],
         ]),
         m("contratos", "Contratos", "Contratos, beneficiários, planos e regras", "file-text", [ // 18/11/2026
             ["contratos", "Contratos"], ["contratos-planos", "Configurações"], ["contratos-regras", "Configurações"],
         ]),
-        m("comercial", "Comercial", "Vendas, campanhas e contatos", "briefcase", [
-            ["messenger-funil", "Funil de Vendas"], ["messenger-funil-gestao", "Funil de Vendas"],
+        // 25/11/2026: vendas unificadas no Comercial. Vendas (funil de cada um, Vender plano, Minhas vendas) é de todos;
+        // Adesões (Propostas de Adesão: WhatsApp, site, venda direta e Novo contrato numa fila só) é do Administrativo e da Gestão.
+        // Saíram: Funil antigo (/messenger-funil) e Plano › Adesões › Site e WhatsApp (/novos-planos, /messenger-propostas).
+        m("comercial", "Comercial", "Vendas, adesões, campanhas e contatos", "briefcase", [
+            ["comercial-vendas", "Vendas"], ["propostas-adesao", "Adesões"], ["messenger-funil-gestao", "Resultados"],
             ["messenger-disparos", "Contatos"], ["leads", "Contatos"],
         ]),
         m("qualidade", "Qualidade", "Como a família e o cliente foram atendidos", "award", [
@@ -92,12 +94,11 @@ export const MENU_APROVADO: ConfigMenu = {
         "folha-vales": "Vales e Empréstimos",
         "folha-avaliacao": "Avaliação",
         "folha-painel": "Painel",
-        "novos-planos": "Site",
-        "messenger-propostas": "WhatsApp",
         "relatorio-guias": "Guias e Consultas",
         noticias: "Notícias do App",
-        "messenger-funil": "Funil",
-        "messenger-funil-gestao": "Resultados",
+        "comercial-vendas": "Vendas",
+        "propostas-adesao": "Propostas de Adesão",
+        "messenger-funil-gestao": "Resultados do Funil",
         "messenger-disparos": "Campanhas e Lembretes",
         leads: "Contatos do Velório Online",
         "visita-avaliacao": "Visita durante a Cerimônia",

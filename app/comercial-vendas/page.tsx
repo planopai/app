@@ -7,8 +7,13 @@
  * Dono da venda: quem chegou pelos canais (Aurora/WhatsApp, site) é do canal e a Administração fecha, sem comissão de adesão;
  * venda direta (o colaborador foi buscar o cliente) gera a comissão (100% da adesão) quando a adesão é paga.
  * A venda vai para as Propostas de Adesão (Administrativo), sem número; o contrato sai lá, com a adesão paga.
+ *
+ * 25/11/2026 (vendas unificadas no Comercial): o Funil antigo (/messenger-funil) saiu e redireciona para cá. Vieram dele:
+ * busca e filtro por responsável, arrastar os cards entre Novo, Em conversa e Proposta enviada (no computador), o canal de
+ * origem (aurora_10.php: canais; a Gestão troca no card com canal_salvar) e o link "Abrir conversa".
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { apiJson, API_BASE } from "@/components/messenger/api";
 import { IconChartFunnel } from "@tabler/icons-react";
 import { TopoPagina } from "@/components/shell/ModuloHub";
 import { api, BTN_PRI, BTN_SEC, CAMPO, CARTAO, ERRO, Janela, mensagemErro, NOTA, ROTULO, S_AB, S_AVISO, S_MUDO, S_OK, S_RUIM, SELO, SUB, useAviso } from "../contas-pagar/components/fin";
@@ -85,11 +90,15 @@ function proximoTexto(c: Card, hoje: string) {
     return c.proximo_contato === hoje ? "hoje" : c.proximo_contato < hoje ? `atrasado (${isoParaBR(c.proximo_contato).slice(0, 5)})` : isoParaBR(c.proximo_contato).slice(0, 5);
 }
 
-function SeloOrigem({ c }: { c: Card }) {
+function SeloOrigem({ c, nomeCanal }: { c: Card; nomeCanal?: string }) {
     if (c.venda_direta) return <span className={`${SELO} ${S_OK} self-start`}>Venda direta</span>;
-    const canal = c.canal === "site" ? "Site" : c.origem && !/^(whats|aurora)/i.test(c.origem) ? `WhatsApp · ${c.origem}` : "WhatsApp · Aurora";
+    const canal = nomeCanal || (c.canal === "site" ? "Site" : c.origem && !/^(whats|aurora)/i.test(c.origem) ? `WhatsApp · ${c.origem}` : "WhatsApp · Aurora");
     return <span className={`${SELO} ${S_AB} self-start`}>{canal}</span>;
 }
+
+/** 25/11/2026: canal de origem dos cards (aurora_10.php, o mesmo do Funil antigo e dos Resultados). Sem acesso, fica sem. */
+const URL_CANAIS = `${API_BASE}/aurora_10.php`;
+type Canais = { canais: Record<string, string | null>; nomes: Record<string, string> };
 
 export default function Page() {
     const { base: b, erro, recarregar } = useBase(URL_VD);
@@ -104,6 +113,16 @@ export default function Page() {
     const [daOportunidade, setDaOportunidade] = useState<Card | null>(null);
     const [chaveVenda, setChaveVenda] = useState(0);
     const hoje = base?.hoje || hojeBahia();
+    // 25/11/2026: vindos do Funil antigo
+    const [busca, setBusca] = useState("");
+    const [resp, setResp] = useState<string | null>(null);
+    const [canais, setCanais] = useState<Canais>({ canais: {}, nomes: {} });
+    const [arrastando, setArrastando] = useState<number | null>(null);
+    const [sobre, setSobre] = useState<string | null>(null);
+    const nomeCanal = (c: Card) => {
+        const k = canais.canais[String(c.id)] || c.canal || "";
+        return k ? canais.nomes[k] : undefined;
+    };
 
     useEffect(() => {
         if (base && ver === null) setVer(base.pode.todas ? "todos" : "meus");
@@ -119,7 +138,56 @@ export default function Page() {
             const m = mensagemErro(e, "Não foi possível carregar o funil.");
             if (m) setErroFunil(m);
         }
+        try {
+            const j = await apiJson(`${URL_CANAIS}?action=canais&_=${Date.now()}`);
+            setCanais({ canais: j.dados?.canais || {}, nomes: j.dados?.nomes || {} });
+        } catch {
+            /* sem acesso ao aurora_10.php: o card mostra a origem gravada */
+        }
     }, [ver]);
+
+    const salvarCanal = async (id: number, canal: string) => {
+        try {
+            const j = await apiJson(`${URL_CANAIS}?action=canal_salvar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, canal }) });
+            setCanais((x) => ({ ...x, canais: { ...x.canais, [String(id)]: canal } }));
+            avisar(j?.msg || "Canal salvo.");
+        } catch (e: any) {
+            avisar(e?.message || "Não foi possível salvar o canal.");
+        }
+    };
+
+    // arrastar no computador: só entre as etapas abertas (Perdido pede o motivo, no card)
+    const soltar = async (etapa: string) => {
+        const id = arrastando;
+        setArrastando(null);
+        setSobre(null);
+        const c = (cards || []).find((x) => x.id === id);
+        if (!c || c.etapa === etapa || !ABERTAS.includes(etapa) || !ABERTAS.includes(c.etapa)) return;
+        setCards((l) => (l || []).map((x) => (x.id === c.id ? { ...x, etapa } : x)));
+        try {
+            const j = await api(URL_VD, "mover", { id: c.id, etapa });
+            avisar(j.msg);
+        } catch (e: any) {
+            const m = mensagemErro(e, "Não foi possível mover.");
+            if (m) avisar(m);
+        }
+        void carregar();
+    };
+
+    const responsaveis = useMemo(() => {
+        const m = new Map<string, string>();
+        for (const c of cards || []) m.set(c.responsavel_id ? String(c.responsavel_id) : "sem", c.responsavel || (c.conversa_id ? "Aurora" : "Sem responsável"));
+        return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], "pt-BR")).map(([v, t]) => ({ v, t }));
+    }, [cards]);
+    const termo = busca.trim().toLowerCase();
+    const digitos = termo.replace(/\D/g, "");
+    const visiveis = (cards || []).filter(
+        (c) =>
+            (!resp || (c.responsavel_id ? String(c.responsavel_id) : "sem") === resp) &&
+            (!termo ||
+                [c.nome, c.cidade, c.plano, c.notas, c.interesse].some((x) => (x || "").toLowerCase().includes(termo)) ||
+                (digitos.length >= 3 && (c.telefone || "").replace(/\D/g, "").includes(digitos)))
+    );
 
     useEffect(() => {
         if (aba === "funil") void carregar();
@@ -208,12 +276,30 @@ export default function Page() {
                                 + Nova oportunidade
                             </button>
                         </div>
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_260px]">
+                            <input className={`${CAMPO} !h-11`} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar nome, telefone, cidade ou anotação" aria-label="Buscar no funil" />
+                            <Combo rotulo="Responsável" vazio="Todos os responsáveis" opcoes={responsaveis} valor={resp} onChange={setResp} />
+                        </div>
                         {erroFunil ? <div className={ERRO}>{erroFunil}</div> : null}
                         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(6,minmax(200px,1fr))] lg:overflow-x-auto">
                             {ETAPAS.map(([k, nome]) => {
-                                const l = (cards || []).filter((c) => c.etapa === k);
+                                const l = visiveis.filter((c) => c.etapa === k);
+                                const alvo = arrastando !== null && ABERTAS.includes(k);
                                 return (
-                                    <div key={k} className="flex min-w-0 flex-col gap-2 rounded-2xl bg-[#F6F8FB] p-2.5 dark:bg-[#1C2334]">
+                                    <div
+                                        key={k}
+                                        onDragOver={(e) => {
+                                            if (!alvo) return;
+                                            e.preventDefault();
+                                            if (sobre !== k) setSobre(k);
+                                        }}
+                                        onDragLeave={() => sobre === k && setSobre(null)}
+                                        onDrop={(e) => {
+                                            e.preventDefault();
+                                            void soltar(k);
+                                        }}
+                                        className={`flex min-w-0 flex-col gap-2 rounded-2xl bg-[#F6F8FB] p-2.5 dark:bg-[#1C2334] ${alvo && sobre === k ? "ring-2 ring-[#3D6A99]" : ""}`}
+                                    >
                                         <h3 className="flex items-center justify-between px-1 text-[12px] font-extrabold uppercase tracking-[0.06em] text-[#5B6478] dark:text-[#AEB9CF]">
                                             <span>{nome}</span>
                                             <span>{cards ? l.length : ""}</span>
@@ -227,6 +313,12 @@ export default function Page() {
                                                 <button
                                                     key={c.id}
                                                     type="button"
+                                                    draggable={ABERTAS.includes(c.etapa)}
+                                                    onDragStart={() => setArrastando(c.id)}
+                                                    onDragEnd={() => {
+                                                        setArrastando(null);
+                                                        setSobre(null);
+                                                    }}
                                                     onClick={() => setAberto(c.id)}
                                                     className="flex flex-col gap-1 rounded-xl border border-[#E3E8F0] bg-white p-2.5 text-left hover:border-[#3D6A99] dark:border-white/[0.12] dark:bg-[#232B3F]"
                                                 >
@@ -234,9 +326,9 @@ export default function Page() {
                                                         <b className="line-clamp-2 break-words text-[14.5px]">{c.nome || "Sem nome"}</b>
                                                         {c.plano ? <span className={`${SELO} ${S_AB}`}>{c.plano}</span> : null}
                                                     </span>
-                                                    <SeloOrigem c={c} />
+                                                    <SeloOrigem c={c} nomeCanal={nomeCanal(c)} />
                                                     <span className={SUB}>
-                                                        {c.responsavel || "Sem responsável"}
+                                                        {c.responsavel || (c.conversa_id ? "Aurora" : "Sem responsável")}
                                                         {c.valor_mensal ? ` · ${brl(c.valor_mensal)}/mês` : ""}
                                                     </span>
                                                     <span className={`${SUB} ${c.proximo_contato && c.proximo_contato < hoje && ABERTAS.includes(c.etapa) ? "!font-extrabold !text-[#B42318] dark:!text-[#FF9C92]" : ""}`}>
@@ -295,7 +387,18 @@ export default function Page() {
                 )}
             </div>
 
-            {aberto && base ? <JanelaCard id={aberto} base={base} avisar={avisar} onFechar={() => setAberto(null)} onMudou={() => void carregar()} onVender={venderDe} /> : null}
+            {aberto && base ? (
+                <JanelaCard
+                    id={aberto}
+                    base={base}
+                    avisar={avisar}
+                    onFechar={() => setAberto(null)}
+                    onMudou={() => void carregar()}
+                    onVender={venderDe}
+                    canais={canais}
+                    salvarCanal={salvarCanal}
+                />
+            ) : null}
             {nova && base ? (
                 <JanelaOportunidade
                     base={base}
@@ -426,6 +529,8 @@ function JanelaCard({
     onFechar,
     onMudou,
     onVender,
+    canais,
+    salvarCanal,
 }: {
     id: number;
     base: BaseVd;
@@ -433,6 +538,8 @@ function JanelaCard({
     onFechar: () => void;
     onMudou: () => void;
     onVender: (c: Card) => void;
+    canais: Canais;
+    salvarCanal: (id: number, canal: string) => Promise<void>;
 }) {
     const [c, setC] = useState<Card | null>(null);
     const [hist, setHist] = useState<Hist[]>([]);
@@ -515,13 +622,32 @@ function JanelaCard({
             {erro ? <div className={ERRO}>{erro}</div> : !c ? <span className={SUB}>Carregando…</span> : (
                 <div className="flex flex-col gap-4">
                     <div className="flex flex-wrap gap-2">
-                        <SeloOrigem c={c} />
+                        <SeloOrigem c={c} nomeCanal={(() => {
+                            const k = canais.canais[String(c.id)] || c.canal || "";
+                            return k ? canais.nomes[k] : undefined;
+                        })()} />
+                        {c.conversa_id ? (
+                            <a className={`${SELO} ${S_MUDO} underline`} href={`/messenger?conversa=${c.conversa_id}`}>
+                                Abrir conversa
+                            </a>
+                        ) : null}
                         {c.interesse ? <span className={`${SELO} ${S_MUDO}`}>Interesse: {c.interesse}</span> : null}
                         {c.pessoas ? <span className={`${SELO} ${S_MUDO}`}>{c.pessoas} pessoa(s)</span> : null}
                         {c.ct_proposta_id ? <span className={`${SELO} ${S_AVISO}`}>Proposta #{c.ct_proposta_id}</span> : null}
                         {c.contrato ? <span className={`${SELO} ${S_OK}`}>Contrato {c.contrato}</span> : null}
                     </div>
                     <CamposOportunidade f={f} set={(p) => setF((x) => ({ ...x, ...p }))} travado={!aberta} />
+                    {base.pode.gestao && !c.venda_direta && Object.keys(canais.nomes).length ? (
+                        <div>
+                            <span className={ROTULO}>Canal de origem (Gestão)</span>
+                            <Combo
+                                rotulo="Canal de origem"
+                                opcoes={Object.entries(canais.nomes).map(([v, t]) => ({ v, t }))}
+                                valor={canais.canais[String(c.id)] || c.canal || null}
+                                onChange={(v) => v && void salvarCanal(c.id, v)}
+                            />
+                        </div>
+                    ) : null}
                     {aberta ? (
                         <div className="grid gap-3 sm:grid-cols-2">
                             <div>

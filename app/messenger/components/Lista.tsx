@@ -234,8 +234,7 @@ export function Abas({ aba, soNaoLidas, totais, naoLidas, detalhes, destaque, ao
         { id: "clientes", rotulo: "Clientes" },
         { id: "grupos", rotulo: "Grupos" },
         { id: "equipe", rotulo: "Equipe" },
-        { id: "externos", rotulo: "Externos" }, // 24/11/2026: WhatsApp Web (fornecedores, prestadores, órgãos…)
-    ].filter((i) => i.id !== "externos" || aba === "externos" || (totais?.externos ?? 0) > 0) as { id: Aba; rotulo: string }[];
+    ];
     const atual = itens.find((i) => i.id === aba)?.rotulo || "Tudo";
     return (
         <SeletorLista
