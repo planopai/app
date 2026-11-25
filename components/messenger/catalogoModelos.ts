@@ -42,7 +42,7 @@ export const CATALOGO_MODELOS: Record<string, InfoModelo> = {
     cadastro_atualizacao: { tema: "contrato", titulo: "Atualizar cadastro", desc: "Pede um dado que falta no contrato", campos: ["Nome", "Quem envia", "Contrato", "O que atualizar"] },
     retorno_solicitacao: { tema: "contrato", titulo: "Retorno de solicitação", desc: "Retoma qualquer pedido do cliente", campos: ["Nome", "Quem envia", "Assunto"] },
     // serviços e benefícios
-    material_ortopedico_prazo: { tema: "servicos", titulo: "Material ortopédico: prazo", desc: "Pergunta se renova ou devolve o material", campos: ["Nome", "Quem envia", "Material", "Retirado em", "Prazo termina"] },
+    material_ortopedico_prazo: { tema: "servicos", titulo: "Material ortopédico: devolução", desc: "Avisa a data de devolução, o endereço e a opção de locação", campos: ["Nome", "Quem envia", "Material", "Emprestado em (mês e ano)", "Data da devolução"] }, // 25/11/2026: texto novo
     app_associado_acesso: { tema: "servicos", titulo: "Acesso ao app do associado", desc: "Envia o link do Aplicativo do Associado", campos: ["Nome", "Contrato", "Link do app"] },
     telemedicina_cadastro: { tema: "servicos", titulo: "Cadastro da telemedicina", desc: "Pede dados para concluir o cadastro", campos: ["Nome", "Quem envia", "Contrato"] },
     remocao_ambulancia_confirmar: { tema: "servicos", titulo: "Confirmar remoção", desc: "Confirma a remoção em ambulância agendada", campos: ["Nome", "Quem envia", "Paciente", "Data e hora"] },
