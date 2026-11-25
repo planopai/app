@@ -10,6 +10,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiJson, API_BASE } from "@/components/messenger/api";
+import { Barras, CORES, CORES_MODELOS, Funil, Linha, Rosca, pct } from "./components/Graficos";
 
 const API = `${API_BASE}/aurora_22.php`;
 
@@ -54,14 +55,6 @@ const SITS: Record<string, [string, string]> = {
     respondeu: ["Respondeu", OK], abriu: ["Abriu o botão", OK], pago: ["Pago", OK], falhou: ["Erro ao enviar", VERMELHO], pulado: ["Não enviada", AMARELO],
     cancelado: ["Cancelada", CINZA], np: ["Não perturbe", CINZA],
 };
-const GRUPOS: [string, string, (s: string) => boolean][] = [
-    ["", "Todas", () => true],
-    ["fila", "Na fila", (s) => s === "aprov" || s === "aguard"],
-    ["env", "Enviadas", (s) => ["enviada", "entregue", "lida", "respondeu", "abriu", "pago"].includes(s)],
-    ["lida", "Lidas", (s) => ["lida", "respondeu", "abriu", "pago"].includes(s)],
-    ["pago", "Pagaram", (s) => s === "pago"],
-    ["nao", "Não enviadas", (s) => ["falhou", "pulado", "np", "cancelado"].includes(s)],
-];
 const GATILHOS: Record<string, [string, [string, string][]]> = {
     venc: ["Vencimento da mensalidade", [["-3", "3 dias antes do vencimento"], ["-2", "2 dias antes do vencimento"], ["-1", "1 dia antes do vencimento"], ["0", "No dia do vencimento"], ["1", "1 dia depois do vencimento"], ["2", "2 dias depois do vencimento"]]],
     atraso: ["Mensalidades em atraso", [["5", "5 dias após o vencimento"], ["10", "10 dias após o vencimento"], ["15", "15 dias após o vencimento"], ["20", "20 dias após o vencimento"], ["30", "30 dias após o vencimento"]]],
@@ -82,7 +75,34 @@ const ROTULO = "mb-1 block text-[13.5px] font-bold text-[#5B6478] dark:text-[#AE
 const MUDO = "text-[13.5px] text-[#5B6478] dark:text-[#AEB9CF]";
 const CHIP = "inline-flex min-h-[36px] items-center rounded-full border border-dashed border-[#C9D1DE] bg-[#F1F4F8] px-3 text-[13px] font-bold dark:border-white/15 dark:bg-[#1C2334]";
 
+/** Situações do filtro do Painel (pode marcar mais de uma). As de envio são acumuladas: "Lidas" inclui quem abriu o botão e quem pagou. */
+const SAIU = ["enviada", "entregue", "lida", "respondeu", "abriu", "pago"];
+const FILTRO_SIT: [string, string, (s: string) => boolean][] = [
+    ["aprov", "Em aprovação", (s) => s === "aprov"],
+    ["aguard", "Aguardando envio", (s) => s === "aguard"],
+    ["env", "Enviadas", (s) => SAIU.includes(s)],
+    ["lida", "Lidas", (s) => ["lida", "respondeu", "abriu", "pago"].includes(s)],
+    ["abriu", "Abriram o botão", (s) => s === "abriu" || s === "pago"],
+    ["pago", "Pagaram", (s) => s === "pago"],
+    ["nao", "Não enviadas", (s) => ["falhou", "pulado", "np", "cancelado"].includes(s)],
+];
+const PERIODOS: [string, string, number][] = [["hoje", "Hoje", 0], ["7", "7 dias", 6], ["30", "30 dias", 29]];
+const POR_PAGINA = 200;
+
 const hojeIso = () => new Date().toLocaleDateString("sv-SE");
+const diaIso = (s: string | null | undefined) => (s ? new Date(s).toLocaleDateString("sv-SE") : "");
+const somarDias = (iso: string, n: number) => {
+    const d = new Date(`${iso}T12:00:00`);
+    d.setDate(d.getDate() + n);
+    return d.toLocaleDateString("sv-SE");
+};
+/** Dias de "de" até "ate" (no máximo 92, para o gráfico não ficar ilegível). */
+const diasDoPeriodo = (de: string, ate: string) => {
+    const out: string[] = [];
+    for (let d = de; d <= ate && out.length < 92; d = somarDias(d, 1)) out.push(d);
+    return out;
+};
+const csvCelula = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
 const dt = (s: string | null | undefined) => (s ? new Date(s).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
 const hora = (s: string | null | undefined) => (s ? new Date(s).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "—");
 const dataBr = (s: string | null | undefined) => (s ? new Date(s).toLocaleDateString("pt-BR") : "");
@@ -197,7 +217,7 @@ const vazio = (kind: "auto" | "camp"): Modelo => ({
 
 export default function CampanhasLembretesPage() {
     const [painel, setPainel] = useState<Painel | null>(null);
-    const [aba, setAba] = useState<"modelos" | "historico">("modelos");
+    const [aba, setAba] = useState<"modelos" | "historico">("historico");
     const [kind, setKind] = useState<"auto" | "camp">("auto");
     const [form, setForm] = useState<Modelo | null>(null);
     const [original, setOriginal] = useState<Modelo | null>(null);
@@ -210,12 +230,15 @@ export default function CampanhasLembretesPage() {
     const [erro, setErro] = useState("");
     const [aviso, setAviso] = useState("");
     // histórico
-    const [de, setDe] = useState(hojeIso());
+    const [de, setDe] = useState(somarDias(hojeIso(), -6));
     const [ate, setAte] = useState(hojeIso());
-    const [fCamp, setFCamp] = useState("");
-    const [fOrig, setFOrig] = useState("");
+    const [periodo, setPeriodo] = useState("7");
+    const [fCamps, setFCamps] = useState<string[]>([]);
+    const [fOrigs, setFOrigs] = useState<string[]>([]);
+    const [fSits, setFSits] = useState<string[]>([]);
     const [busca, setBusca] = useState("");
-    const [grupo, setGrupo] = useState("");
+    const [menuFiltro, setMenuFiltro] = useState<"" | "modelo" | "situacao" | "origem">("");
+    const [limite, setLimite] = useState(POR_PAGINA);
     const [envios, setEnvios] = useState<Envio[] | null>(null);
     const [marcados, setMarcados] = useState<number[]>([]);
     const [detalhe, setDetalhe] = useState<Envio | null>(null);
@@ -242,16 +265,17 @@ export default function CampanhasLembretesPage() {
         setEnvios(null);
         setMarcados([]);
         try {
-            setEnvios(await aGet<Envio[]>("historico", { de, ate, campanha: fCamp, origem: fOrig, q: busca.trim() }));
+            // Modelo, origem e situação são filtrados aqui na tela (dá para marcar mais de um de cada).
+            setEnvios(await aGet<Envio[]>("historico", { de, ate, q: busca.trim() }));
         } catch (e: any) {
             setErro(e?.message || "Não foi possível carregar o histórico.");
             setEnvios([]);
         }
-    }, [de, ate, fCamp, fOrig, busca]);
+    }, [de, ate, busca]);
 
     useEffect(() => {
         carregar();
-        if (typeof window !== "undefined" && window.location.hash === "#historico") setAba("historico");
+        if (typeof window !== "undefined" && window.location.hash === "#modelos") setAba("modelos");
     }, [carregar]);
     useEffect(() => {
         if (aba !== "historico") return;
@@ -404,10 +428,62 @@ export default function CampanhasLembretesPage() {
     }
 
     // -------- histórico
+    // "base": período + modelos + origens (é o que os gráficos mostram); "filtrados": base + situações (é a lista).
+    const base = useMemo(
+        () => (envios || []).filter((e) => (!fCamps.length || fCamps.includes(e.campanha)) && (!fOrigs.length || fOrigs.includes(e.origem))),
+        [envios, fCamps, fOrigs],
+    );
     const filtrados = useMemo(() => {
-        const f = GRUPOS.find((g) => g[0] === grupo)?.[2] || (() => true);
-        return (envios || []).filter((e) => f(e.situacao));
-    }, [envios, grupo]);
+        if (!fSits.length) return base;
+        const fs = FILTRO_SIT.filter((f) => fSits.includes(f[0])).map((f) => f[2]);
+        return base.filter((e) => fs.some((f) => f(e.situacao)));
+    }, [base, fSits]);
+    useEffect(() => {
+        setLimite(POR_PAGINA);
+        setMarcados((m) => m.filter((id) => filtrados.some((e) => e.id === id)));
+    }, [filtrados]);
+    const corModelo = useCallback((id: string) => {
+        const i = (painel?.campanhas || []).findIndex((c) => c.id === id);
+        return CORES_MODELOS[(i < 0 ? 9 : i) % CORES_MODELOS.length];
+    }, [painel]);
+    const conta = useCallback((lista: Envio[], chave: string) => {
+        const f = FILTRO_SIT.find((x) => x[0] === chave)?.[2];
+        return f ? lista.filter((e) => f(e.situacao)).length : 0;
+    }, []);
+    const umDia = de === ate;
+    /** Grupos de tempo do período: um por dia, ou um por hora quando é um dia só. */
+    const tempos = useMemo(() => {
+        if (umDia) {
+            const horas = base.map((e) => new Date(e.enviado_em || e.programado_em || "").getHours()).filter((h) => !isNaN(h));
+            const ini = Math.min(8, ...horas), fim = Math.max(18, ...horas);
+            return Array.from({ length: fim - ini + 1 }, (_, i) => ({ chave: String(ini + i), rotulo: `${String(ini + i).padStart(2, "0")}h` }));
+        }
+        return diasDoPeriodo(de, ate).map((d) => ({ chave: d, rotulo: `${d.slice(8, 10)}/${d.slice(5, 7)}` }));
+    }, [base, de, ate, umDia]);
+    const tempoDe = useCallback((e: Envio) => (umDia ? String(new Date(e.enviado_em || e.programado_em || "").getHours()) : diaIso(e.programado_em)), [umDia]);
+    const porTempo = useCallback((chave: string) => tempos.map((t) => base.filter((e) => tempoDe(e) === t.chave && (FILTRO_SIT.find((x) => x[0] === chave)?.[2] || (() => true))(e.situacao)).length), [tempos, base, tempoDe]);
+    const marcaveis = useMemo(() => filtrados.filter((e) => ["aprov", "aguard", "falhou", "pulado"].includes(e.situacao)), [filtrados]);
+    function alternar(lista: string[], v: string, set: (x: string[]) => void) {
+        set(lista.includes(v) ? lista.filter((x) => x !== v) : [...lista, v]);
+    }
+    function escolherPeriodo(k: string) {
+        setPeriodo(k);
+        const p = PERIODOS.find((x) => x[0] === k);
+        if (p) {
+            setAte(hojeIso());
+            setDe(somarDias(hojeIso(), -p[2]));
+        }
+    }
+    function exportar(lista: Envio[]) {
+        const linhas = [["Data", "Hora", "Contrato", "Titular", "Telefone", "Modelo", "Origem", "Situação", "Motivo"].map(csvCelula).join(";")];
+        lista.forEach((e) => linhas.push([dataBr(e.programado_em), hora(e.enviado_em || e.programado_em), e.contrato, e.titular, fone(e.telefone), nomeModelo(e.campanha), ORIGENS[e.origem] || e.origem, SITS[e.situacao]?.[0] || e.situacao, e.motivo].map(csvCelula).join(";")));
+        const url = URL.createObjectURL(new Blob(["\ufeff" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `campanhas-${de}-a-${ate}.csv`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
     const selecionavel = (e: Envio) => ["aprov", "aguard", "falhou", "pulado"].includes(e.situacao);
     async function emLote(acao: "aprovar" | "cancelar" | "reenviar", ids = marcados) {
         if (!ids.length) return;
@@ -464,7 +540,7 @@ export default function CampanhasLembretesPage() {
             {aviso && !form && !detalhe && <div className={`mt-4 rounded-xl px-4 py-3 text-[14.5px] font-bold ${OK}`}>{aviso}</div>}
 
             <div className="mt-5 flex flex-wrap gap-1 border-b border-[#E1E5EC] dark:border-white/12" role="tablist">
-                {([["modelos", "Modelos", painel?.campanhas.length], ["historico", "Histórico", null]] as const).map(([id, rot, n]) => (
+                {([["historico", "Painel", null], ["modelos", "Modelos", painel?.campanhas.length]] as const).map(([id, rot, n]) => (
                     <button key={id} type="button" role="tab" aria-selected={aba === id}
                         onClick={() => { setAba(id); window.history.replaceState(null, "", `#${id}`); }}
                         className={`min-h-[44px] rounded-t-xl border-b-[3px] px-4 text-[16px] font-extrabold ${aba === id ? "border-[#F2CB3F]" : "border-transparent text-[#5B6478] dark:text-[#AEB9CF]"}`}>
@@ -537,80 +613,229 @@ export default function CampanhasLembretesPage() {
                 </section>
             )}
 
-            {/* ---------------- HISTÓRICO ---------------- */}
-            {aba === "historico" && (
-                <section className="mt-4">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                        <label><span className={ROTULO}>De</span><input type="date" className={CAMPO} value={de} onChange={(e) => setDe(e.target.value)} /></label>
-                        <label><span className={ROTULO}>Até</span><input type="date" className={CAMPO} value={ate} onChange={(e) => setAte(e.target.value)} /></label>
-                        <label><span className={ROTULO}>Modelo</span>
-                            <select className={CAMPO} value={fCamp} onChange={(e) => setFCamp(e.target.value)}>
-                                <option value="">Todos</option>
-                                {painel?.campanhas.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                            </select>
-                        </label>
-                        <label><span className={ROTULO}>Origem</span>
-                            <select className={CAMPO} value={fOrig} onChange={(e) => setFOrig(e.target.value)}>
-                                <option value="">Todas</option>
-                                {Object.entries(ORIGENS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                            </select>
-                        </label>
-                        <label><span className={ROTULO}>Contrato, nome ou telefone</span><input className={CAMPO} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Digite para filtrar" /></label>
-                    </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                        {GRUPOS.map(([k, r, f]) => (
-                            <button key={k} type="button" aria-pressed={grupo === k} onClick={() => setGrupo(k)}
-                                className={`rounded-2xl border bg-white p-3 text-left dark:bg-[#232B3F] ${grupo === k ? "border-[#F2CB3F] ring-1 ring-[#F2CB3F]" : "border-[#E1E5EC] dark:border-white/12"}`}>
-                                <b className="block text-[22px] leading-tight">{(envios || []).filter((e) => f(e.situacao)).length}</b>
-                                <span className={MUDO}>{r}</span>
-                            </button>
-                        ))}
-                    </div>
-                    {gestao && marcados.length > 0 && (
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <b>{marcados.length} selecionado(s)</b>
-                            <button type="button" className={BTN_PRI} disabled={!!ocupado} onClick={() => emLote("aprovar")}>Aprovar envio</button>
-                            <button type="button" className={BTN_SEC} disabled={!!ocupado} onClick={() => emLote("reenviar")}>{ocupado === "lote-reenviar" ? "Enviando…" : "Enviar novamente"}</button>
-                            <button type="button" className={BTN_SEC} disabled={!!ocupado} onClick={() => emLote("cancelar")}>Cancelar envio</button>
+            {/* ---------------- PAINEL (números, gráficos e a lista) ---------------- */}
+            {aba === "historico" && (() => {
+                const total = base.length;
+                const nEnv = conta(base, "env"), nLida = conta(base, "lida"), nPago = conta(base, "pago"), nNao = conta(base, "nao"), nAprov = conta(base, "aprov");
+                const nEntregue = base.filter((e) => ["entregue", "lida", "respondeu", "abriu", "pago"].includes(e.situacao)).length;
+                const cartoes: { chave: string; nome: string; valor: number; sub: string; cor: string }[] = [
+                    { chave: "", nome: "Na régua", valor: total, sub: umDia ? "mensagens no dia" : `mensagens em ${tempos.length} dias`, cor: "#64748B" },
+                    { chave: "env", nome: "Enviadas", valor: nEnv, sub: `${pct(nEnv, total)} do total`, cor: CORES.enviadas },
+                    { chave: "lida", nome: "Lidas", valor: nLida, sub: `${pct(nLida, nEnv)} das enviadas`, cor: CORES.lidas },
+                    { chave: "pago", nome: "Pagaram", valor: nPago, sub: `${pct(nPago, nEnv)} das enviadas`, cor: "#B7791F" },
+                    { chave: "nao", nome: "Não enviadas", valor: nNao, sub: "erro, pulada ou cancelada", cor: CORES.nao },
+                    { chave: "aprov", nome: "Aguardando aprovação", valor: nAprov, sub: "esperando a Gestão", cor: "#D97706" },
+                ];
+                const lidasT = porTempo("lida");
+                const envT = porTempo("env").map((v, i) => v - lidasT[i]);
+                const filaT = tempos.map((t) => base.filter((e) => tempoDe(e) === t.chave && (e.situacao === "aprov" || e.situacao === "aguard")).length);
+                const naoT = porTempo("nao");
+                const series = [
+                    { nome: "Lidas", cor: CORES.lidas, t: lidasT },
+                    { nome: "Enviadas (sem leitura)", cor: CORES.enviadas, t: envT },
+                    { nome: "Na fila / aprovação", cor: CORES.fila, t: filaT },
+                    { nome: "Não enviadas", cor: CORES.nao, t: naoT },
+                ];
+                const porModelo = (painel?.campanhas || [])
+                    .map((c) => ({ chave: c.id, nome: c.nome, valor: (envios || []).filter((e) => e.campanha === c.id && (!fOrigs.length || fOrigs.includes(e.origem))).length, cor: corModelo(c.id) }))
+                    .filter((f) => f.valor > 0 || fCamps.includes(f.chave));
+                const todosMarcados = gestao && marcaveis.length > 0 && marcaveis.every((e) => marcados.includes(e.id));
+                const algunsMarcados = marcados.length > 0 && !todosMarcados;
+                const MENU = "absolute left-0 top-[calc(100%+6px)] z-30 max-h-[340px] w-[290px] overflow-y-auto rounded-2xl border border-[#E1E5EC] bg-white p-2 shadow-xl dark:border-white/12 dark:bg-[#232B3F]";
+                const OPCAO = "flex min-h-[40px] w-full items-center gap-2 rounded-lg px-2 text-left text-[14px] hover:bg-[#F1F4F8] dark:hover:bg-white/5";
+                const FILTRO = "inline-flex min-h-[40px] items-center gap-1 rounded-full border px-3 text-[13.5px] font-bold";
+                const FILTRO_ON = "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]";
+                const FILTRO_OFF = "border-[#C9D1DE] bg-white dark:border-white/15 dark:bg-transparent";
+                const resumo = (sel: string[], nome: (k: string) => string, vazio: string) => (sel.length === 0 ? vazio : sel.length === 1 ? nome(sel[0]) : `${sel.length} escolhidos`);
+                const visiveis = filtrados.slice(0, limite);
+                const temFiltro = fCamps.length + fOrigs.length + fSits.length > 0 || !!busca.trim();
+                return (
+                    <section className="mt-4">
+                        {/* período */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {PERIODOS.map(([k, r]) => (
+                                <button key={k} type="button" aria-pressed={periodo === k} onClick={() => escolherPeriodo(k)} className={`${FILTRO} ${periodo === k ? FILTRO_ON : FILTRO_OFF}`}>{r}</button>
+                            ))}
+                            <button type="button" aria-pressed={periodo === "outro"} onClick={() => setPeriodo("outro")} className={`${FILTRO} ${periodo === "outro" ? FILTRO_ON : FILTRO_OFF}`}>Personalizado</button>
+                            {periodo === "outro" && (
+                                <>
+                                    <label className="inline-flex items-center gap-2"><span className={MUDO}>De</span><input type="date" className={`${CAMPO} h-10 w-[160px]`} value={de} max={ate} onChange={(e) => e.target.value && setDe(e.target.value)} /></label>
+                                    <label className="inline-flex items-center gap-2"><span className={MUDO}>até</span><input type="date" className={`${CAMPO} h-10 w-[160px]`} value={ate} min={de} onChange={(e) => e.target.value && setAte(e.target.value)} /></label>
+                                </>
+                            )}
+                            <span className="flex-1" />
+                            {envios !== null && <span className={MUDO}>{dataBr(`${de}T12:00:00`)}{umDia ? "" : ` a ${dataBr(`${ate}T12:00:00`)}`}{(envios?.length || 0) >= 3000 ? " · mostrando as 3.000 mais recentes" : ""}</span>}
                         </div>
-                    )}
-                    <div className={`${CARTAO} mt-3 overflow-x-auto p-2`}>
-                        {envios === null ? <p className={`p-4 ${MUDO}`}>Carregando…</p> : filtrados.length === 0 ? <p className={`p-4 ${MUDO}`}>Nenhuma mensagem com esses filtros.</p> : (
-                            <table className="w-full min-w-[820px] text-left text-[14.5px]">
-                                <thead className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
-                                    <tr><th className="w-10 p-2" /><th className="p-2">Hora</th><th className="p-2">Contrato</th><th className="p-2">Titular</th><th className="p-2">Modelo</th><th className="p-2">Situação</th><th className="p-2">Motivo</th></tr>
-                                </thead>
-                                <tbody>
-                                    {filtrados.map((e, i) => {
-                                        const dia = dataBr(e.programado_em);
-                                        const novoDia = i === 0 || dataBr(filtrados[i - 1].programado_em) !== dia;
-                                        return (
-                                            <React.Fragment key={e.id}>
-                                                {novoDia && <tr><td colSpan={7} className="px-2 pb-1 pt-4 font-extrabold">{dia}</td></tr>}
-                                                <tr tabIndex={0} onClick={() => setDetalhe(e)} onKeyDown={(k) => (k.key === "Enter") && setDetalhe(e)}
-                                                    className="cursor-pointer border-t border-[#EEF0F3] hover:bg-[#F7F9FB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F2CB3F] dark:border-white/10 dark:hover:bg-white/5">
-                                                    <td className="p-2" onClick={(k) => k.stopPropagation()}>
-                                                        {gestao && selecionavel(e) && (
-                                                            <input type="checkbox" className="h-5 w-5" aria-label="Selecionar" checked={marcados.includes(e.id)}
-                                                                onChange={(k) => setMarcados((m) => (k.target.checked ? [...m, e.id] : m.filter((x) => x !== e.id)))} />
-                                                        )}
-                                                    </td>
-                                                    <td className="whitespace-nowrap p-2">{hora(e.enviado_em || e.programado_em)}</td>
-                                                    <td className="p-2">{e.contrato || "—"}</td>
-                                                    <td className="p-2">{e.titular || fone(e.telefone) || "—"}</td>
-                                                    <td className="p-2">{nomeModelo(e.campanha)}{e.origem !== "auto" ? <span className={`ml-1 ${MUDO}`}>· {ORIGENS[e.origem] || e.origem}</span> : null}</td>
-                                                    <td className="p-2"><Etiqueta par={SITS[e.situacao]} /></td>
-                                                    <td className={`p-2 ${MUDO}`}>{e.motivo || ""}</td>
-                                                </tr>
-                                            </React.Fragment>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
-                </section>
-            )}
+
+                        {/* cartões */}
+                        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                            {cartoes.map((c) => {
+                                const ativo = c.chave ? fSits.includes(c.chave) : fSits.length === 0;
+                                return (
+                                    <button key={c.nome} type="button" aria-pressed={ativo}
+                                        onClick={() => (c.chave ? alternar(fSits, c.chave, setFSits) : setFSits([]))}
+                                        className={`${CARTAO} min-w-0 text-left ${ativo && c.chave ? "ring-2 ring-[#F2CB3F]" : ""}`}>
+                                        <span className="block truncate text-[12px] font-extrabold uppercase tracking-wide text-[#5B6478] dark:text-[#AEB9CF]">{c.nome}</span>
+                                        <span className="mt-1 flex items-end justify-between gap-2">
+                                            <b className="text-[28px] leading-none">{envios === null ? "…" : c.valor}</b>
+                                            <Linha valores={porTempo(c.chave)} cor={c.cor} />
+                                        </span>
+                                        <span className="mt-1 block truncate text-[12.5px] font-bold" style={{ color: c.cor }}>{c.sub}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* gráficos */}
+                        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.05fr_1.25fr_1fr]">
+                            <div className={CARTAO}>
+                                <div className="mb-3 flex flex-wrap items-baseline gap-2"><b className="text-[15px]">Funil</b><span className={`ml-auto text-[12px] ${MUDO}`}>clique numa etapa para filtrar</span></div>
+                                <Funil ativas={fSits} clicar={(k) => alternar(fSits, k, setFSits)} etapas={[
+                                    { chave: null, nome: "Na régua", valor: total, cor: CORES.regua },
+                                    { chave: "env", nome: "Enviadas", valor: nEnv, cor: CORES.enviadas },
+                                    { chave: null, nome: "Entregues", valor: nEntregue, cor: CORES.entregues },
+                                    { chave: "lida", nome: "Lidas", valor: nLida, cor: CORES.lidas },
+                                    { chave: "abriu", nome: "Abriram o botão", valor: conta(base, "abriu"), cor: CORES.abriu },
+                                    { chave: "pago", nome: "Pagaram", valor: nPago, cor: CORES.pagos },
+                                ]} />
+                            </div>
+                            <div className={CARTAO}>
+                                <b className="text-[15px]">{umDia ? "Ao longo do dia" : `Por dia (${tempos.length} dias)`}</b>
+                                <div className="mb-1 mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                                    {series.map((x) => (
+                                        <span key={x.nome} className="inline-flex items-center gap-1.5 text-[12.5px]">
+                                            <i className="inline-block h-[10px] w-[10px] rounded-[3px]" style={{ background: x.cor }} />{x.nome} <b>{x.t.reduce((a, v) => a + v, 0)}</b>
+                                        </span>
+                                    ))}
+                                </div>
+                                <Barras series={series} colunas={tempos.map((t, i) => ({ rotulo: t.rotulo, valores: series.map((x) => x.t[i]) }))} />
+                            </div>
+                            <div className={CARTAO}>
+                                <b className="text-[15px]">Por modelo</b>
+                                <div className="mt-2">
+                                    {porModelo.length === 0 ? <p className={MUDO}>Nenhuma mensagem no período.</p> : (
+                                        <Rosca fatias={porModelo} ativas={fCamps} clicar={(k) => alternar(fCamps, k, setFCamps)} />
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* filtros e lista */}
+                        <div className={`${CARTAO} mt-3`}>
+                            {menuFiltro && <button type="button" aria-label="Fechar" className="fixed inset-0 z-20 cursor-default" onClick={() => setMenuFiltro("")} />}
+                            <div className="flex flex-wrap items-center gap-2">
+                                <input className={`${CAMPO} h-10 w-full sm:w-[280px]`} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Contrato, nome ou telefone" aria-label="Contrato, nome ou telefone" />
+                                {([
+                                    ["situacao", "Situação", fSits, setFSits, FILTRO_SIT.map(([k, r]) => [k, r, conta(base, k)] as [string, string, number])],
+                                    ["modelo", "Modelo", fCamps, setFCamps, (painel?.campanhas || []).map((c) => [c.id, c.nome, (envios || []).filter((e) => e.campanha === c.id).length] as [string, string, number])],
+                                    ["origem", "Origem", fOrigs, setFOrigs, Object.entries(ORIGENS).map(([k, v]) => [k, v, (envios || []).filter((e) => e.origem === k).length] as [string, string, number])],
+                                ] as const).map(([id, rot, sel, set, opcoes]) => (
+                                    <div key={id} className="relative">
+                                        <button type="button" aria-expanded={menuFiltro === id} onClick={() => setMenuFiltro(menuFiltro === id ? "" : id)}
+                                            className={`${FILTRO} ${sel.length ? FILTRO_ON : FILTRO_OFF}`}>
+                                            {rot}: {resumo(sel as string[], (k) => opcoes.find((o) => o[0] === k)?.[1] || k, "Todos")} <span aria-hidden>▾</span>
+                                        </button>
+                                        {menuFiltro === id && (
+                                            <div className={MENU} role="dialog" aria-label={`Filtrar por ${rot.toLowerCase()}`}>
+                                                <div className="flex items-center px-2 pb-1 pt-1">
+                                                    <b className="text-[13px]">Marque um ou mais</b>
+                                                    <button type="button" className="ml-auto text-[13px] font-bold underline" onClick={() => (set as (x: string[]) => void)(sel.length === opcoes.length ? [] : opcoes.map((o) => o[0]))}>
+                                                        {sel.length === opcoes.length ? "Desmarcar todos" : "Marcar todos"}
+                                                    </button>
+                                                </div>
+                                                {opcoes.map(([k, nome, n]) => (
+                                                    <label key={k} className={OPCAO}>
+                                                        <input type="checkbox" className="h-5 w-5" checked={(sel as string[]).includes(k)} onChange={() => alternar(sel as string[], k, set as (x: string[]) => void)} />
+                                                        {id === "modelo" && <i className="inline-block h-[10px] w-[10px] shrink-0 rounded-[3px]" style={{ background: corModelo(k) }} />}
+                                                        <span className="min-w-0 flex-1 truncate">{nome}</span>
+                                                        <span className={MUDO}>{n}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                                {temFiltro && <button type="button" className="min-h-[40px] px-2 text-[13.5px] font-bold underline" onClick={() => { setFSits([]); setFCamps([]); setFOrigs([]); setBusca(""); }}>Limpar filtros</button>}
+                                <span className="flex-1" />
+                                <span className={MUDO}><b className="text-[#1F2937] dark:text-white">{filtrados.length}</b> mensagens</span>
+                                <button type="button" className={BTN_SEC} disabled={!filtrados.length} onClick={() => exportar(filtrados)}>Exportar planilha</button>
+                            </div>
+                            {(fCamps.length > 0 || fSits.length > 0 || fOrigs.length > 0) && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                    {fSits.map((k) => <button key={`s${k}`} type="button" className={CHIP} onClick={() => alternar(fSits, k, setFSits)}>{FILTRO_SIT.find((f) => f[0] === k)?.[1]} ✕</button>)}
+                                    {fCamps.map((k) => <button key={`m${k}`} type="button" className={CHIP} onClick={() => alternar(fCamps, k, setFCamps)}><i className="mr-1.5 inline-block h-[9px] w-[9px] rounded-[3px]" style={{ background: corModelo(k) }} />{nomeModelo(k)} ✕</button>)}
+                                    {fOrigs.map((k) => <button key={`o${k}`} type="button" className={CHIP} onClick={() => alternar(fOrigs, k, setFOrigs)}>{ORIGENS[k] || k} ✕</button>)}
+                                </div>
+                            )}
+
+                            {gestao && marcados.length > 0 && (
+                                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl bg-[#313C55] p-2 pl-4 text-white dark:bg-[#1C2334]">
+                                    <b>{marcados.length} selecionada(s)</b>
+                                    {marcados.length < marcaveis.length
+                                        ? <button type="button" className="min-h-[40px] px-1 text-[13.5px] font-bold underline" onClick={() => setMarcados(marcaveis.map((e) => e.id))}>Selecionar todas as {marcaveis.length} do filtro</button>
+                                        : <span className="text-[13.5px] opacity-80">todas as {marcaveis.length} do filtro</span>}
+                                    <button type="button" className="min-h-[40px] px-1 text-[13.5px] font-bold underline opacity-80" onClick={() => setMarcados([])}>Limpar</button>
+                                    <span className="flex-1" />
+                                    <button type="button" className={`${BTN} bg-[#F2CB3F] text-[#313C55]`} disabled={!!ocupado} onClick={() => emLote("aprovar")}>Aprovar envio</button>
+                                    <button type="button" className={`${BTN} border border-white/35`} disabled={!!ocupado} onClick={() => emLote("reenviar")}>{ocupado === "lote-reenviar" ? "Enviando…" : "Enviar novamente"}</button>
+                                    <button type="button" className={`${BTN} border border-white/35`} onClick={() => exportar(filtrados.filter((e) => marcados.includes(e.id)))}>Exportar</button>
+                                    <button type="button" className={`${BTN} border border-[#FF9C92]/60 text-[#FFC2BB]`} disabled={!!ocupado} onClick={() => emLote("cancelar")}>Cancelar envio</button>
+                                </div>
+                            )}
+
+                            <div className="mt-3 overflow-x-auto">
+                                {envios === null ? <p className={`p-4 ${MUDO}`}>Carregando…</p> : filtrados.length === 0 ? <p className={`p-4 ${MUDO}`}>Nenhuma mensagem com esses filtros.</p> : (
+                                    <table className="w-full min-w-[820px] text-left text-[14.5px]">
+                                        <thead className="text-[13px] text-[#5B6478] dark:text-[#AEB9CF]">
+                                            <tr>
+                                                <th className="w-10 p-2">
+                                                    {gestao && marcaveis.length > 0 && (
+                                                        <input type="checkbox" className="h-5 w-5" aria-label="Marcar todas as mensagens do filtro" checked={todosMarcados}
+                                                            ref={(el) => { if (el) el.indeterminate = algunsMarcados; }}
+                                                            onChange={() => setMarcados(todosMarcados ? [] : marcaveis.map((e) => e.id))} />
+                                                    )}
+                                                </th>
+                                                <th className="p-2">Hora</th><th className="p-2">Contrato</th><th className="p-2">Titular</th><th className="p-2">Modelo</th><th className="p-2">Situação</th><th className="p-2">Motivo</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {visiveis.map((e, i) => {
+                                                const dia = dataBr(e.programado_em);
+                                                const novoDia = i === 0 || dataBr(visiveis[i - 1].programado_em) !== dia;
+                                                return (
+                                                    <React.Fragment key={e.id}>
+                                                        {novoDia && <tr><td colSpan={7} className="px-2 pb-1 pt-4 font-extrabold">{dia}</td></tr>}
+                                                        <tr tabIndex={0} onClick={() => setDetalhe(e)} onKeyDown={(k) => (k.key === "Enter") && setDetalhe(e)}
+                                                            className={`cursor-pointer border-t border-[#EEF0F3] hover:bg-[#F7F9FB] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#F2CB3F] dark:border-white/10 dark:hover:bg-white/5 ${marcados.includes(e.id) ? "bg-[#FBF7E6] dark:bg-[#F2CB3F]/10" : ""}`}>
+                                                            <td className="p-2" onClick={(k) => k.stopPropagation()}>
+                                                                {gestao && selecionavel(e) && (
+                                                                    <input type="checkbox" className="h-5 w-5" aria-label="Selecionar" checked={marcados.includes(e.id)}
+                                                                        onChange={(k) => setMarcados((m) => (k.target.checked ? [...m, e.id] : m.filter((x) => x !== e.id)))} />
+                                                                )}
+                                                            </td>
+                                                            <td className="whitespace-nowrap p-2">{hora(e.enviado_em || e.programado_em)}</td>
+                                                            <td className="p-2">{e.contrato || "—"}</td>
+                                                            <td className="p-2">{e.titular || fone(e.telefone) || "—"}</td>
+                                                            <td className="p-2"><i className="mr-2 inline-block h-[9px] w-[9px] rounded-[3px]" style={{ background: corModelo(e.campanha) }} />{nomeModelo(e.campanha)}{e.origem !== "auto" ? <span className={`ml-1 ${MUDO}`}>· {ORIGENS[e.origem] || e.origem}</span> : null}</td>
+                                                            <td className="p-2"><Etiqueta par={SITS[e.situacao]} /></td>
+                                                            <td className={`p-2 ${MUDO}`}>{e.motivo || ""}</td>
+                                                        </tr>
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                )}
+                                {filtrados.length > visiveis.length && (
+                                    <div className="p-3 text-center">
+                                        <button type="button" className={BTN_SEC} onClick={() => setLimite((l) => l + POR_PAGINA)}>Mostrar mais ({filtrados.length - visiveis.length} restantes)</button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                );
+            })()}
 
             {/* ---------------- JANELA DO MODELO ---------------- */}
             <Janela aberta={!!form} fechar={fecharModelo} titulo={form?.nome || (form?.kind === "camp" ? "Nova campanha" : "Novo automático")}
