@@ -385,6 +385,9 @@ function AbasDeTelas({ pathname }: { pathname: string }) {
  * 06/11/2026 — Aurora em botão flutuante em todo o app (decisão de 03/11/2026).
  * O botão abre um painel com o próprio Chat da Aurora (/chat) por cima da tela atual, sem sair dela.
  * Não aparece no Chat, no login, na TV do Quadro nem dentro do próprio painel.
+ * 25/11/2026: o botão flutuante saiu (cobria o enviar do Messenger, o "Salvar" e o fim das listas). A Aurora abre pelo
+ * ícone fixo no cabeçalho (site-header.tsx), que manda o evento "pai-aurora" ("alternar" | "fechar"); este painel
+ * responde com "pai-aurora-estado" ({ aberta }) para o ícone mostrar se está aberta. O painel abre logo abaixo do cabeçalho.
  */
 const SEM_AURORA = ["/chat", "/login", "/quadrotv"];
 
@@ -396,6 +399,22 @@ function AuroraFlutuante({ pathname }: { pathname: string }) {
         const q = new URLSearchParams(window.location.search);
         setTv(q.has("tv") || q.get("modo") === "tv");
     }, [pathname]);
+    // 25/11/2026: aberto/fechado pelo ícone do cabeçalho
+    React.useEffect(() => {
+        const pedido = (e: Event) => {
+            const acao = (e as CustomEvent).detail;
+            if (acao === "fechar") setAberta(false);
+            else {
+                setUsada(true);
+                setAberta((v) => !v);
+            }
+        };
+        window.addEventListener("pai-aurora", pedido);
+        return () => window.removeEventListener("pai-aurora", pedido);
+    }, []);
+    React.useEffect(() => {
+        window.dispatchEvent(new CustomEvent("pai-aurora-estado", { detail: { aberta } }));
+    }, [aberta]);
     React.useEffect(() => {
         if (!aberta) return;
         const k = (e: KeyboardEvent) => {
@@ -411,7 +430,7 @@ function AuroraFlutuante({ pathname }: { pathname: string }) {
                 <section
                     aria-label="Aurora"
                     hidden={!aberta}
-                    className="fixed inset-x-0 bottom-0 top-[calc(env(safe-area-inset-top)+3.5rem)] z-[65] flex flex-col overflow-hidden rounded-t-3xl border border-[#E3E8F0] bg-white shadow-[0_20px_50px_rgba(49,60,85,.25)] dark:border-white/[0.12] dark:bg-[#232B3F] lg:inset-auto lg:bottom-[104px] lg:right-7 lg:h-[min(680px,calc(100dvh-140px))] lg:w-[420px] lg:rounded-[20px]"
+                    className="fixed inset-x-0 bottom-0 top-[calc(env(safe-area-inset-top)+3.5rem)] z-[65] flex flex-col overflow-hidden rounded-t-3xl border border-[#E3E8F0] bg-white shadow-[0_20px_50px_rgba(49,60,85,.25)] dark:border-white/[0.12] dark:bg-[#232B3F] lg:inset-auto lg:right-7 lg:top-[84px] lg:h-[min(680px,calc(100dvh-110px))] lg:w-[420px] lg:rounded-[20px]"
                 >
                     <div className="flex items-center gap-2.5 bg-[#313C55] px-4 py-3 text-white">
                         <IconeAurora size={22} />
@@ -423,22 +442,6 @@ function AuroraFlutuante({ pathname }: { pathname: string }) {
                     <iframe src="/chat" title="Aurora" className="min-h-0 w-full flex-1 border-0" />
                 </section>
             ) : null}
-            <button
-                type="button"
-                aria-label={aberta ? "Fechar a Aurora" : "Abrir a Aurora"}
-                aria-expanded={aberta}
-                onClick={() => {
-                    setUsada(true);
-                    setAberta((v) => !v);
-                }}
-                className={[
-                    "fixed z-[60] grid place-items-center rounded-full shadow-[0_10px_28px_rgba(49,60,85,.30)] transition",
-                    "bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 size-[52px] lg:bottom-7 lg:right-7 lg:size-16",
-                    aberta ? "bg-[#313C55] text-[#F2CB3F] max-lg:hidden" : "bg-[#F2CB3F] text-[#313C55] hover:bg-[#E4BC30]",
-                ].join(" ")}
-            >
-                <IconeAurora className="size-[26px] lg:size-[30px]" strokeWidth={2} />
-            </button>
         </>,
         document.body,
     );

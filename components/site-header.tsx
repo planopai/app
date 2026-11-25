@@ -6,6 +6,8 @@
  *  - Celular (60 px): título da tela, pílula Online, tema e sino. O menu é a barra de baixo; o botão ☰ só aparece
  *    nas telas em que a barra de baixo não está (ex.: Chat da Aurora).
  * Não há mais os botões de Início e de Chat (já estão nos atalhos), a seta de voltar nem o seletor de cores.
+ * 25/11/2026: ícone fixo da Aurora (amarelo), em todas as telas, no computador e no celular. Abre o painel da Aurora
+ * (app-shell.tsx) pelo evento "pai-aurora"; o botão flutuante do canto saiu.
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -22,6 +24,7 @@ import { useContadores } from "@/components/shell/useContadores";
 import { useNaoLidas } from "@/components/messenger/ContadorMenu";
 import { ModeSwitcher } from "./mode-switcher";
 import { MenuUsuario } from "@/components/app-sidebar";
+import { IconeAurora } from "@/components/shell/IconeAurora";
 
 const TITULOS_EXTRA: Record<string, string> = {
   "/help": "Ajuda",
@@ -84,6 +87,14 @@ export function SiteHeader() {
   const naoLidas = useNaoLidas(temMessenger);
   const contMsg = temMessenger ? naoLidas.total + naoLidas.fila : 0;
   const noMessenger = pathname === "/messenger" || pathname.startsWith("/messenger/");
+  /* 25/11/2026: Aurora fixa no cabeçalho (o painel fica no app-shell) */
+  const noChat = pathname === "/chat" || pathname.startsWith("/chat/");
+  const [auroraAberta, setAuroraAberta] = useState(false);
+  useEffect(() => {
+    const estado = (e: Event) => setAuroraAberta(!!(e as CustomEvent).detail?.aberta);
+    window.addEventListener("pai-aurora-estado", estado);
+    return () => window.removeEventListener("pai-aurora-estado", estado);
+  }, []);
 
   const pilula = [
     "inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 text-[13px] font-bold",
@@ -155,6 +166,23 @@ export function SiteHeader() {
             <span className={`size-2 rounded-full ${isOnline === false ? "bg-[#B42318] dark:bg-[#FF9C92]" : "bg-[#7BA11A]"}`} />
             {isOnline === false ? "Offline" : "Online"}
           </span>
+
+          {!noChat && (
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("pai-aurora", { detail: "alternar" }))}
+              aria-label={auroraAberta ? "Fechar a Aurora" : "Abrir a Aurora"}
+              aria-expanded={auroraAberta}
+              title="Aurora"
+              className={`grid size-10 shrink-0 place-items-center rounded-xl border-2 transition md:size-11 ${
+                auroraAberta
+                  ? "border-[#313C55] bg-[#313C55] text-[#F2CB3F] dark:border-[#F2CB3F]"
+                  : "border-[#F2CB3F] bg-[#FFF4C2] text-[#313C55] hover:bg-[#FBE7A1] dark:bg-[#F2CB3F]/15 dark:text-[#F2CB3F] dark:hover:bg-[#F2CB3F]/25"
+              }`}
+            >
+              <IconeAurora size={22} strokeWidth={2} />
+            </button>
+          )}
 
           {temMessenger && (
             <Link
