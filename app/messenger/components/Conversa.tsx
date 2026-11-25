@@ -40,47 +40,158 @@ function BotaoBaixar({ a, claro = false }: { a: TAnexo; claro?: boolean }) {
 }
 
 /**
- * 24/11/2026: foto aberta dentro do app, como no WhatsApp (antes abria em outra aba, e o Safari bloqueava).
- * Toque na foto amplia/reduz; fecha no X, no fundo ou com Esc; o botão de baixar continua no topo.
+ * 25/11/2026: visualizador de fotos como no WhatsApp — tela escura por cima de tudo, foto inteira no centro, quem enviou e
+ * quando, legenda, setas (e ← →) para passar pelas fotos da conversa, faixa de miniaturas embaixo, arrastar para o lado no
+ * celular, clique na foto amplia no ponto clicado (clique de novo reduz), baixar, fechar no X, no fundo ou com Esc.
+ * Abre pelo JanelaConversa (FotosContexto), acima de qualquer camada do app (antes, no computador, podia ficar por baixo).
  */
-function VisualizadorFoto({ a, previa, onFechar }: { a: TAnexo; previa: string; onFechar: () => void }) {
-    const [url, setUrl] = useState(previa);
-    const [zoom, setZoom] = useState(false);
-    const [erro, setErro] = useState(false);
+type FotoDaConversa = { a: TAnexo; m?: Mensagem };
+const FotosContexto = React.createContext<((anexoId: number) => void) | null>(null);
+
+function dataHoraFoto(iso?: string) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const hoje = new Date().toDateString() === d.toDateString();
+    const ontem = new Date(Date.now() - 86400000).toDateString() === d.toDateString();
+    const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    return `${hoje ? "hoje" : ontem ? "ontem" : d.toLocaleDateString("pt-BR")} às ${hora}`;
+}
+
+function MiniaturaFoto({ a, ativa, onClick }: { a: TAnexo; ativa: boolean; onClick: () => void }) {
+    const [u, setU] = useState("");
     useEffect(() => {
         let vivo = true;
-        linkAnexo(a.id).then((u) => vivo && setUrl(u)).catch(() => vivo && !previa && setErro(true));
-        const tecla = (e: KeyboardEvent) => { if (e.key === "Escape") onFechar(); };
+        linkAnexo(a.id, a.tem_miniatura).then((x) => vivo && setU(x)).catch(() => {});
+        return () => {
+            vivo = false;
+        };
+    }, [a.id, a.tem_miniatura]);
+    return (
+        <button type="button" data-ativa={ativa ? "1" : "0"} onClick={onClick} aria-label="Ver esta foto" aria-current={ativa}
+            className={`h-14 w-14 flex-none overflow-hidden rounded-lg bg-white/10 transition ${ativa ? "ring-2 ring-[#B3CE52]" : "opacity-50 hover:opacity-90"}`}>
+            {u ? <img src={u} alt="" className="h-full w-full object-cover" /> : null}
+        </button>
+    );
+}
+
+function VisualizadorFoto({ fotos, inicial, titulo, eu, onFechar }: { fotos: FotoDaConversa[]; inicial: number; titulo?: string; eu?: number; onFechar: () => void }) {
+    const [i, setI] = useState(() => Math.max(0, fotos.findIndex((f) => f.a.id === inicial)));
+    const [urls, setUrls] = useState<Record<number, string>>({});
+    const [falhou, setFalhou] = useState<Record<number, boolean>>({});
+    const [zoom, setZoom] = useState(false);
+    const area = useRef<HTMLDivElement>(null);
+    const tira = useRef<HTMLDivElement>(null);
+    const toque = useRef<{ x: number; y: number } | null>(null);
+    const total = fotos.length;
+    const ir = React.useCallback((d: number) => {
+        setZoom(false);
+        setI((v) => Math.min(total - 1, Math.max(0, v + d)));
+    }, [total]);
+    // a foto atual e as vizinhas em tamanho original (as vizinhas já ficam prontas para passar)
+    useEffect(() => {
+        [i, i + 1, i - 1].forEach((k) => {
+            const f = fotos[k];
+            if (!f || urls[f.a.id] || falhou[f.a.id]) return;
+            linkAnexo(f.a.id).then((u) => setUrls((x) => ({ ...x, [f.a.id]: u }))).catch(() => setFalhou((x) => ({ ...x, [f.a.id]: true })));
+        });
+    }, [i, fotos]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        const tecla = (e: KeyboardEvent) => {
+            if (e.key === "Escape") onFechar();
+            else if (e.key === "ArrowLeft") ir(-1);
+            else if (e.key === "ArrowRight") ir(1);
+        };
         document.addEventListener("keydown", tecla);
         const antes = document.body.style.overflow;
         document.body.style.overflow = "hidden";
         return () => {
-            vivo = false;
             document.removeEventListener("keydown", tecla);
             document.body.style.overflow = antes;
         };
-    }, [a.id]); // eslint-disable-line react-hooks/exhaustive-deps
-    if (typeof document === "undefined") return null;
+    }, [ir, onFechar]);
+    useEffect(() => {
+        tira.current?.querySelector<HTMLElement>('[data-ativa="1"]')?.scrollIntoView({ block: "nearest", inline: "center" });
+    }, [i]);
+    const atual = fotos[i];
+    if (!atual || typeof document === "undefined") return null;
+    const url = urls[atual.a.id];
+    const m = atual.m;
+    const autor = !m ? "" : m.autor_tipo === "usuario" && m.autor_usuario_id === eu ? "Você" : m.autor_nome || (m.autor_tipo === "contato" ? titulo || "" : "");
+    const legenda = m?.texto && m.texto !== atual.a.nome_original ? m.texto : "";
+    const ampliar = (e: React.MouseEvent<HTMLImageElement>) => {
+        e.stopPropagation();
+        const r = e.currentTarget.getBoundingClientRect();
+        const px = (e.clientX - r.left) / r.width;
+        const py = (e.clientY - r.top) / r.height;
+        const novo = !zoom;
+        setZoom(novo);
+        if (novo) {
+            setTimeout(() => {
+                const el = area.current;
+                if (!el) return;
+                el.scrollLeft = px * el.scrollWidth - el.clientWidth / 2;
+                el.scrollTop = py * el.scrollHeight - el.clientHeight / 2;
+            }, 30);
+        }
+    };
+    const seta = "absolute top-1/2 z-10 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur hover:bg-white/20 disabled:opacity-0 md:flex";
     return createPortal(
-        <div className="fixed inset-0 z-[200] flex flex-col bg-black/95" role="dialog" aria-modal="true" aria-label="Foto" onClick={onFechar}>
-            <div className="flex flex-none items-center gap-2 px-3 py-2 text-white" style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }} onClick={(e) => e.stopPropagation()}>
-                <span className="min-w-0 flex-1 truncate text-[15px] font-bold">{a.nome_original || "Foto"}</span>
-                <BotaoBaixar a={a} claro />
-                <button type="button" onClick={onFechar} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20" aria-label="Fechar foto"><Icone nome="x" className="h-5 w-5" /></button>
+        <div className="fixed inset-0 z-[10000] flex flex-col bg-[#0B141A]/[0.97] text-white" role="dialog" aria-modal="true" aria-label="Foto">
+            <div className="flex flex-none items-center gap-3 px-3 py-2 md:px-5" style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}>
+                <div className="min-w-0 flex-1">
+                    <div className="truncate text-[15.5px] font-extrabold">{autor || atual.a.nome_original || "Foto"}</div>
+                    <div className="truncate text-[12.5px] text-white/65">{[dataHoraFoto(m?.criado_em), total > 1 ? `${i + 1} de ${total}` : ""].filter(Boolean).join(" · ")}</div>
+                </div>
+                <button type="button" onClick={() => setZoom((z) => !z)} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20" aria-label={zoom ? "Reduzir" : "Ampliar"} title={zoom ? "Reduzir" : "Ampliar"}>
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.2-4.2" />{zoom ? null : <path d="M11 8v6" />}<path d="M8 11h6" /></svg>
+                </button>
+                <BotaoBaixar a={atual.a} claro />
+                <button type="button" onClick={onFechar} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20" aria-label="Fechar foto" title="Fechar (Esc)"><Icone nome="x" className="h-5 w-5" /></button>
             </div>
-            <div className={`flex min-h-0 flex-1 ${zoom ? "items-start justify-start overflow-auto" : "items-center justify-center overflow-hidden"} p-2`}>
-                {url ? (
-                    <img
-                        src={url}
-                        alt={a.nome_original || "Foto enviada"}
-                        onClick={(e) => { e.stopPropagation(); setZoom((z) => !z); }}
-                        className={zoom ? "max-w-none cursor-zoom-out" : "max-h-full max-w-full cursor-zoom-in object-contain"}
-                        style={zoom ? { width: a.largura ? Math.max(a.largura, 1200) : "200%" } : undefined}
-                    />
-                ) : (
-                    <span className="text-sm font-bold text-white/80">{erro ? "Foto indisponível" : "Carregando foto…"}</span>
-                )}
+            <div className="relative min-h-0 flex-1">
+                <button type="button" className={`${seta} left-3`} onClick={() => ir(-1)} disabled={i === 0} aria-label="Foto anterior">
+                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>
+                </button>
+                <button type="button" className={`${seta} right-3`} onClick={() => ir(1)} disabled={i >= total - 1} aria-label="Próxima foto">
+                    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
+                </button>
+                <div
+                    ref={area}
+                    className={`absolute inset-0 ${zoom ? "overflow-auto" : "flex items-center justify-center overflow-hidden px-2 md:px-20"}`}
+                    onClick={(e) => { if (e.target === e.currentTarget) onFechar(); }}
+                    onTouchStart={(e) => { if (!zoom && e.touches.length === 1) toque.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
+                    onTouchEnd={(e) => {
+                        const t0 = toque.current;
+                        toque.current = null;
+                        if (!t0 || zoom) return;
+                        const dx = e.changedTouches[0].clientX - t0.x;
+                        const dy = e.changedTouches[0].clientY - t0.y;
+                        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) ir(dx < 0 ? 1 : -1);
+                    }}
+                >
+                    {url ? (
+                        <img
+                            key={atual.a.id}
+                            src={url}
+                            alt={legenda || atual.a.nome_original || "Foto"}
+                            draggable={false}
+                            onClick={ampliar}
+                            className={zoom ? "block max-w-none cursor-zoom-out select-none" : "max-h-full max-w-full cursor-zoom-in select-none object-contain shadow-2xl"}
+                            style={zoom ? { width: "200%" } : undefined}
+                        />
+                    ) : (
+                        <span className="text-sm font-bold text-white/80">{falhou[atual.a.id] ? "Foto indisponível" : "Carregando foto…"}</span>
+                    )}
+                </div>
             </div>
+            {legenda ? <div className="mx-auto max-w-[760px] flex-none whitespace-pre-wrap break-words px-4 pb-2 pt-1 text-center text-[15px] text-white/90">{legenda}</div> : null}
+            {total > 1 ? (
+                <div ref={tira} className="flex flex-none gap-2 overflow-x-auto px-3 pb-3 pt-1 md:justify-center" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+                    {fotos.map((f, k) => <MiniaturaFoto key={f.a.id} a={f.a} ativa={k === i} onClick={() => { setZoom(false); setI(k); }} />)}
+                </div>
+            ) : (
+                <div className="flex-none" style={{ height: "max(12px, env(safe-area-inset-bottom))" }} />
+            )}
         </div>,
         document.body
     );
@@ -142,6 +253,7 @@ function EnvioFoto({ fotos, respondendo, eu, onEnviar, onCancelar, onTirar }: { 
 
 function Anexo({ a, minha }: { a: TAnexo; minha: boolean }) {
     const [verFoto, setVerFoto] = useState(false);
+    const abrirNaConversa = React.useContext(FotosContexto); // 25/11/2026: abre no visualizador da conversa (com as outras fotos)
     const [url, setUrl] = useState("");
     const [erro, setErro] = useState(false);
     const imagem = a.mime.startsWith("image/");
@@ -163,11 +275,11 @@ function Anexo({ a, minha }: { a: TAnexo; minha: boolean }) {
     if (imagem) {
         return (
             <div className="relative mb-1" style={{ width: 280, maxWidth: "100%" }}>
-                <button type="button" onClick={() => setVerFoto(true)} className="block w-full cursor-zoom-in overflow-hidden rounded-lg bg-[#F0F2F5] dark:bg-[#1C2334]" style={{ aspectRatio: a.largura && a.altura ? `${a.largura}/${a.altura}` : "4/3" }} aria-label="Abrir foto">
+                <button type="button" onClick={(e) => { e.stopPropagation(); if (abrirNaConversa) abrirNaConversa(a.id); else setVerFoto(true); }} className="block w-full cursor-zoom-in overflow-hidden rounded-lg bg-[#F0F2F5] dark:bg-[#1C2334]" style={{ aspectRatio: a.largura && a.altura ? `${a.largura}/${a.altura}` : "4/3" }} aria-label="Abrir foto">
                     {url ? <img src={url} alt="Foto enviada" className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center text-sm font-bold text-[#6B7488] dark:text-[#AEB9CF]">{erro ? "Foto indisponível" : "Carregando foto…"}</span>}
                 </button>
                 <span className="absolute right-1.5 top-1.5"><BotaoBaixar a={a} claro /></span>
-                {verFoto && <VisualizadorFoto a={a} previa={url} onFechar={() => setVerFoto(false)} />}
+                {verFoto && <VisualizadorFoto fotos={[{ a }]} inicial={a.id} onFechar={() => setVerFoto(false)} />}
             </div>
         );
     }
@@ -853,6 +965,11 @@ export default function JanelaConversa(props: {
     onDetalhes: () => void;
 }) {
     const { conversa: c, mensagens, perfil } = props;
+    // 25/11/2026: visualizador de fotos da conversa (setas e miniaturas passam por todas as fotos carregadas)
+    const [fotoAberta, setFotoAberta] = useState<number | null>(null);
+    const fotosConversa = React.useMemo<FotoDaConversa[]>(() => mensagens.flatMap((m) => (m.apagada ? [] : m.anexos.filter((a) => a.mime.startsWith("image/")).map((a) => ({ a, m })))), [mensagens]);
+    const fecharFoto = React.useCallback(() => setFotoAberta(null), []);
+    useEffect(() => setFotoAberta(null), [c.id]);
     const [texto, setTexto] = useState("");
     // pacote 5B: o painel do cliente fica na página (terceira coluna ou por cima); o texto de cobrança volta por aqui
     const abrirCliente = () => props.onAbrirCliente?.();
@@ -1031,6 +1148,8 @@ export default function JanelaConversa(props: {
     }
 
     return (
+        <FotosContexto.Provider value={setFotoAberta}>
+        {fotoAberta !== null && fotosConversa.some((f) => f.a.id === fotoAberta) && <VisualizadorFoto fotos={fotosConversa} inicial={fotoAberta} titulo={c.titulo} eu={perfil.id} onFechar={fecharFoto} />}
         <div className="flex h-full min-h-0 flex-1 flex-col overflow-x-hidden bg-[#EFEAE2] dark:bg-[#1C2334]">
             {props.seguranca && (
                 <div className="flex items-center gap-2 bg-[#FCEFB4] px-4 py-1.5 text-[12.5px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/15 dark:text-[#F7E39A]" role="status">
@@ -1296,5 +1415,6 @@ export default function JanelaConversa(props: {
                 </>
             )}
         </div>
+        </FotosContexto.Provider>
     );
 }
