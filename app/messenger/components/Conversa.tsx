@@ -331,9 +331,10 @@ function EnvioFoto({ fotos, respondendo, eu, onEnviar, onCancelar, onTirar }: { 
                     ))}
                 </div>
             )}
-            <div className="flex-none px-3 pb-3" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}>
+            {/* 26/11/2026: campo da legenda centralizado e com largura máxima (o botão de enviar saía cortado à direita em algumas telas) */}
+            <div className="mx-auto w-full max-w-[860px] flex-none px-4 pb-3" style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))", paddingRight: "max(16px, env(safe-area-inset-right))" }}>
                 {respondendo && <div className="mb-2 rounded-xl bg-white/95 px-2 py-1 dark:bg-[#232B3F]"><Citacao m={respondendo} eu={eu} /></div>}
-                <div className="flex items-end gap-2">
+                <div className="flex min-w-0 items-end gap-2">
                     <textarea
                         autoFocus={!semLegenda}
                         disabled={semLegenda}
@@ -343,7 +344,7 @@ function EnvioFoto({ fotos, respondendo, eu, onEnviar, onCancelar, onTirar }: { 
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); onEnviar(semLegenda ? "" : legenda); } }}
                         placeholder={semLegenda ? "Áudio vai sem legenda" : fotos.length > 1 ? "Legenda (vai no primeiro arquivo)" : "Adicione uma legenda…"}
                         aria-label="Legenda"
-                        className="max-h-32 min-h-[48px] flex-1 resize-none rounded-3xl bg-[#2A3942] px-4 py-3 text-[17px] text-white outline-none placeholder:text-white/50 disabled:opacity-60 md:text-[15.5px]"
+                        className="max-h-32 min-h-[48px] w-0 min-w-0 flex-1 resize-none rounded-3xl bg-[#2A3942] px-4 py-3 text-[17px] text-white outline-none placeholder:text-white/50 disabled:opacity-60 md:text-[15.5px]"
                     />
                     <button type="button" autoFocus={semLegenda} onClick={() => onEnviar(semLegenda ? "" : legenda)} className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-[#B3CE52] text-[#1F2638]" aria-label="Enviar"><Icone nome="send" className="h-5 w-5" /></button>
                 </div>
