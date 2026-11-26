@@ -33,6 +33,22 @@ async function linkAnexo(id: number, miniatura = false): Promise<string> {
  * Quando não cabe, rola da direita para a esquerda: fica parado 2 s, corre devagar até o fim, para 1,5 s e recomeça.
  * Se cabe, fica parado. Com "reduzir movimento" ligado no aparelho, fica cortado com "…", como antes.
  */
+/** 26/11/2026: tipos de arquivo que o servidor do Messenger aceita (msgMimesAceitos no messenger_nucleo.php). */
+const MIMES_ACEITOS = new Set([
+    "image/jpeg", "image/png", "image/webp", "image/gif",
+    "audio/ogg", "audio/mp4", "audio/mpeg", "audio/aac", "audio/webm", "audio/amr",
+    "video/mp4", "video/3gpp", "application/pdf", "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation", "text/plain",
+]);
+const EXTENSOES_ACEITAS = new Set(["jpg", "jpeg", "png", "webp", "gif", "ogg", "m4a", "mp3", "aac", "webm", "amr", "mp4", "3gp", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt"]);
+function tipoAceito(f: File) {
+    const mime = (f.type || "").split(";")[0].toLowerCase();
+    if (mime) return MIMES_ACEITOS.has(mime);
+    return EXTENSOES_ACEITAS.has((f.name.split(".").pop() || "").toLowerCase());
+}
+
 function TextoRolante({ texto, className = "" }: { texto: string; className?: string }) {
     const caixa = useRef<HTMLDivElement>(null);
     const conteudo = useRef<HTMLSpanElement>(null);
@@ -1210,8 +1226,15 @@ export default function JanelaConversa(props: {
     // 26/11/2026: arquivos colados (Ctrl+V) ou arrastados para a conversa, como no WhatsApp.
     // Fotos abrem a janela com legenda; outros arquivos pedem confirmação antes de sair.
     const aceitaArquivos = podeEscrever && !!perfil.midias;
-    const receberArquivos = (arquivos: File[], como: "colados" | "arrastados") => {
-        if (!arquivos.length || !aceitaArquivos) return;
+    const receberArquivos = (todos: File[], como: "colados" | "arrastados") => {
+        if (!todos.length || !aceitaArquivos) return;
+        // 26/11/2026: tipos que o servidor aceita (os mesmos do clipe). ZIP e outros avisam em vez de falhar no envio.
+        const recusados = todos.filter((f) => !tipoAceito(f));
+        const arquivos = todos.filter((f) => tipoAceito(f));
+        if (recusados.length) {
+            window.alert(`${recusados.length > 1 ? "Estes arquivos não podem" : "Este arquivo não pode"} ser enviado${recusados.length > 1 ? "s" : ""} pelo Messenger: ${recusados.map((f) => f.name || "sem nome").join(", ")}.\n\nAceitos: fotos (JPG, PNG, WebP, GIF), PDF, Word, Excel, PowerPoint, TXT, vídeo MP4 e áudio.`);
+        }
+        if (!arquivos.length) return;
         if (arquivos.every((f) => f.type.startsWith("image/") && f.type !== "image/gif")) {
             escolherArquivos(arquivos); // fotos: janela com legenda
             return;
@@ -1260,7 +1283,27 @@ export default function JanelaConversa(props: {
             e.preventDefault();
             arrastoProfundidade.current = 0;
             setArrastando(false);
-            receberArquivos(Array.from(e.dataTransfer.files || []), "arrastados");
+            const arquivos = Array.from(e.dataTransfer.files || []);
+            if (arquivos.length) {
+                receberArquivos(arquivos, "arrastados");
+                return;
+            }
+            // imagem arrastada de um site ou do WhatsApp Web: o navegador manda só o endereço, sem o arquivo
+            if (!aceitaArquivos) return;
+            const html = e.dataTransfer.getData("text/html") || "";
+            const url = (html.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1] || e.dataTransfer.getData("text/uri-list") || "").split("\n")[0].trim();
+            void (async () => {
+                try {
+                    if (!url) throw new Error("sem endereço");
+                    const r = await fetch(url);
+                    const blob = await r.blob();
+                    if (!r.ok || !blob.type.startsWith("image/")) throw new Error("não é imagem");
+                    const ext = blob.type.split("/")[1]?.replace("jpeg", "jpg") || "jpg";
+                    receberArquivos([new File([blob], `imagem.${ext}`, { type: blob.type })], "arrastados");
+                } catch {
+                    window.alert("Não foi possível pegar essa imagem direto de onde ela foi arrastada.\n\nSalve a imagem no computador e arraste o arquivo, ou copie a imagem e cole aqui com Ctrl + V.");
+                }
+            })();
         },
     };
     const porId = new Map(mensagens.map((x) => [x.id, x]));
