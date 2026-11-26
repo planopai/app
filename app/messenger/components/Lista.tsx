@@ -12,7 +12,6 @@ export function Icone({ nome, className = "h-5 w-5" }: { nome: string; className
         users: (<><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></>),
         phone: (<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" />),
         search: (<><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></>),
-        raio: (<path d="M13 2 3 14h9l-1 8 10-12h-9z" />),
         plus: (<><path d="M5 12h14" /><path d="M12 5v14" /></>),
         back: (<path d="m15 18-6-6 6-6" />),
         send: (<><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></>),
@@ -260,7 +259,7 @@ export function Abas({ aba, soNaoLidas, totais, naoLidas, detalhes, destaque, ao
 
 /** Selo com a cor do setor ou da etiqueta (fundo claro, texto escuro; no modo escuro, fundo translúcido). */
 /** Canal do cliente além do WhatsApp (16/11/2026): chat do site, Messenger da Página e Direct do Instagram. */
-export const CANAIS_CLIENTE: Record<string, [string, string]> = { site: ["🌐 Site", "#3D6A99"], facebook: ["Facebook", "#1877F2"], instagram: ["Instagram", "#C13584"] };
+export const CANAIS_CLIENTE: Record<string, [string, string]> = { site: ["🌐 Site", "#3D6A99"], facebook: ["Facebook", "#1877F2"], instagram: ["Instagram", "#C13584"], app: ["📱 App", "#6D4FC2"] }; // app: 26/11/2026 (Aplicativo do Associado)
 
 export function SeloCanal({ canal }: { canal?: string }) {
     const c = canal ? CANAIS_CLIENTE[canal] : undefined;

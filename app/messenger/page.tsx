@@ -259,6 +259,15 @@ export default function MessengerPage() {
         if (id) abrirConversa(id);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+    // 26/11/2026: quadro "Mesmo contrato" do painel do cliente abre a conversa de outra pessoa do contrato
+    useEffect(() => {
+        const abrir = (e: Event) => {
+            const id = Number((e as CustomEvent).detail?.conversa_id || 0);
+            if (id) abrirConversa(id);
+        };
+        window.addEventListener("pai:messenger-abrir", abrir);
+        return () => window.removeEventListener("pai:messenger-abrir", abrir);
+    }, [abrirConversa]);
 
     /* ---------- barra de baixo do celular: some com a conversa aberta ---------- */
     useEffect(() => {

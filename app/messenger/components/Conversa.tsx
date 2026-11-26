@@ -884,6 +884,7 @@ function Bolha({ m, conversa, eu, onApagar, primeiraDoBloco, citada, onResponder
                         </button>
                     )}
 
+                    {m.canal === "app" && conversa.canal !== "app" && <span className="rounded bg-[#EDE7FB] px-1 text-[11px] font-extrabold text-[#5B3FB0] dark:bg-[#6D4FC2]/30 dark:text-[#D8CCFF]" title="Pelo Aplicativo do Associado">📱 App</span>}
                     {hora} {leitura}
                 </span>
             </div>
@@ -1220,12 +1221,32 @@ export default function JanelaConversa(props: {
         setTermo("");
     }, [c.id]);
 
+    // 26/11/2026: pessoa do Aplicativo do Associado na conversa do WhatsApp — o atendente escolhe por onde responder
+    // (a escolha vale até a pessoa escrever de novo; aí a resposta segue o canal da última mensagem dela)
+    const [escolhaRota, setEscolhaRota] = useState<{ conversa: number; base?: string; rota: "app" | "whatsapp"; janela: boolean } | null>(null);
+    const [trocandoRota, setTrocandoRota] = useState(false);
+    const rotaServidor = c.app?.responder_por;
+    const escolhaValida = escolhaRota && escolhaRota.conversa === c.id && (rotaServidor === escolhaRota.base || rotaServidor === escolhaRota.rota) ? escolhaRota : null;
+    const rotaApp = c.canal === "app" || (escolhaValida ? escolhaValida.rota : rotaServidor) === "app";
+    const janelaAberta = escolhaValida ? escolhaValida.janela : c.janela_aberta;
+    const trocarRota = async (rota: "app" | "whatsapp") => {
+        if (trocandoRota) return;
+        setTrocandoRota(true);
+        try {
+            const r = await msgPost("responder_por", { conversa_id: c.id, canal: rota });
+            setEscolhaRota({ conversa: c.id, base: rotaServidor, rota, janela: !!r.dados?.janela_aberta });
+        } catch (e: any) {
+            window.alert(e?.message || "Não foi possível trocar agora.");
+        } finally {
+            setTrocandoRota(false);
+        }
+    };
     const externo = c.tipo === "externo";
     const parceiro = c.tipo === "parceiro"; // 24/11/2026: externo pelo WhatsApp Web (aba Externos): sem Aurora, sem fila, sem janela de 24 h
     // 16/11/2026: cliente pelo chat do site, pelo Facebook ou pelo Instagram (sem modelos aprovados; no site, sem janela de 24 h)
     const canalNovo = externo && c.canal !== "whatsapp" ? CANAIS_CLIENTE[c.canal] : undefined;
-    const nomeCanal = c.canal === "site" ? "chat do site" : canalNovo ? canalNovo[0] : "WhatsApp";
-    const janelaFechada = externo && !c.janela_aberta;
+    const nomeCanal = rotaApp ? "App do Associado" : c.canal === "site" ? "chat do site" : canalNovo ? canalNovo[0] : "WhatsApp";
+    const janelaFechada = externo && !janelaAberta;
     const enviar = () => {
         const t = texto.trim();
         if (!t) return;
@@ -1256,7 +1277,7 @@ export default function JanelaConversa(props: {
         if (idAtual) document.getElementById(`msg-${idAtual}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
     }, [idAtual]);
     // só dá para responder onde se pode escrever (cliente: só o responsável, com a janela de 24 h aberta)
-    const podeEscrever = c.participo !== false && (c.tipo !== "externo" || (!!c.posso_responder && !!c.janela_aberta));
+    const podeEscrever = c.participo !== false && (c.tipo !== "externo" || (!!c.posso_responder && !!janelaAberta));
 
     // 26/11/2026: arquivos colados (Ctrl+V) ou arrastados para a conversa, como no WhatsApp.
     // Fotos e outros arquivos abrem a janela de envio, com legenda.
@@ -1362,14 +1383,14 @@ export default function JanelaConversa(props: {
 
     // 23/11/2026: janela de 24 h como selo na linha das etiquetas (fica vermelho nas 2 últimas horas e quando fecha)
     let selJanela: React.ReactNode = null;
-    if (externo && c.canal !== "site" && c.status_atendimento !== "aguardando") {
-        const ate = c.janela_aberta && c.janela_ate ? new Date(c.janela_ate) : null;
+    if (externo && c.canal !== "site" && !rotaApp && c.status_atendimento !== "aguardando") {
+        const ate = janelaAberta && c.janela_ate ? new Date(c.janela_ate) : null;
         const resta = ate ? ate.getTime() - Date.now() : 0;
-        const alerta = !c.janela_aberta || resta < 2 * 3600000;
-        const titulo = c.janela_aberta
+        const alerta = !janelaAberta || resta < 2 * 3600000;
+        const titulo = janelaAberta
             ? `Janela de 24 h aberta até ${ate ? ate.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}`
             : canalNovo ? `Prazo para responder pelo ${canalNovo[0]} terminou: continue pelo WhatsApp (Nova conversa) se a pessoa informou o celular` : "Janela de 24 h fechada: só modelos aprovados pela Meta";
-        const rotulo = c.janela_aberta
+        const rotulo = janelaAberta
             ? resta < 3600000 ? `Janela fecha em ${Math.max(1, Math.round(resta / 60000))} min` : `Janela até ${ate ? (ate.toDateString() === new Date().toDateString() ? ate.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ate.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })) : "—"}`
             : canalNovo ? "Prazo encerrado" : "Janela fechada";
         selJanela = (
@@ -1533,6 +1554,23 @@ export default function JanelaConversa(props: {
                 {itens}
                 <div ref={fim} />
             </div>
+
+            {/* 26/11/2026: por onde sai a resposta (pessoa que fala pelo App e pelo WhatsApp na mesma conversa) */}
+            {externo && c.app && !c.app.so_app && c.status_atendimento !== "encerrado" && !modoNota && (
+                <div className="flex items-center gap-2 border-t border-[#E3E8F0] bg-white px-3 py-1.5 text-[13px] dark:border-white/12 dark:bg-[#232B3F]" role="group" aria-label="Responder pelo">
+                    <span className="font-bold text-[#5B6478] dark:text-[#AEB9CF]">Responder pelo</span>
+                    {(["app", "whatsapp"] as const).map((r) => {
+                        const ativo = (rotaApp ? "app" : "whatsapp") === r;
+                        return (
+                            <button key={r} type="button" aria-pressed={ativo} disabled={trocandoRota || ativo || !c.posso_responder} onClick={() => trocarRota(r)}
+                                className={`h-8 rounded-full px-3 font-extrabold ${ativo ? (r === "app" ? "bg-[#6D4FC2] text-white" : "bg-[#25D366] text-[#0B3D1F]") : "border border-[#C9D1DE] text-[#313C55] hover:bg-[#F0F2F5] disabled:opacity-60 dark:border-white/25 dark:text-white dark:hover:bg-white/10"}`}>
+                                {r === "app" ? "📱 App" : "WhatsApp"}
+                            </button>
+                        );
+                    })}
+                    <span className="min-w-0 flex-1 truncate text-[12px] text-[#5B6478] dark:text-[#AEB9CF]">{rotaApp ? "sem prazo de 24 h; a pessoa recebe notificação no celular" : "segue a janela de 24 h do WhatsApp"}</span>
+                </div>
+            )}
 
             {/* campo de envio */}
             {externo && c.status_atendimento === "encerrado" && !modoNota ? (

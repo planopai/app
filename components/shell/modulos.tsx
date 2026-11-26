@@ -62,6 +62,7 @@ import {
     IconUserPlus,
     IconUsersGroup,
 } from "@tabler/icons-react";
+import { IconCalendarRepeat } from "@tabler/icons-react";
 import { IconChartFunnel } from "@tabler/icons-react"; // 27/10/2026: Gestão do funil
 import { IconSettingsDollar, IconWallet } from "@tabler/icons-react"; // 06/11/2026: Folha de pagamento
 import { IconFileText, IconListCheck } from "@tabler/icons-react"; // 18/11/2026: módulo Contratos
@@ -219,6 +220,7 @@ export const MODULOS: Modulo[] = [
         hub: { href: "/modulo/contratos", slug: "" },
         itens: [
             { id: "contratos", titulo: "Contratos", desc: "Contratos e beneficiários", href: "/contratos", slugs: ["contratos"], icone: IconFileText, secao: "Contratos" },
+            { id: "contratos-renovacao", titulo: "Renovação de carnês", desc: "Carnês perto do fim, reajuste e análise das mensalidades", href: "/contratos-renovacao", slugs: ["contratos-renovacao"], icone: IconCalendarRepeat, secao: "Contratos" },
             { id: "contratos-planos", titulo: "Planos", desc: "Cadastro, preços, regras e aditivos de cada plano", href: "/contratos-planos", slugs: ["contratos-planos"], icone: IconListDetails, secao: "Configurações" },
             { id: "contratos-regras", titulo: "Regras", desc: "Carência, cobrança, situação, cancelamento e reajuste", href: "/contratos-regras", slugs: ["contratos-regras"], icone: IconListCheck, secao: "Configurações" },
         ],

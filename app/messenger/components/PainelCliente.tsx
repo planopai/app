@@ -12,6 +12,7 @@ import { msgGet, msgPost } from "@/components/messenger/api";
 import type { Conversa } from "@/components/messenger/tipos";
 import { Icone } from "./Lista";
 import TipoContato from "./TipoContato";
+import MesmoContrato from "./MesmoContrato";
 
 type Vinculo = { id_contrato: number; contrato: string; titular: string | null; plano: string | null; relacao: string; pode_pagar: boolean; criado_por: string | null; criado_em: string };
 type Parcela = { id: number; parcela: string; valor: number; vencimento: string; situacao: string; tipo: string; no_lote?: boolean; pago_em?: string; forma?: string };
@@ -161,6 +162,7 @@ export default function PainelCliente({ conversa, coluna = false, onFechar, onIn
                     </div>
                 )}
                 <TipoContato conversa={conversa} />
+                <MesmoContrato conversa={conversa} />
                 {!dados && !erro && <p className="py-6 text-[15px]">Consultando a Unymos…</p>}
 
                 {dados && !atual && (

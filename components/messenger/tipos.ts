@@ -36,6 +36,8 @@ export type Mensagem = {
     _falhaLocal?: string;
     /** 23/11/2026: WhatsApp — texto aguardando para sair junto com os próximos (hora prevista do envio, em ms) */
     _aguardando?: number;
+    /** 26/11/2026: "app" = veio/foi pelo Aplicativo do Associado (aurora_28.php) */
+    canal?: "app" | null;
 };
 
 export type Membro = { usuario_id: number; nome: string; papel: "membro" | "admin" | "observador"; ultima_lida_id: number };
@@ -43,7 +45,7 @@ export type Membro = { usuario_id: number; nome: string; papel: "membro" | "admi
 export type Conversa = {
     id: number;
     tipo: "individual" | "grupo" | "externo" | "parceiro"; // parceiro: externo pelo WhatsApp Web (24/11/2026, aba Externos)
-    canal: "interno" | "whatsapp" | "site" | "facebook" | "instagram"; // site, facebook e instagram desde 16/11/2026 (aurora_13 e aurora_14)
+    canal: "interno" | "whatsapp" | "site" | "facebook" | "instagram" | "app"; // site, facebook e instagram desde 16/11/2026 (aurora_13 e aurora_14); app: 26/11/2026 (aurora_28)
     titulo: string;
     outro_usuario_id: number | null;
     membros: Membro[];
@@ -60,6 +62,8 @@ export type Conversa = {
     responsavel: { id: number; nome: string | null } | null;
     janela_ate: string | null;
     janela_aberta: boolean | null;
+    /** 26/11/2026: pessoa do Aplicativo do Associado — por onde sai a resposta e quem é (aurora_28.php) */
+    app?: { vinculado: boolean; so_app: boolean; responder_por: "app" | "whatsapp"; pessoas: { nome: string; tipo: string; contrato: string }[] } | null;
     atendimento_id: number | null;
     /** Gestão vendo um atendimento em andamento sem participar: pode transferir e encerrar, não responde */
     gestao_acompanha?: boolean;

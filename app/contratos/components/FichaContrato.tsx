@@ -11,6 +11,7 @@ import { type Base, type Beneficiario, type Bonificacao, brl, CampoData, Combo, 
 import { benefParaEnvio, benefVazio, JanelaBenef } from "./Benef";
 import { CamposTitular, type TitularForm, titularDeDados, titularParaEnvio, titularProblemas, titularVazio } from "./Titular";
 import { AvisoObitos } from "./Obitos";
+import Financeiro from "./Financeiro";
 
 type Sub = "contrato" | "benef" | "vendas" | "fin" | "transp" | "hist";
 const SUBS: [Sub, string][] = [
@@ -394,11 +395,7 @@ export default function FichaContrato({ id, base, recarregarBase, avisar, onVolt
                     </>
                 ) : null}
 
-                {sub === "fin" ? (
-                    <div className={NOTA}>
-                        <span>O financeiro do contrato (parcelas, carnê, Pix e BolePix do Sicredi, pagamento parcial, baixa e situação automática pela regra do termo) chega na fase 3. Até a virada, as mensalidades reais continuam na Unymos.</span>
-                    </div>
-                ) : null}
+                {sub === "fin" ? <Financeiro contratoId={id} avisar={avisar} onMudou={() => void depois()} /> : null}
                 {sub === "transp" ? (
                     <div className={NOTA}>
                         <span>Os usos do transporte de ambulância (associado pelo plano) vão aparecer aqui quando a tela de Transporte for feita, depois dos contratos.</span>
