@@ -87,7 +87,7 @@ const FILTRO_SIT: [string, string, (s: string) => boolean][] = [
     ["nao", "Não enviadas", (s) => ["falhou", "pulado", "np", "cancelado"].includes(s)],
 ];
 const PERIODOS: [string, string, number][] = [["hoje", "Hoje", 0], ["7", "7 dias", 6], ["30", "30 dias", 29]];
-const POR_PAGINA = 200;
+const TAMANHOS_PAGINA = [10, 25, 50, 100];
 
 const hojeIso = () => new Date().toLocaleDateString("sv-SE");
 const diaIso = (s: string | null | undefined) => (s ? new Date(s).toLocaleDateString("sv-SE") : "");
@@ -238,7 +238,8 @@ export default function CampanhasLembretesPage() {
     const [fSits, setFSits] = useState<string[]>([]);
     const [busca, setBusca] = useState("");
     const [menuFiltro, setMenuFiltro] = useState<"" | "modelo" | "situacao" | "origem">("");
-    const [limite, setLimite] = useState(POR_PAGINA);
+    const [pagina, setPagina] = useState(1);
+    const [porPagina, setPorPagina] = useState(25);
     const [envios, setEnvios] = useState<Envio[] | null>(null);
     const [marcados, setMarcados] = useState<number[]>([]);
     const [detalhe, setDetalhe] = useState<Envio | null>(null);
@@ -439,7 +440,7 @@ export default function CampanhasLembretesPage() {
         return base.filter((e) => fs.some((f) => f(e.situacao)));
     }, [base, fSits]);
     useEffect(() => {
-        setLimite(POR_PAGINA);
+        setPagina(1);
         setMarcados((m) => m.filter((id) => filtrados.some((e) => e.id === id)));
     }, [filtrados]);
     const corModelo = useCallback((id: string) => {
@@ -458,7 +459,12 @@ export default function CampanhasLembretesPage() {
             const ini = Math.min(8, ...horas), fim = Math.max(18, ...horas);
             return Array.from({ length: fim - ini + 1 }, (_, i) => ({ chave: String(ini + i), rotulo: `${String(ini + i).padStart(2, "0")}h` }));
         }
-        return diasDoPeriodo(de, ate).map((d) => ({ chave: d, rotulo: `${d.slice(8, 10)}/${d.slice(5, 7)}` }));
+        // Os dias vazios do começo do período saem do gráfico (ficam no mínimo 7), para as barras não ficarem finas demais.
+        const dias = diasDoPeriodo(de, ate);
+        const comDado = new Set(base.map((e) => diaIso(e.programado_em)));
+        const primeiro = dias.findIndex((d) => comDado.has(d));
+        const ini = primeiro < 0 ? 0 : Math.max(0, Math.min(primeiro, dias.length - 7));
+        return dias.slice(ini).map((d) => ({ chave: d, rotulo: `${d.slice(8, 10)}/${d.slice(5, 7)}` }));
     }, [base, de, ate, umDia]);
     const tempoDe = useCallback((e: Envio) => (umDia ? String(new Date(e.enviado_em || e.programado_em || "").getHours()) : diaIso(e.programado_em)), [umDia]);
     const porTempo = useCallback((chave: string) => tempos.map((t) => base.filter((e) => tempoDe(e) === t.chave && (FILTRO_SIT.find((x) => x[0] === chave)?.[2] || (() => true))(e.situacao)).length), [tempos, base, tempoDe]);
@@ -619,7 +625,7 @@ export default function CampanhasLembretesPage() {
                 const nEnv = conta(base, "env"), nLida = conta(base, "lida"), nPago = conta(base, "pago"), nNao = conta(base, "nao"), nAprov = conta(base, "aprov");
                 const nEntregue = base.filter((e) => ["entregue", "lida", "respondeu", "abriu", "pago"].includes(e.situacao)).length;
                 const cartoes: { chave: string; nome: string; valor: number; sub: string; cor: string }[] = [
-                    { chave: "", nome: "Na régua", valor: total, sub: umDia ? "mensagens no dia" : `mensagens em ${tempos.length} dias`, cor: "#64748B" },
+                    { chave: "", nome: "Na régua", valor: total, sub: umDia ? "mensagens no dia" : `mensagens em ${diasDoPeriodo(de, ate).length} dias`, cor: "#64748B" },
                     { chave: "env", nome: "Enviadas", valor: nEnv, sub: `${pct(nEnv, total)} do total`, cor: CORES.enviadas },
                     { chave: "lida", nome: "Lidas", valor: nLida, sub: `${pct(nLida, nEnv)} das enviadas`, cor: CORES.lidas },
                     { chave: "pago", nome: "Pagaram", valor: nPago, sub: `${pct(nPago, nEnv)} das enviadas`, cor: "#B7791F" },
@@ -647,7 +653,10 @@ export default function CampanhasLembretesPage() {
                 const FILTRO_ON = "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]";
                 const FILTRO_OFF = "border-[#C9D1DE] bg-white dark:border-white/15 dark:bg-transparent";
                 const resumo = (sel: string[], nome: (k: string) => string, vazio: string) => (sel.length === 0 ? vazio : sel.length === 1 ? nome(sel[0]) : `${sel.length} escolhidos`);
-                const visiveis = filtrados.slice(0, limite);
+                const paginas = Math.max(1, Math.ceil(filtrados.length / porPagina));
+                const pag = Math.min(pagina, paginas);
+                const visiveis = filtrados.slice((pag - 1) * porPagina, pag * porPagina);
+                const numerosPag = Array.from(new Set([1, pag - 1, pag, pag + 1, paginas].filter((n) => n >= 1 && n <= paginas))).sort((a, b) => a - b);
                 const temFiltro = fCamps.length + fOrigs.length + fSits.length > 0 || !!busca.trim();
                 return (
                     <section className="mt-4">
@@ -686,8 +695,9 @@ export default function CampanhasLembretesPage() {
                             })}
                         </div>
 
-                        {/* gráficos */}
-                        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.05fr_1.25fr_1fr]">
+                        {/* gráficos na coluna da esquerda, lista à direita */}
+                        <div className="mt-3 grid grid-cols-1 items-start gap-3 lg:grid-cols-[360px_minmax(0,1fr)]">
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-1">
                             <div className={CARTAO}>
                                 <div className="mb-3 flex flex-wrap items-baseline gap-2"><b className="text-[15px]">Funil</b><span className={`ml-auto text-[12px] ${MUDO}`}>clique numa etapa para filtrar</span></div>
                                 <Funil ativas={fSits} clicar={(k) => alternar(fSits, k, setFSits)} etapas={[
@@ -700,7 +710,7 @@ export default function CampanhasLembretesPage() {
                                 ]} />
                             </div>
                             <div className={CARTAO}>
-                                <b className="text-[15px]">{umDia ? "Ao longo do dia" : `Por dia (${tempos.length} dias)`}</b>
+                                <b className="text-[15px]">{umDia ? "Ao longo do dia" : tempos.length < diasDoPeriodo(de, ate).length ? `Por dia (a partir de ${tempos[0]?.rotulo})` : `Por dia (${tempos.length} dias)`}</b>
                                 <div className="mb-1 mt-2 flex flex-wrap gap-x-4 gap-y-1">
                                     {series.map((x) => (
                                         <span key={x.nome} className="inline-flex items-center gap-1.5 text-[12.5px]">
@@ -708,7 +718,7 @@ export default function CampanhasLembretesPage() {
                                         </span>
                                     ))}
                                 </div>
-                                <Barras series={series} colunas={tempos.map((t, i) => ({ rotulo: t.rotulo, valores: series.map((x) => x.t[i]) }))} />
+                                <Barras largura={340} altura={220} series={series} colunas={tempos.map((t, i) => ({ rotulo: t.rotulo, valores: series.map((x) => x.t[i]) }))} />
                             </div>
                             <div className={CARTAO}>
                                 <b className="text-[15px]">Por modelo</b>
@@ -721,7 +731,7 @@ export default function CampanhasLembretesPage() {
                         </div>
 
                         {/* filtros e lista */}
-                        <div className={`${CARTAO} mt-3`}>
+                        <div className={`${CARTAO} min-w-0`}>
                             {menuFiltro && <button type="button" aria-label="Fechar" className="fixed inset-0 z-20 cursor-default" onClick={() => setMenuFiltro("")} />}
                             <div className="flex flex-wrap items-center gap-2">
                                 <input className={`${CAMPO} h-10 w-full sm:w-[280px]`} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Contrato, nome ou telefone" aria-label="Contrato, nome ou telefone" />
@@ -826,12 +836,31 @@ export default function CampanhasLembretesPage() {
                                         </tbody>
                                     </table>
                                 )}
-                                {filtrados.length > visiveis.length && (
-                                    <div className="p-3 text-center">
-                                        <button type="button" className={BTN_SEC} onClick={() => setLimite((l) => l + POR_PAGINA)}>Mostrar mais ({filtrados.length - visiveis.length} restantes)</button>
+                                {filtrados.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[#EEF0F3] px-1 pt-3 dark:border-white/10">
+                                        <label className="inline-flex items-center gap-2">
+                                            <span className={`whitespace-nowrap ${MUDO}`}>Por página</span>
+                                            <select className={`${CAMPO} h-10 w-[84px]`} value={porPagina} onChange={(e) => { setPorPagina(Number(e.target.value)); setPagina(1); }}>
+                                                {TAMANHOS_PAGINA.map((n) => <option key={n} value={n}>{n}</option>)}
+                                            </select>
+                                        </label>
+                                        <span className={MUDO}>{(pag - 1) * porPagina + 1}–{Math.min(pag * porPagina, filtrados.length)} de {filtrados.length}</span>
+                                        <span className="flex-1" />
+                                        <nav className="flex flex-wrap items-center gap-1" aria-label="Páginas">
+                                            <button type="button" className={`${BTN_SEC} px-3`} disabled={pag <= 1} onClick={() => setPagina(pag - 1)} aria-label="Página anterior">‹</button>
+                                            {numerosPag.map((n, i) => (
+                                                <React.Fragment key={n}>
+                                                    {i > 0 && n - numerosPag[i - 1] > 1 && <span className={`px-1 ${MUDO}`}>…</span>}
+                                                    <button type="button" aria-current={n === pag ? "page" : undefined} onClick={() => setPagina(n)}
+                                                        className={n === pag ? `${BTN_PRI} px-3` : `${BTN_SEC} px-3`}>{n}</button>
+                                                </React.Fragment>
+                                            ))}
+                                            <button type="button" className={`${BTN_SEC} px-3`} disabled={pag >= paginas} onClick={() => setPagina(pag + 1)} aria-label="Próxima página">›</button>
+                                        </nav>
                                     </div>
                                 )}
                             </div>
+                        </div>
                         </div>
                     </section>
                 );

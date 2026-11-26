@@ -78,12 +78,12 @@ export type Serie = { nome: string; cor: string };
 export type Coluna = { rotulo: string; valores: number[] };
 
 /** Barras empilhadas, com o número de cada parte dentro da barra (quando cabe) e o total em cima. */
-export function Barras({ series, colunas }: { series: Serie[]; colunas: Coluna[] }) {
-    const L = 640, A = 230, base = A - 22, topoY = 18;
+export function Barras({ series, colunas, largura = 640, altura = 230 }: { series: Serie[]; colunas: Coluna[]; largura?: number; altura?: number }) {
+    const L = largura, A = altura, base = A - 22, topoY = 18;
     const mx = Math.max(...colunas.map((c) => c.valores.reduce((s, v) => s + v, 0)), 1);
     const passo = L / Math.max(colunas.length, 1);
     const larg = Math.min(passo * 0.62, 64);
-    const mostrarRotulo = (i: number) => colunas.length <= 16 || i % Math.ceil(colunas.length / 16) === 0 || i === colunas.length - 1;
+    const mostrarRotulo = (i: number) => colunas.length <= Math.floor(L / 40) || i % Math.ceil(colunas.length / Math.floor(L / 40)) === 0 || i === colunas.length - 1;
     return (
         <svg viewBox={`0 0 ${L} ${A}`} className="h-auto w-full" role="img" aria-label="Mensagens por período">
             {[0, 1, 2, 3].map((g) => {
