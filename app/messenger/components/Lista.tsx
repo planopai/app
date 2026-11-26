@@ -337,8 +337,10 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
     const destaque = c.nao_lidas > 0 || naoLidaMarcada;
     return (
         <div ref={caixa} className="group relative min-h-[76px] w-full flex-none overflow-x-clip" style={{ overflowY: "visible" }}>
-            {acoes && (
-                <div className="absolute inset-y-0 right-0 flex md:hidden" style={{ width: LARGURA_ACOES }} aria-hidden={dx === 0}>
+            {/* Botões de deslizar: só existem enquanto a linha está sendo arrastada ou aberta (antes ficavam sempre
+                atrás da linha e apareciam como um risco azul/cinza nas conversas sem prévia). */}
+            {acoes && (dx !== 0 || arrastando) && (
+                <div className="absolute inset-y-0 right-0 flex md:hidden" style={{ width: LARGURA_ACOES }}>
                     <button type="button" tabIndex={dx === 0 ? -1 : 0} onClick={() => executar(acoes.onMarcar)} className="flex flex-1 flex-col items-center justify-center gap-1 bg-[#3D6A99] text-[13px] font-bold text-white">
                         <Icone nome={naoLidaMarcada || c.nao_lidas ? "checks" : "naolida"} className="h-6 w-6" />
                         {naoLidaMarcada || c.nao_lidas ? "Lida" : "Não lida"}
@@ -350,7 +352,7 @@ export function LinhaConversa({ c, selecionada, onAbrir, eu, acao, online = fals
                 </div>
             )}
             <div
-                className={`relative flex w-full items-center gap-3 bg-white px-3 dark:bg-[#232B3F] ${arrastando ? "" : "transition-transform duration-200"}`}
+                className={`relative flex min-h-[76px] w-full items-center gap-3 bg-white px-3 dark:bg-[#232B3F] ${arrastando ? "" : "transition-transform duration-200"}`}
                 style={{ transform: dx ? `translateX(${dx}px)` : undefined, touchAction: "pan-y" }}
                 onTouchStart={(e) => {
                     if (!acoes) return;
