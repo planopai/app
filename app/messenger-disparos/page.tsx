@@ -238,6 +238,8 @@ export default function CampanhasLembretesPage() {
     const [fSits, setFSits] = useState<string[]>([]);
     const [busca, setBusca] = useState("");
     const [menuFiltro, setMenuFiltro] = useState<"" | "modelo" | "situacao" | "origem">("");
+    // 26/11/2026: a lista do filtro abre para onde há mais espaço visível (para cima ou para baixo; à esquerda ou à direita)
+    const [menuPos, setMenuPos] = useState<{ cima: boolean; direita: boolean; altura: number }>({ cima: false, direita: false, altura: 340 });
     const [pagina, setPagina] = useState(1);
     const [porPagina, setPorPagina] = useState(25);
     const [envios, setEnvios] = useState<Envio[] | null>(null);
@@ -647,7 +649,7 @@ export default function CampanhasLembretesPage() {
                     .filter((f) => f.valor > 0 || fCamps.includes(f.chave));
                 const todosMarcados = gestao && marcaveis.length > 0 && marcaveis.every((e) => marcados.includes(e.id));
                 const algunsMarcados = marcados.length > 0 && !todosMarcados;
-                const MENU = "absolute left-0 top-[calc(100%+6px)] z-30 max-h-[340px] w-[290px] overflow-y-auto rounded-2xl border border-[#E1E5EC] bg-white p-2 shadow-xl dark:border-white/12 dark:bg-[#232B3F]";
+                const MENU = "absolute z-30 w-[290px] overflow-y-auto rounded-2xl border border-[#E1E5EC] bg-white p-2 shadow-xl dark:border-white/12 dark:bg-[#232B3F]";
                 const OPCAO = "flex min-h-[40px] w-full items-center gap-2 rounded-lg px-2 text-left text-[14px] hover:bg-[#F1F4F8] dark:hover:bg-white/5";
                 const FILTRO = "inline-flex min-h-[40px] items-center gap-1 rounded-full border px-3 text-[13.5px] font-bold";
                 const FILTRO_ON = "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]";
@@ -741,12 +743,19 @@ export default function CampanhasLembretesPage() {
                                     ["origem", "Origem", fOrigs, setFOrigs, Object.entries(ORIGENS).map(([k, v]) => [k, v, (envios || []).filter((e) => e.origem === k).length] as [string, string, number])],
                                 ] as const).map(([id, rot, sel, set, opcoes]) => (
                                     <div key={id} className="relative">
-                                        <button type="button" aria-expanded={menuFiltro === id} onClick={() => setMenuFiltro(menuFiltro === id ? "" : id)}
+                                        <button type="button" aria-expanded={menuFiltro === id} onClick={(ev) => {
+                                                if (menuFiltro === id) return setMenuFiltro("");
+                                                const r = ev.currentTarget.getBoundingClientRect();
+                                                const abaixo = window.innerHeight - r.bottom - 12, acima = r.top - 12;
+                                                const cima = abaixo < 340 && acima > abaixo;
+                                                setMenuPos({ cima, direita: r.left + 290 > window.innerWidth - 8, altura: Math.max(160, Math.min(340, cima ? acima : abaixo)) });
+                                                setMenuFiltro(id);
+                                            }}
                                             className={`${FILTRO} ${sel.length ? FILTRO_ON : FILTRO_OFF}`}>
                                             {rot}: {resumo(sel as string[], (k) => opcoes.find((o) => o[0] === k)?.[1] || k, "Todos")} <span aria-hidden>▾</span>
                                         </button>
                                         {menuFiltro === id && (
-                                            <div className={MENU} role="dialog" aria-label={`Filtrar por ${rot.toLowerCase()}`}>
+                                            <div className={`${MENU} ${menuPos.cima ? "bottom-[calc(100%+6px)]" : "top-[calc(100%+6px)]"} ${menuPos.direita ? "right-0" : "left-0"}`} style={{ maxHeight: menuPos.altura }} role="dialog" aria-label={`Filtrar por ${rot.toLowerCase()}`}>
                                                 <div className="flex items-center px-2 pb-1 pt-1">
                                                     <b className="text-[13px]">Marque um ou mais</b>
                                                     <button type="button" className="ml-auto text-[13px] font-bold underline" onClick={() => (set as (x: string[]) => void)(sel.length === opcoes.length ? [] : opcoes.map((o) => o[0]))}>
