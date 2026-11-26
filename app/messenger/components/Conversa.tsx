@@ -28,6 +28,56 @@ async function linkAnexo(id: number, miniatura = false): Promise<string> {
     return d.url;
 }
 
+/**
+ * 26/11/2026: texto da linha de baixo do topo da conversa ("visto por último…", telefone · responsável…).
+ * Quando não cabe, rola da direita para a esquerda: fica parado 2 s, corre devagar até o fim, para 1,5 s e recomeça.
+ * Se cabe, fica parado. Com "reduzir movimento" ligado no aparelho, fica cortado com "…", como antes.
+ */
+function TextoRolante({ texto, className = "" }: { texto: string; className?: string }) {
+    const caixa = useRef<HTMLDivElement>(null);
+    const conteudo = useRef<HTMLSpanElement>(null);
+    const [sobra, setSobra] = useState(0);
+
+    // mede quanto o texto passa da largura (e mede de novo quando a tela muda de tamanho)
+    useEffect(() => {
+        const cx = caixa.current;
+        if (!cx) return;
+        const medir = () => {
+            const calmo = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+            const s = Math.ceil(cx.scrollWidth - cx.clientWidth);
+            setSobra(!calmo && s > 2 ? s : 0);
+        };
+        medir();
+        const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(medir) : null;
+        ro?.observe(cx);
+        return () => ro?.disconnect();
+    }, [texto]);
+
+    // rola só quando não cabe
+    useEffect(() => {
+        const ct = conteudo.current;
+        if (!ct || !sobra || typeof ct.animate !== "function") return;
+        const parado = 2000, fim = 1500, corre = Math.max(1500, (sobra / 35) * 1000);
+        const total = parado + corre + fim;
+        const anim = ct.animate(
+            [
+                { transform: "translateX(0)", offset: 0 },
+                { transform: "translateX(0)", offset: parado / total },
+                { transform: `translateX(-${sobra}px)`, offset: (parado + corre) / total },
+                { transform: `translateX(-${sobra}px)`, offset: 1 },
+            ],
+            { duration: total, iterations: Infinity, easing: "linear" },
+        );
+        return () => anim.cancel();
+    }, [sobra, texto]);
+
+    return (
+        <div ref={caixa} className={`overflow-hidden whitespace-nowrap ${sobra ? "" : "text-ellipsis"} ${className}`} title={texto}>
+            <span ref={conteudo} className={sobra ? "inline-block will-change-transform" : ""}>{texto}</span>
+        </div>
+    );
+}
+
 function BotaoBaixar({ a, claro = false }: { a: TAnexo; claro?: boolean }) {
     const [ocupado, setOcupado] = useState(false);
     return (
@@ -1217,7 +1267,11 @@ export default function JanelaConversa(props: {
                         {canalNovo && <SeloCor nome={canalNovo[0]} cor={canalNovo[1]} pequeno />}
                         {parceiro && c.wa2 && <SeloCor nome={`WhatsApp Web · ${c.wa2.numero_nome}`} cor={c.wa2.conectado ? "#2E9D5B" : "#B42318"} pequeno />}
                     </div>
-                    <div className="truncate text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]">{props.digitando ? <span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span> : subtitulo}</div>
+                    {props.digitando ? (
+                        <div className="truncate text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]"><span className="font-bold text-[#4E6B0A] dark:text-[#B3CE52]">{c.tipo === "grupo" ? `${props.digitando.split(" ")[0]} está digitando…` : "digitando…"}</span></div>
+                    ) : (
+                        <TextoRolante texto={subtitulo} className="text-[14.5px] font-semibold text-[#5B6478] dark:text-[#AEB9CF]" />
+                    )}
                 </div>
                 {!externo && (
                     <button type="button" onClick={alternarBusca} className="flex h-11 w-11 flex-none items-center justify-center rounded-xl text-[#313C55] hover:bg-[#EEF2F7] dark:text-white dark:hover:bg-white/10" aria-label="Buscar nesta conversa" title="Buscar"><Icone nome="search" /></button>
