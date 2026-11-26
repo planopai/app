@@ -267,6 +267,8 @@ function VisualizadorFoto({ fotos, inicial, titulo, eu, onFechar }: { fotos: Fot
  * 24/11/2026: foto escolhida (clipe, câmera ou colada) fica numa janela antes de sair, como no WhatsApp:
  * prévia, legenda e a mensagem que está sendo respondida. Várias fotos: a legenda vai na primeira.
  */
+// 26/11/2026: a janela usa z-[10000] para ficar acima do Messenger (z-1000 dentro das abas do computador);
+// com z-200 ela abria escondida no computador e parecia que arrastar/colar/anexar foto não fazia nada.
 function EnvioFoto({ fotos, respondendo, eu, onEnviar, onCancelar, onTirar }: { fotos: File[]; respondendo?: Mensagem | null; eu: number; onEnviar: (legenda: string) => void; onCancelar: () => void; onTirar: (i: number) => void }) {
     const [legenda, setLegenda] = useState("");
     const [atual, setAtual] = useState(0);
@@ -280,7 +282,7 @@ function EnvioFoto({ fotos, respondendo, eu, onEnviar, onCancelar, onTirar }: { 
     const i = Math.min(atual, fotos.length - 1);
     if (typeof document === "undefined" || !fotos.length) return null;
     return createPortal(
-        <div className="fixed inset-0 z-[200] flex flex-col bg-[#0B141A]" role="dialog" aria-modal="true" aria-label="Enviar foto">
+        <div className="fixed inset-0 z-[10000] flex flex-col bg-[#0B141A]" role="dialog" aria-modal="true" aria-label="Enviar foto">
             <div className="flex flex-none items-center gap-2 px-3 py-2 text-white" style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}>
                 <button type="button" onClick={onCancelar} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20" aria-label="Cancelar envio"><Icone nome="x" className="h-5 w-5" /></button>
                 <span className="min-w-0 flex-1 truncate text-[15px] font-bold">{fotos.length > 1 ? `${fotos.length} fotos` : "Enviar foto"}</span>
