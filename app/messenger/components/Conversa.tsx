@@ -1106,6 +1106,7 @@ export default function JanelaConversa(props: {
     }, [props.textoParaInserir?.n]); // eslint-disable-line react-hooks/exhaustive-deps
     const [modoNota, setModoNota] = useState(false);
     const [menuAnexar, setMenuAnexar] = useState(false);
+    const [rapidas, setRapidas] = useState(false); // botão de respostas rápidas (além do "/")
     const [buscando, setBuscando] = useState(false);
     const [termo, setTermo] = useState("");
     const [atual, setAtual] = useState(0);
@@ -1560,7 +1561,7 @@ export default function JanelaConversa(props: {
                             <button type="button" onClick={() => setModoNota(false)} className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5" aria-label="Sair da nota interna"><Icone nome="x" className="h-4 w-4" /></button>
                         </div>
                     )}
-                    {!modoNota && <SugestoesRespostas texto={texto} onEscolher={(t) => { setTexto(t); setTimeout(() => campo.current?.focus(), 30); }} />}
+                    {!modoNota && <SugestoesRespostas key={rapidas ? "aberto" : "barra"} texto={rapidas ? "" : texto} aberto={rapidas} onFechar={() => setRapidas(false)} onEscolher={(t) => { setTexto(t); setRapidas(false); setTimeout(() => campo.current?.focus(), 30); }} />}
                     {props.respondendo && (
                         <div className="mx-2 -mb-0.5 mt-1.5 flex items-center gap-2 rounded-2xl bg-white px-3 py-2 shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] md:mx-4 dark:bg-[#232B3F]">
                             <Icone nome="responder" className="h-5 w-5 flex-none text-[#3D6A99] dark:text-[#A9BED6]" />
@@ -1575,6 +1576,7 @@ export default function JanelaConversa(props: {
                             <>
                                 <div className="flex min-h-[54px] min-w-0 flex-1 items-end rounded-[27px] bg-white px-1.5 shadow-[0_1px_0.5px_rgba(31,38,56,0.13)] dark:bg-[#232B3F]">
                                     <button type="button" onClick={() => setEmoji((v) => !v)} aria-pressed={emoji} className={`flex h-[54px] w-11 flex-none items-center justify-center ${emoji ? "text-[#313C55] dark:text-white" : "text-[#5B6478] dark:text-[#AEB9CF]"}`} aria-label="Emojis"><Icone nome="smile" className="h-[26px] w-[26px]" /></button>
+                                    {!modoNota && <button type="button" onClick={() => { setRapidas((v) => !v); setEmoji(false); }} aria-pressed={rapidas} className={`flex h-[54px] w-10 flex-none items-center justify-center ${rapidas ? "text-[#313C55] dark:text-white" : "text-[#5B6478] dark:text-[#AEB9CF]"}`} aria-label="Respostas rápidas" title="Respostas rápidas"><Icone nome="raio" className="h-[23px] w-[23px]" /></button>}
                                     {/* 16 px: com menos, o iPhone dá zoom ao tocar no campo e a tela sai do lugar */}
                                     <textarea
                                         ref={campo}

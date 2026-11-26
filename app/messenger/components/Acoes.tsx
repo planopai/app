@@ -5,7 +5,7 @@
  *  - MenuMensagem: reagir com emoji, responder, encaminhar, copiar e apagar (toque longo no celular, setinha no computador)
  *  - Reacoes: emojis embaixo do balão
  *  - BarraBusca: buscar dentro da conversa
- *  - SugestoesRespostas: respostas rápidas ao digitar "/"
+ *  - SugestoesRespostas: respostas rápidas ao digitar "/" ou pelo botão de respostas rápidas
  *  - MenuAnexar: foto/documento, localização, contato e nota interna
  */
 import React, { useEffect, useRef, useState } from "react";
@@ -152,21 +152,31 @@ export function useRespostas() {
     return lista;
 }
 
-/** Ao digitar "/" no começo do campo: lista as respostas rápidas que combinam. */
-export function SugestoesRespostas({ texto, onEscolher }: { texto: string; onEscolher: (t: string) => void }) {
+/** Ao digitar "/" no começo do campo, ou pelo botão de respostas rápidas (aberto): lista as respostas rápidas que combinam. */
+export function SugestoesRespostas({ texto, onEscolher, aberto = false, onFechar }: { texto: string; onEscolher: (t: string) => void; aberto?: boolean; onFechar?: () => void }) {
     const respostas = useRespostas();
-    if (!texto.startsWith("/") || texto.includes(" ") || texto.includes("\n")) return null;
-    const busca = texto.slice(1).toLowerCase();
-    const achadas = respostas.filter((r) => r.atalho.toLowerCase().includes(busca) || r.texto.toLowerCase().includes(busca)).slice(0, 8);
+    const [filtro, setFiltro] = useState("");
+    const porBarra = texto.startsWith("/") && !texto.includes(" ") && !texto.includes("\n");
+    if (!aberto && !porBarra) return null;
+    const busca = (aberto ? filtro : texto.slice(1)).trim().toLowerCase();
+    const achadas = respostas.filter((r) => r.atalho.toLowerCase().includes(busca) || r.texto.toLowerCase().includes(busca)).slice(0, aberto ? 100 : 8);
     return (
         <div className="mx-2 mb-1 max-h-72 overflow-y-auto rounded-2xl border border-[#E1E5EC] bg-white py-1 shadow-xl md:mx-4 dark:border-white/12 dark:bg-[#232B3F]" role="listbox" aria-label="Respostas rápidas">
+            {aberto && (
+                <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#E1E5EC] bg-white px-3 py-1.5 dark:border-white/12 dark:bg-[#232B3F]">
+                    <Icone nome="search" className="h-5 w-5 flex-none text-[#5B6478] dark:text-[#AEB9CF]" />
+                    {/* 16 px: com menos, o iPhone dá zoom ao tocar no campo */}
+                    <input value={filtro} onChange={(e) => setFiltro(e.target.value)} placeholder="Buscar resposta rápida" aria-label="Buscar resposta rápida" className="h-10 min-w-0 flex-1 bg-transparent text-[16px] text-[#1F2638] outline-none dark:text-white" />
+                    <button type="button" onClick={onFechar} className="flex h-10 w-10 flex-none items-center justify-center rounded-full text-[#5B6478] hover:bg-black/5 dark:text-[#AEB9CF]" aria-label="Fechar respostas rápidas"><Icone nome="x" className="h-5 w-5" /></button>
+                </div>
+            )}
             {achadas.map((r) => (
                 <button key={r.id} type="button" role="option" aria-selected="false" onClick={() => onEscolher(r.texto)} className="flex w-full flex-col items-start gap-0.5 px-4 py-2 text-left hover:bg-[#F0F2F5] dark:hover:bg-white/10">
                     <span className="text-[14px] font-extrabold text-[#3D6A99] dark:text-[#A9BED6]">/{r.atalho}{r.pessoal ? " · minha" : ""}</span>
                     <span className="line-clamp-2 text-[15px] text-[#1F2638] dark:text-white">{r.texto}</span>
                 </button>
             ))}
-            {!achadas.length && <p className="px-4 py-2 text-[14px] text-[#6B7488] dark:text-[#AEB9CF]">{respostas.length ? "Nenhuma resposta com esse atalho." : "Nenhuma resposta rápida cadastrada. Cadastre em Messenger · Configurações."}</p>}
+            {!achadas.length && <p className="px-4 py-2 text-[14px] text-[#6B7488] dark:text-[#AEB9CF]">{respostas.length ? (aberto ? "Nenhuma resposta com essa busca." : "Nenhuma resposta com esse atalho.") : "Nenhuma resposta rápida cadastrada. Cadastre em Messenger · Configurações."}</p>}
         </div>
     );
 }
