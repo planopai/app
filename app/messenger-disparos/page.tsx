@@ -244,6 +244,20 @@ export default function CampanhasLembretesPage() {
     const [porPagina, setPorPagina] = useState(25);
     const [envios, setEnvios] = useState<Envio[] | null>(null);
     const [marcados, setMarcados] = useState<number[]>([]);
+    // 26/11/2026: confirmação dentro da tela (a caixa do navegador, window.confirm, pode ficar bloqueada no Safari do Mac
+    // e o clique não fazia nada) e resultado das ações em lote ao lado de quem clicou
+    const [pergunta, setPergunta] = useState<{ texto: string; sim: string; responder: (ok: boolean) => void } | null>(null);
+    const [resultadoLote, setResultadoLote] = useState<{ ok: boolean; texto: string } | null>(null);
+    const confirmar = (texto: string, sim = "Confirmar") => new Promise<boolean>((responder) => setPergunta({ texto, sim, responder }));
+    const responderPergunta = (ok: boolean) => {
+        pergunta?.responder(ok);
+        setPergunta(null);
+    };
+    useEffect(() => {
+        if (!resultadoLote) return;
+        const t = window.setTimeout(() => setResultadoLote(null), 7000);
+        return () => window.clearTimeout(t);
+    }, [resultadoLote]);
     const [detalhe, setDetalhe] = useState<Envio | null>(null);
     // configurações
     const [config, setConfig] = useState(false);
@@ -405,7 +419,7 @@ export default function CampanhasLembretesPage() {
     }
     async function agendar() {
         if (!form?.id) return;
-        if (!window.confirm(`Agendar "${form.nome}" para ${form.agendado_em ? dt(form.agendado_em) : "agora"}? Quem está na lista Não perturbe fica de fora.`)) return;
+        if (!(await confirmar(`Agendar "${form.nome}" para ${form.agendado_em ? dt(form.agendado_em) : "agora"}? Quem está na lista Não perturbe fica de fora.`, "Agendar"))) return;
         const ok = await executar("salvar", () => aPost("campanha_salvar", { ...form }));
         if (!ok) return;
         const j = await executar("agendar", () => aPost("campanha_agendar", { id: form.id }));
@@ -413,12 +427,12 @@ export default function CampanhasLembretesPage() {
     }
     async function rodar() {
         if (!form?.id) return;
-        if (!window.confirm(`Montar a fila de hoje de "${form.nome}" e enviar agora o que já está liberado? Quem já recebeu não recebe de novo.`)) return;
+        if (!(await confirmar(`Montar a fila de hoje de "${form.nome}" e enviar agora o que já está liberado? Quem já recebeu não recebe de novo.`, "Rodar agora"))) return;
         const j = await executar("rodar", () => aPost("rodar", { id: form.id }));
         if (j) await carregar();
     }
     async function arquivar() {
-        if (!form?.id || !window.confirm(`Arquivar "${form.nome}"? Os envios na fila são cancelados; o histórico continua.`)) return;
+        if (!form?.id || !(await confirmar(`Arquivar "${form.nome}"? Os envios na fila são cancelados; o histórico continua.`, "Arquivar"))) return;
         const j = await executar("arquivar", () => aPost("campanha_arquivar", { id: form.id }));
         if (j) {
             fecharModelo();
@@ -496,8 +510,17 @@ export default function CampanhasLembretesPage() {
     async function emLote(acao: "aprovar" | "cancelar" | "reenviar", ids = marcados) {
         if (!ids.length) return;
         const nomes = { aprovar: "Aprovar", cancelar: "Cancelar", reenviar: "Enviar de novo" };
-        if (!window.confirm(`${nomes[acao]} ${ids.length} envio(s)?`)) return;
-        const j = await executar(`lote-${acao}`, () => aPost("envios_acao", { ids, acao }));
+        if (!(await confirmar(`${nomes[acao]} ${ids.length} envio(s)?`, nomes[acao]))) return;
+        let falha = "";
+        const j = await executar(`lote-${acao}`, async () => {
+            try {
+                return await aPost("envios_acao", { ids, acao });
+            } catch (e: any) {
+                falha = e?.message || "Falha na operação.";
+                throw e;
+            }
+        });
+        setResultadoLote(j ? { ok: true, texto: (j as any)?.msg || "Feito." } : { ok: false, texto: falha || "Falha na operação." });
         if (j) {
             setDetalhe(null);
             await carregarHist();
@@ -1129,7 +1152,7 @@ export default function CampanhasLembretesPage() {
                                 {gestao && naFila && <button type="button" className={BTN_SEC} onClick={() => emLote("cancelar", [detalhe.id])}>Cancelar envio</button>}
                                 {gestao && ["falhou", "pulado"].includes(detalhe.situacao) && <button type="button" className={BTN_PRI} onClick={() => emLote("reenviar", [detalhe.id])}>Enviar novamente</button>}
                                 {detalhe.telefone && detalhe.situacao !== "np" && (
-                                    <button type="button" className={BTN_SEC} onClick={async () => { if (window.confirm("Incluir este telefone na lista Não perturbe? Ele deixa de receber campanhas e lembretes.")) { await incluirNp(detalhe.telefone!, detalhe.contrato || ""); } }}>Não perturbe</button>
+                                    <button type="button" className={BTN_SEC} onClick={async () => { if (await confirmar("Incluir este telefone na lista Não perturbe? Ele deixa de receber campanhas e lembretes.", "Incluir")) { await incluirNp(detalhe.telefone!, detalhe.contrato || ""); } }}>Não perturbe</button>
                                 )}
                             </div>
                             {aviso && <div className={`mt-3 rounded-xl px-3 py-2 text-[14px] font-bold ${OK}`}>{aviso}</div>}
@@ -1182,6 +1205,28 @@ export default function CampanhasLembretesPage() {
                     {erro && <div className={`rounded-xl px-3 py-2 text-[14px] font-bold ${VERMELHO}`}>{erro}</div>}
                 </div>
             </Janela>
+
+            {/* 26/11/2026: resultado das ações em lote (aprovar, reenviar) perto da barra, sem precisar rolar até o topo */}
+            {resultadoLote && (
+                <div role="status" className={`fixed bottom-5 left-1/2 z-[10001] w-[min(92vw,520px)] -translate-x-1/2 rounded-2xl px-4 py-3 text-[14.5px] font-bold shadow-xl ${resultadoLote.ok ? OK : VERMELHO}`}>
+                    {resultadoLote.texto}
+                </div>
+            )}
+
+            {/* 26/11/2026: confirmação dentro da tela (no lugar da caixa do navegador) */}
+            {pergunta && (
+                <div className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/45 p-4" data-pai-overlay onClick={() => responderPergunta(false)}>
+                    <div role="alertdialog" aria-modal="true" aria-label="Confirmação" data-pai-overlay onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => { if (e.key === "Escape") responderPergunta(false); }}
+                        className="w-full max-w-[420px] rounded-2xl bg-white p-5 text-[#1F2638] shadow-2xl dark:bg-[#232B3F] dark:text-white">
+                        <p className="m-0 text-[16px] font-bold leading-snug">{pergunta.texto}</p>
+                        <div className="mt-5 flex justify-end gap-2">
+                            <button type="button" className={BTN_SEC} onClick={() => responderPergunta(false)}>Voltar</button>
+                            <button type="button" className={BTN_PRI} autoFocus onClick={() => responderPergunta(true)}>{pergunta.sim}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
