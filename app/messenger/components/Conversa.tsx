@@ -1206,6 +1206,63 @@ export default function JanelaConversa(props: {
     }, [idAtual]);
     // só dá para responder onde se pode escrever (cliente: só o responsável, com a janela de 24 h aberta)
     const podeEscrever = c.participo !== false && (c.tipo !== "externo" || (!!c.posso_responder && !!c.janela_aberta));
+
+    // 26/11/2026: arquivos colados (Ctrl+V) ou arrastados para a conversa, como no WhatsApp.
+    // Fotos abrem a janela com legenda; outros arquivos pedem confirmação antes de sair.
+    const aceitaArquivos = podeEscrever && !!perfil.midias;
+    const receberArquivos = (arquivos: File[], como: "colados" | "arrastados") => {
+        if (!arquivos.length || !aceitaArquivos) return;
+        if (arquivos.every((f) => f.type.startsWith("image/") && f.type !== "image/gif")) {
+            escolherArquivos(arquivos); // fotos: janela com legenda
+            return;
+        }
+        const pergunta = arquivos.length > 1 ? `Enviar os ${arquivos.length} arquivos ${como}?` : arquivos[0].type.startsWith("image/") ? `Enviar a imagem?` : `Enviar "${arquivos[0].name}"?`;
+        if (window.confirm(pergunta)) arquivos.forEach((f) => props.onEnviarArquivo(f));
+    };
+    const receberRef = useRef(receberArquivos);
+    receberRef.current = receberArquivos;
+    // Ctrl+V com a conversa aberta, mesmo sem clicar no campo (o campo da mensagem já trata o próprio colar)
+    useEffect(() => {
+        const aoColar = (e: ClipboardEvent) => {
+            if (e.defaultPrevented) return;
+            const alvo = e.target as HTMLElement | null;
+            if (alvo && (alvo.closest("input, textarea, select, [contenteditable='true']") || alvo.closest("[role='dialog']"))) return;
+            const arquivos = Array.from(e.clipboardData?.files || []);
+            if (!arquivos.length) return;
+            e.preventDefault();
+            receberRef.current(arquivos, "colados");
+        };
+        document.addEventListener("paste", aoColar);
+        return () => document.removeEventListener("paste", aoColar);
+    }, []);
+    const [arrastando, setArrastando] = useState(false);
+    const arrastoProfundidade = useRef(0);
+    const temArquivos = (e: React.DragEvent) => Array.from(e.dataTransfer?.types || []).includes("Files");
+    const aoArrastar = {
+        onDragEnter: (e: React.DragEvent) => {
+            if (!temArquivos(e)) return;
+            e.preventDefault();
+            arrastoProfundidade.current += 1;
+            setArrastando(true);
+        },
+        onDragOver: (e: React.DragEvent) => {
+            if (!temArquivos(e)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = aceitaArquivos ? "copy" : "none";
+        },
+        onDragLeave: (e: React.DragEvent) => {
+            if (!temArquivos(e)) return;
+            arrastoProfundidade.current = Math.max(0, arrastoProfundidade.current - 1);
+            if (arrastoProfundidade.current === 0) setArrastando(false);
+        },
+        onDrop: (e: React.DragEvent) => {
+            if (!temArquivos(e)) return;
+            e.preventDefault();
+            arrastoProfundidade.current = 0;
+            setArrastando(false);
+            receberArquivos(Array.from(e.dataTransfer.files || []), "arrastados");
+        },
+    };
     const porId = new Map(mensagens.map((x) => [x.id, x]));
     const fixadas = props.fixadas || [];
     const idsFixadas = fixadas.map((x) => x.id);
@@ -1251,7 +1308,14 @@ export default function JanelaConversa(props: {
     return (
         <FotosContexto.Provider value={setFotoAberta}>
         {fotoAberta !== null && fotosConversa.some((f) => f.a.id === fotoAberta) && <VisualizadorFoto fotos={fotosConversa} inicial={fotoAberta} titulo={c.titulo} eu={perfil.id} onFechar={fecharFoto} />}
-        <div className="flex h-full min-h-0 flex-1 flex-col overflow-x-hidden bg-[#EFEAE2] dark:bg-[#1C2334]">
+        <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-x-hidden bg-[#EFEAE2] dark:bg-[#1C2334]" {...aoArrastar}>
+            {arrastando && (
+                <div className="pointer-events-none absolute inset-2 z-40 flex flex-col items-center justify-center gap-2 rounded-2xl border-[3px] border-dashed border-[#3D6A99] bg-white/90 text-center text-[#313C55] dark:bg-[#232B3F]/95 dark:text-white">
+                    <Icone nome="clip" className="h-10 w-10" />
+                    <b className="text-[18px]">{aceitaArquivos ? "Solte aqui para enviar" : "Não é possível enviar arquivos nesta conversa"}</b>
+                    {aceitaArquivos && <span className="text-[14px] text-[#5B6478] dark:text-[#AEB9CF]">Fotos abrem a janela com legenda; outros arquivos pedem confirmação.</span>}
+                </div>
+            )}
             {props.seguranca && (
                 <div className="flex items-center gap-2 bg-[#FCEFB4] px-4 py-1.5 text-[12.5px] font-extrabold text-[#5C4600] dark:bg-[#F2CB3F]/15 dark:text-[#F7E39A]" role="status">
                     <Icone nome="wifi" className="h-4 w-4" />Sem tempo real: atualizando a cada 5 segundos.
@@ -1477,10 +1541,7 @@ export default function JanelaConversa(props: {
                                             const arquivos = Array.from(e.clipboardData?.files || []);
                                             if (!arquivos.length) return;
                                             e.preventDefault();
-                                            if (!perfil.midias) return;
-                                            const pergunta = arquivos.length > 1 ? `Enviar os ${arquivos.length} arquivos colados?` : arquivos[0].type.startsWith("image/") ? "Enviar a imagem colada?" : `Enviar "${arquivos[0].name}"?`;
-                                            if (arquivos.every((f) => f.type.startsWith("image/") && f.type !== "image/gif")) escolherArquivos(arquivos); // fotos: janela com legenda
-                                            else if (window.confirm(pergunta)) arquivos.forEach((f) => props.onEnviarArquivo(f));
+                                            receberArquivos(arquivos, "colados");
                                         }}
                                         onChange={(e) => aoDigitar(e.target.value)}
                                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !(e.nativeEvent as any).isComposing) { e.preventDefault(); enviar(); } }}
