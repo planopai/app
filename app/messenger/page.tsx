@@ -531,8 +531,8 @@ export default function MessengerPage() {
             } else {
                 anexo.chave = await enviarArquivo(f, mime);
             }
-            // 24/11/2026: legenda da foto (vai junto, como no WhatsApp)
-            const legenda = tipo === "imagem" ? (opcoes.legenda || "").trim() : "";
+            // 24/11/2026: legenda da foto (vai junto, como no WhatsApp). 26/11/2026: documentos e vídeos também (áudio não leva).
+            const legenda = tipo !== "audio" ? (opcoes.legenda || "").trim() : "";
             await enviarCorpo(uuid, { tipo, anexo, responde_a_id: resposta, ...(legenda ? { texto: legenda } : {}) });
         } catch (e: any) {
             trocarLocal(uuid, { _enviando: false, _falhaLocal: e.message });
