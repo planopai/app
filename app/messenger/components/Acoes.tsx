@@ -190,8 +190,9 @@ export function MenuAnexar(props: { onFechar: () => void; midias: boolean; onArq
     };
     const opcao = "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-[15.5px] font-bold text-[#1F2638] hover:bg-[#F0F2F5] disabled:opacity-40 dark:text-white dark:hover:bg-white/10";
     const bolinha = (cor: string) => `flex h-10 w-10 flex-none items-center justify-center rounded-full text-white ${cor}`;
+    // 26/11/2026: abre alinhado pela direita do clipe (o clipe fica do lado direito do campo); com left-0 o menu saia cortado.
     return (
-        <div ref={ref} role="menu" className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-2xl border border-[#E1E5EC] bg-white p-1.5 shadow-xl dark:border-white/12 dark:bg-[#1C2334]">
+        <div ref={ref} role="menu" className="absolute bottom-full right-0 z-30 mb-2 w-64 max-w-[calc(100vw-24px)] rounded-2xl border border-[#E1E5EC] bg-white p-1.5 shadow-xl dark:border-white/12 dark:bg-[#1C2334]">
             {props.podeEnviar && (
                 <>
                     <button type="button" role="menuitem" disabled={!props.midias} onClick={fazer(props.onArquivo)} className={opcao}><span className={bolinha("bg-[#3D6A99]")}><Icone nome="file" className="h-5 w-5" /></span>Foto ou documento</button>
