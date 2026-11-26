@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { IconCalendarRepeat } from "@tabler/icons-react";
 import { TopoPagina } from "@/components/shell/ModuloHub";
-import { api, BTN_PEQ, BTN_PRI, CAMPO, CAMPO_P, CARTAO, ERRO, mensagemErro, NOTA, PILULA, ROTULO, S_AVISO, SELO, SUB, useAviso } from "../contas-pagar/components/fin";
+import { api, BTN_PEQ, BTN_PRI, CAMPO, CAMPO_P, CARTAO, ERRO, mensagemErro, NOTA, PILULA, ROTULO, S_AVISO, S_OK, SELO, SUB, useAviso } from "../contas-pagar/components/fin";
 import { brl, isoParaBR, mesBRCurto } from "../contratos/components/ct";
 import { URL_MENS } from "../contratos/components/Financeiro";
 
@@ -29,6 +29,14 @@ type LinhaRen = {
     indice: string;
     vencidas: number;
     teste: boolean;
+};
+type Parametros = { reajuste_automatico: boolean; renovacao_dias: number; sicredi_conta_id: number | null; app_ios_url: string; app_android_url: string };
+type BaseRen = {
+    pode: { gestao: boolean; renovar: boolean };
+    parametros: Parametros;
+    indices: Indice[];
+    contas: { id: number; nome: string; tipo: string }[];
+    sicredi: { pix: string[]; boleto: string[] };
 };
 type Indice = { indice: string; competencia: string; percentual: number; fonte?: string; confirmado?: boolean };
 type Analise = { de: string; ate: string; linhas: { chave: string; nome: string; emitido: number; recebido: number; contratos: number }[]; contratos: number; ativos: number; emitido: number; recebido: number };
@@ -56,7 +64,7 @@ const numero = (s: string) => {
 export default function RenovacaoCarnes() {
     const { avisar, aviso } = useAviso();
     const [aba, setAba] = useState<Aba>("renovacao");
-    const [base, setBase] = useState<{ pode: { gestao: boolean; renovar: boolean }; parametros: { reajuste_automatico: boolean; renovacao_dias: number }; indices: Indice[] } | null>(null);
+    const [base, setBase] = useState<BaseRen | null>(null);
     const [erro, setErro] = useState("");
     const carregarBase = useCallback(async () => {
         try {
@@ -404,7 +412,7 @@ function Indices({
     avisar,
     recarregar,
 }: {
-    base: { pode: { gestao: boolean }; parametros: { reajuste_automatico: boolean; renovacao_dias: number }; indices: Indice[] };
+    base: BaseRen;
     avisar: (m: string) => void;
     recarregar: () => Promise<void>;
 }) {
@@ -413,6 +421,9 @@ function Indices({
     const [comp, setComp] = useState(mesAtual());
     const [valor, setValor] = useState("");
     const [dias, setDias] = useState(String(base.parametros.renovacao_dias));
+    const [contaSic, setContaSic] = useState<string>(base.parametros.sicredi_conta_id ? String(base.parametros.sicredi_conta_id) : "");
+    const [ios, setIos] = useState(base.parametros.app_ios_url || "");
+    const [android, setAndroid] = useState(base.parametros.app_android_url || "");
     const [salvando, setSalvando] = useState(false);
 
     const enviar = async (acao: string, corpo: Record<string, unknown>) => {
@@ -525,6 +536,56 @@ function Indices({
                 ) : (
                     <div className={SUB}>Nenhum índice confirmado ainda. Fonte: Banco Central (série do IPCA acumulado em 12 meses).</div>
                 )}
+            </div>
+            <div className={`${CARTAO} flex flex-col gap-3 p-4 sm:p-5 lg:col-span-2`}>
+                <h2 className="text-[17px] font-extrabold">Link de pagamento e Sicredi</h2>
+                <div className="flex flex-wrap gap-2">
+                    <span className={`${SELO} ${base.sicredi.pix.length ? S_AVISO : S_OK}`}>{base.sicredi.pix.length ? "Pix: falta configurar no servidor" : "Pix configurado"}</span>
+                    <span className={`${SELO} ${base.sicredi.boleto.length ? S_AVISO : S_OK}`}>{base.sicredi.boleto.length ? "BolePix: falta configurar no servidor" : "BolePix configurado"}</span>
+                </div>
+                {base.sicredi.pix.length || base.sicredi.boleto.length ? (
+                    <div className={SUB}>Faltam no pai-chaves.php: {[...base.sicredi.pix, ...base.sicredi.boleto].join(", ")}.</div>
+                ) : null}
+                <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="block">
+                        <span className={ROTULO}>Conta onde o Pix e o boleto entram</span>
+                        <select className={CAMPO} disabled={!gestao} value={contaSic} onChange={(e) => setContaSic(e.target.value)}>
+                            <option value="">Escolha a conta Sicredi</option>
+                            {base.contas
+                                .filter((c) => c.tipo === "BANCO")
+                                .map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.nome}
+                                    </option>
+                                ))}
+                        </select>
+                    </label>
+                    <label className="block">
+                        <span className={ROTULO}>App do Associado · App Store</span>
+                        <input className={CAMPO} disabled={!gestao} value={ios} onChange={(e) => setIos(e.target.value)} placeholder="https://apps.apple.com/..." />
+                    </label>
+                    <label className="block">
+                        <span className={ROTULO}>App do Associado · Google Play</span>
+                        <input className={CAMPO} disabled={!gestao} value={android} onChange={(e) => setAndroid(e.target.value)} placeholder="https://play.google.com/..." />
+                    </label>
+                </div>
+                {gestao ? (
+                    <div>
+                        <button
+                            type="button"
+                            className={BTN_PRI}
+                            disabled={salvando}
+                            onClick={() => void enviar("parametros", { sicredi_conta_id: contaSic ? Number(contaSic) : null, app_ios_url: ios.trim(), app_android_url: android.trim() })}
+                        >
+                            Salvar
+                        </button>
+                    </div>
+                ) : (
+                    <div className={SUB}>Só a Gestão altera.</div>
+                )}
+                <div className={SUB}>
+                    Pago pelo link (Pix ou BolePix), a baixa entra nesta conta com a forma Pix ou Boleto, sem multa e juros. Os botões das lojas aparecem na página do link e só abrem a loja quando o endereço estiver preenchido.
+                </div>
             </div>
         </div>
     );
