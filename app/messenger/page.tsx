@@ -755,7 +755,7 @@ export default function MessengerPage() {
                     <button type="button" onClick={() => { setErro(""); setAviso(""); }} aria-label="Fechar aviso"><Icone nome="x" className="h-4 w-4" /></button>
                 </div>
             )}
-            <div className={`relative grid min-h-0 flex-1 overflow-hidden border-[#E1E5EC] bg-white ${painelCli && largo && conversaSel?.tipo === "externo" ? "md:grid-cols-[330px_minmax(0,1fr)_470px]" : "md:grid-cols-[400px_minmax(0,1fr)]"} md:rounded-2xl md:border dark:border-white/12 dark:bg-[#232B3F]`}>
+            <div className={`relative grid min-h-0 flex-1 grid-cols-1 overflow-hidden border-[#E1E5EC] bg-white ${painelCli && largo && conversaSel?.tipo === "externo" ? "md:grid-cols-[330px_minmax(0,1fr)_470px]" : "md:grid-cols-[400px_minmax(0,1fr)]"} md:rounded-2xl md:border dark:border-white/12 dark:bg-[#232B3F]`}>
                 {/* lista */}
                 <div className={`${selId ? "hidden md:flex" : "flex"} min-h-0 flex-col border-r border-[#E6E9EE] dark:border-white/12`}>
                     <div className="flex items-center gap-1 pb-1 pl-4 pr-2 pt-3">
