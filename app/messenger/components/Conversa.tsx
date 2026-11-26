@@ -1271,7 +1271,8 @@ export default function JanelaConversa(props: {
         onDragOver: (e: React.DragEvent) => {
             if (!temArquivos(e)) return;
             e.preventDefault();
-            e.dataTransfer.dropEffect = aceitaArquivos ? "copy" : "none";
+            // 26/11/2026: não forçar "copy": arrastando da Área de Trabalho o Windows pode liberar só "mover", e aí o navegador cancelava a soltura
+            if (!aceitaArquivos) e.dataTransfer.dropEffect = "none";
         },
         onDragLeave: (e: React.DragEvent) => {
             if (!temArquivos(e)) return;
