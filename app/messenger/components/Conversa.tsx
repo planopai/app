@@ -269,6 +269,7 @@ function VisualizadorFoto({ fotos, inicial, titulo, eu, onFechar }: { fotos: Fot
  */
 // 26/11/2026: a janela usa z-[10000] para ficar acima do Messenger (z-1000 dentro das abas do computador);
 // com z-200 ela abria escondida no computador e parecia que arrastar/colar/anexar foto não fazia nada.
+// data-pai-overlay: sem ele, a regra geral de janelas (globals.css) pintava o fundo de branco e o X de fechar sumia.
 function EnvioFoto({ fotos, respondendo, eu, onEnviar, onCancelar, onTirar }: { fotos: File[]; respondendo?: Mensagem | null; eu: number; onEnviar: (legenda: string) => void; onCancelar: () => void; onTirar: (i: number) => void }) {
     const [legenda, setLegenda] = useState("");
     const [atual, setAtual] = useState(0);
@@ -282,7 +283,7 @@ function EnvioFoto({ fotos, respondendo, eu, onEnviar, onCancelar, onTirar }: { 
     const i = Math.min(atual, fotos.length - 1);
     if (typeof document === "undefined" || !fotos.length) return null;
     return createPortal(
-        <div className="fixed inset-0 z-[10000] flex flex-col bg-[#0B141A]" role="dialog" aria-modal="true" aria-label="Enviar foto">
+        <div className="fixed inset-0 z-[10000] flex flex-col bg-[#0B141A] text-white" role="dialog" aria-modal="true" aria-label="Enviar foto" data-pai-overlay>
             <div className="flex flex-none items-center gap-2 px-3 py-2 text-white" style={{ paddingTop: "max(8px, env(safe-area-inset-top))" }}>
                 <button type="button" onClick={onCancelar} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/20" aria-label="Cancelar envio"><Icone nome="x" className="h-5 w-5" /></button>
                 <span className="min-w-0 flex-1 truncate text-[15px] font-bold">{fotos.length > 1 ? `${fotos.length} fotos` : "Enviar foto"}</span>
