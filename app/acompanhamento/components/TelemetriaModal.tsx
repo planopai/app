@@ -592,7 +592,7 @@ export default forwardRef<
     }, []);
 
     return (
-        <Modal open={open} onClose={onClose} ariaLabel="Selecionar veículo" maxWidth={440}>
+        <Modal open={open} onClose={onClose} ariaLabel="Selecionar veículo" maxWidth={440} closeOnBackdrop={false}>
             <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
                     <div>
@@ -601,33 +601,39 @@ export default forwardRef<
                     </div>
                 </div>
 
-                <div>
-                    <select
-                        className="w-full rounded-md border px-3 py-2 text-sm border-[#E3E8F0] dark:border-white/[0.12]"
-                        value={veiculo}
-                        disabled={saving || starting}
-                        onChange={async (e) => {
-                            const label = e.target.value;
-                            setVeiculo(label);
-                            if (!label) return;
-
-                            const escolhido = veiculosOpcoes.find((v) => veiculoLabel(v) === label);
-                            if (!escolhido) return;
-
-                            await startAfterSelect(escolhido);
-                        }}
-                    >
-                        <option value="">Selecione…</option>
-                        {veiculosOpcoes.map((v) => {
-                            const label = veiculoLabel(v);
-                            return (
-                                <option key={`${v.nome}-${v.placa || label}`} value={label}>
-                                    {label}
-                                </option>
-                            );
-                        })}
-                    </select>
+                {/* Botões em vez de <select>: no celular a lista nativa abria com o teclado/roleta e a
+                    janela fechava antes de escolher (Android e iPhone). Um toque escolhe o veículo. */}
+                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Veículo">
+                    {veiculosOpcoes.map((v) => {
+                        const label = veiculoLabel(v);
+                        const placa = placaComTraco(v.placa);
+                        const ativo = veiculo === label;
+                        return (
+                            <button
+                                key={`${v.nome}-${v.placa || label}`}
+                                type="button"
+                                role="radio"
+                                aria-checked={ativo}
+                                disabled={saving || starting}
+                                onClick={async () => {
+                                    if (saving || starting) return;
+                                    setVeiculo(label);
+                                    await startAfterSelect(v);
+                                }}
+                                className={`flex min-h-[56px] flex-col items-start justify-center rounded-xl border px-3 py-2 text-left disabled:opacity-60 ${v.placa ? "" : "col-span-2"} ${ativo
+                                    ? "border-[#313C55] bg-[#313C55] text-white dark:border-[#F2CB3F] dark:bg-[#F2CB3F] dark:text-[#313C55]"
+                                    : "border-[#E3E8F0] bg-white text-[#313C55] active:bg-[#EEF2F7] dark:border-white/[0.12] dark:bg-transparent dark:text-white dark:active:bg-white/10"
+                                    }`}
+                            >
+                                <span className="text-[16px] font-extrabold leading-tight">{v.nome}</span>
+                                <span className={`text-[13px] ${ativo ? "opacity-90" : "text-[#5B6478] dark:text-[#AEB9CF]"}`}>
+                                    {placa || "sem rastreador"}
+                                </span>
+                            </button>
+                        );
+                    })}
                 </div>
+                {starting && <div className="text-sm font-bold text-[#5B6478] dark:text-[#AEB9CF]">Iniciando…</div>}
 
                 {msg && (
                     <div
