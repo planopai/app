@@ -128,11 +128,19 @@ export default function HistoricoClientes({ embutido = false, onVoltar }: { embu
                                     </div>
                                 )}
                                 <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-4 py-4">
-                                    {sel.mensagens.map((m) => m.autor_tipo === "sistema" ? (
+                                    {/* 28/11/2026: só os avisos do sistema ficam no meio (cinza); as mensagens automáticas da Aurora e os disparos
+                                        (Campanhas e Lembretes) vão do lado da empresa, com etiqueta, como na conversa */}
+                                    {sel.mensagens.map((m) => m.autor_tipo === "sistema" && m.tipo === "sistema" ? (
                                         <div key={m.id} className="self-center rounded-xl border border-[#E3E8F0] bg-white px-3 py-1 text-[12.5px] font-bold text-[#5B6478] dark:border-white/12 dark:bg-[#232B3F] dark:text-[#AEB9CF]">{m.texto}</div>
                                     ) : (
                                         <div key={m.id} className={`max-w-[84%] rounded-[18px] border px-3.5 py-2.5 text-[15px] ${m.autor_tipo === "contato" ? "self-start border-[#E3E8F0] bg-white dark:border-white/12 dark:bg-[#232B3F]" : "self-end border-[#313C55] bg-[#313C55] text-white dark:border-white/40 dark:bg-[#3D6A99]"}`}>
-                                            <div className={`mb-0.5 text-[12.5px] font-extrabold ${m.autor_tipo === "contato" ? "text-[#3D6A99] dark:text-[#A9BED6]" : "text-[#C9D1DE]"}`}>{m.autor_nome}</div>
+                                            {m.autor_tipo === "sistema" ? (
+                                                <div className="mb-1 flex flex-wrap items-center gap-x-2 text-[12.5px] font-extrabold text-[#F7E39A]">
+                                                    {m.tipo === "modelo" ? <><span className="rounded-md bg-[#FFE3C2] px-1.5 py-px text-[#8A4B00]">📣 Disparo automático</span>{m.disparo?.nome && <span>{m.disparo.nome}</span>}</> : <span>🤖 Mensagem automática</span>}
+                                                </div>
+                                            ) : (
+                                                <div className={`mb-0.5 text-[12.5px] font-extrabold ${m.autor_tipo === "contato" ? "text-[#3D6A99] dark:text-[#A9BED6]" : "text-[#C9D1DE]"}`}>{m.autor_nome}</div>
+                                            )}
                                             {m.apagada ? <i>Mensagem apagada</i> : (
                                                 <>
                                                     {m.anexos.length > 0 && (
@@ -140,7 +148,7 @@ export default function HistoricoClientes({ embutido = false, onVoltar }: { embu
                                                             Abrir {m.tipo === "imagem" ? "foto" : m.tipo === "audio" ? "áudio" : m.anexos[0].nome_original || "documento"}
                                                         </button>
                                                     )}
-                                                    {m.texto && <div className="whitespace-pre-wrap break-words">{m.texto}</div>}
+                                                    {m.texto && <div className="whitespace-pre-wrap break-words">{m.tipo === "modelo" ? m.texto.replace(/\n?\[Botão:\s*(.+?)\]/g, "\n▸ Botão: $1") : m.texto}</div>}
                                                 </>
                                             )}
                                             <div className="mt-1 text-right text-[11.5px] font-bold opacity-70">{dataHora(m.criado_em)}</div>
