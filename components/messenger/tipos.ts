@@ -38,6 +38,8 @@ export type Mensagem = {
     _aguardando?: number;
     /** 26/11/2026: "app" = veio/foi pelo Aplicativo do Associado (aurora_28.php) */
     canal?: "app" | null;
+    /** 28/11/2026: mensagem de disparo (Campanhas e Lembretes): nome do modelo e origem (auto, camp, teste) */
+    disparo?: { nome: string | null; origem: string | null } | null;
 };
 
 export type Membro = { usuario_id: number; nome: string; papel: "membro" | "admin" | "observador"; ultima_lida_id: number };
