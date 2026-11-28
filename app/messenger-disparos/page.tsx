@@ -60,6 +60,15 @@ const GATILHOS: Record<string, [string, [string, string][]]> = {
     atraso: ["Mensalidades em atraso", [["5", "5 dias após o vencimento"], ["10", "10 dias após o vencimento"], ["15", "15 dias após o vencimento"], ["20", "20 dias após o vencimento"], ["30", "30 dias após o vencimento"]]],
     novo: ["Contrato novo (boas-vindas)", [["0", "No dia em que aparece o contrato"]]],
 };
+/** Texto do "quando" de um automático. Dias livres (27/11/2026): negativo = antes do vencimento, positivo = depois. */
+const rotuloQuando = (gat: string, quando: string) => {
+    if (gat === "novo") return GATILHOS.novo[1][0][1];
+    const n = parseInt(quando, 10) || 0;
+    if (n === 0) return gat === "venc" ? "No dia do vencimento" : GATILHOS[gat]?.[0] || "";
+    const d = `${Math.abs(n)} ${Math.abs(n) === 1 ? "dia" : "dias"}`;
+    return n < 0 ? `${d} antes do vencimento` : gat === "atraso" ? `${d} após o vencimento` : `${d} depois do vencimento`;
+};
+const MAX_DIAS_GATILHO = 90;
 const BOTOES: Record<string, string> = { pix: "Pagar com Pix", app: "Acessar meu contrato (app do associado)", falar: "Falar com o Plano PAI", "": "Sem botão" };
 const DIAS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 const EMOJIS = ["😊", "🙂", "👋", "🙏", "💛", "💙", "🌻", "✨", "✅", "📅", "⏰", "📌", "💳", "💰", "📲", "💬", "🎉", "🎂", "🤝", "❤️", "👍", "☀️", "🕊️", "📞"];
@@ -154,6 +163,65 @@ function Celular({ texto, botao, horaTxt, titulo = "Plano PAI" }: { texto: strin
                 <span className="mt-1 block text-right text-[11px] opacity-60">{horaTxt}</span>
             </div>
             {botao && <div className="mt-1 rounded-xl bg-white p-2 text-center text-[15px] font-bold text-[#027EB5] shadow-sm dark:bg-[#202C33] dark:text-[#53BDEB]">↗ {BOTOES[botao]?.replace(" (app do associado)", "")}</div>}
+        </div>
+    );
+}
+
+/** Dia do gatilho escolhido livremente: antes, no dia ou depois do vencimento + quantidade de dias (27/11/2026). */
+function DiasGatilho({ gat, quando, onChange }: { gat: string; quando: string; onChange: (q: string) => void }) {
+    const n = parseInt(quando, 10) || 0;
+    const [sentido, setSentido] = useState<"antes" | "dia" | "depois">(gat === "atraso" || n > 0 ? "depois" : n < 0 ? "antes" : "dia");
+    const [num, setNum] = useState(n ? String(Math.abs(n)) : "1");
+    useEffect(() => {
+        const m = parseInt(quando, 10) || 0;
+        if (m !== 0) {
+            setSentido(m < 0 ? "antes" : "depois");
+            setNum(String(Math.abs(m)));
+        } else if (gat !== "atraso") {
+            setSentido("dia");
+        }
+    }, [quando, gat]);
+    const enviar = (s: "antes" | "dia" | "depois", v: string) => {
+        if (s === "dia") return onChange("0");
+        const d = parseInt(v, 10);
+        if (!d || d < 1) return; // campo vazio: espera digitar
+        const lim = Math.min(MAX_DIAS_GATILHO, d);
+        onChange(String(s === "antes" ? -lim : lim));
+    };
+    const campoNum = (
+        <input type="number" inputMode="numeric" min={1} max={MAX_DIAS_GATILHO} aria-label="Quantidade de dias"
+            className={`${CAMPO} w-[84px] shrink-0 text-center`} value={num}
+            onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, "").slice(0, 2);
+                const lim = v && parseInt(v, 10) > MAX_DIAS_GATILHO ? String(MAX_DIAS_GATILHO) : v;
+                setNum(lim);
+                enviar(sentido, lim);
+            }}
+            onBlur={() => { if (!parseInt(num, 10)) setNum(String(Math.abs(n) || 1)); }} />
+    );
+    if (gat === "atraso") {
+        return (
+            <div className="flex items-center gap-2">
+                {campoNum}
+                <span className={MUDO}>{parseInt(num, 10) === 1 ? "dia" : "dias"} após o vencimento</span>
+            </div>
+        );
+    }
+    return (
+        <div className="flex items-center gap-2">
+            {sentido !== "dia" && campoNum}
+            <select className={CAMPO} value={sentido} aria-label="Antes ou depois do vencimento"
+                onChange={(e) => {
+                    const s = e.target.value as "antes" | "dia" | "depois";
+                    const v = parseInt(num, 10) ? num : "1";
+                    setSentido(s);
+                    setNum(v);
+                    enviar(s, v);
+                }}>
+                <option value="antes">{parseInt(num, 10) === 1 ? "dia" : "dias"} antes do vencimento</option>
+                <option value="dia">No dia do vencimento</option>
+                <option value="depois">{parseInt(num, 10) === 1 ? "dia" : "dias"} depois do vencimento</option>
+            </select>
         </div>
     );
 }
@@ -615,7 +683,7 @@ export default function CampanhasLembretesPage() {
                                             <td className="p-2"><b>{c.nome}</b><div className="text-[12.5px] text-[#5B6478] dark:text-[#AEB9CF]">{c.modelo}{c.pendente ? ` · nova versão em análise` : c.novo ? " · texto novo não enviado" : ""}</div></td>
                                             {kind === "auto" ? (
                                                 <>
-                                                    <td className="p-2">{GATILHOS[c.gat]?.[1].find((q) => q[0] === c.quando)?.[1] || GATILHOS[c.gat]?.[0]}</td>
+                                                    <td className="p-2">{rotuloQuando(c.gat, c.quando)}</td>
                                                     <td className="p-2"><Etiqueta par={c.aprov === "aprov" ? ["Com aprovação", AMARELO] : ["Automático", CINZA]} /></td>
                                                     <td className="p-2"><Etiqueta par={MODOS[c.modo]} /></td>
                                                     <td className="p-2"><Etiqueta par={METAS[c.meta]} /></td>
@@ -941,11 +1009,17 @@ export default function CampanhasLembretesPage() {
                                                     {Object.entries(GATILHOS).map(([k, v]) => <option key={k} value={k}>{v[0]}</option>)}
                                                 </select>
                                             </label>
-                                            <label><span className={ROTULO}>Dia</span>
-                                                <select className={CAMPO} value={form.quando} onChange={(e) => mudar({ quando: e.target.value })}>
-                                                    {(GATILHOS[form.gat]?.[1] || []).map(([v, r]) => <option key={v} value={v}>{r}</option>)}
-                                                </select>
-                                            </label>
+                                            {form.gat === "novo" ? (
+                                                <label><span className={ROTULO}>Dia</span>
+                                                    <select className={CAMPO} value={form.quando} onChange={(e) => mudar({ quando: e.target.value })}>
+                                                        {(GATILHOS[form.gat]?.[1] || []).map(([v, r]) => <option key={v} value={v}>{r}</option>)}
+                                                    </select>
+                                                </label>
+                                            ) : (
+                                                <div><span className={ROTULO}>Dia</span>
+                                                    <DiasGatilho key={`${form.id}-${form.gat}`} gat={form.gat} quando={form.quando} onChange={(q) => mudar({ quando: q })} />
+                                                </div>
+                                            )}
                                             <label><span className={ROTULO}>Envio</span>
                                                 <select className={CAMPO} value={form.aprov} onChange={(e) => mudar({ aprov: e.target.value as any })}>
                                                     <option value="auto">Automático</option><option value="aprov">Com aprovação no Histórico</option>
